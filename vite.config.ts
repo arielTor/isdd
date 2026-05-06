@@ -18,7 +18,7 @@ export default defineConfig(({mode}) => {
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
-      allowedHosts: ['i-sdd-production.up.railway.app'],
+      allowedHosts: 'all',
     },
   };
 });
