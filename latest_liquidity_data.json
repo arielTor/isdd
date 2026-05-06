@@ -1,0 +1,233 @@
+[
+  {
+    "id": "bluepine",
+    "name": "BluePine",
+    "industry": "Fintech",
+    "status": "Active",
+    "banks": [
+      {
+        "id": "bp_xbo",
+        "name": "XBO Crypto (C2B, B2B)",
+        "country": "Global",
+        "is_verified": 1,
+        "last_modified": "2026-05-06T20:41:55",
+        "bank_accounts": [
+          {
+            "id": "bp_xbo_spot_b2c",
+            "account_number": "XBO-SPOT-BP-B2C",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_bp_xbo_btc_usdt",
+                "currency": "USDT",
+                "balance": 2987.7805,
+                "value_usd": 2987.7805,
+                "updated_at": "2026-05-06T20:44:31"
+              }
+            ]
+          },
+          {
+            "id": "bp_xbo_spot_corp",
+            "account_number": "XBO-SPOT-BP-CORP",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_bp_xbo_crop_usdt",
+                "currency": "XBO",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-06T20:41:52"
+              }
+            ]
+          }
+        ],
+        "accounts": [
+          {
+            "id": "bp_xbo_spot_b2c",
+            "account_number": "XBO-SPOT-BP-B2C",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_bp_xbo_btc_usdt",
+                "currency": "USDT",
+                "balance": 2987.7805,
+                "value_usd": 2987.7805,
+                "updated_at": "2026-05-06T20:44:31"
+              }
+            ]
+          },
+          {
+            "id": "bp_xbo_spot_corp",
+            "account_number": "XBO-SPOT-BP-CORP",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_bp_xbo_crop_usdt",
+                "currency": "XBO",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-06T20:41:52"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "smarttool",
+    "name": "SmartTool",
+    "industry": "SaaS",
+    "status": "Active",
+    "banks": [
+      {
+        "id": "st_ledger",
+        "name": "Ledger Crypto",
+        "country": "Cold Storage",
+        "is_verified": 1,
+        "last_modified": "2026-04-29T18:34:55",
+        "bank_accounts": [
+          {
+            "id": "st_ledger_Ellerman_Settlements",
+            "account_number": "ST_LEDGER_ELLERMAN_SETTLEMENTS",
+            "label": "Ellerman_Settlements",
+            "wallets": [
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_eth",
+                "currency": "ETH",
+                "balance": 0.540003,
+                "value_usd": 1284.72,
+                "updated_at": "2026-05-05T13:36:40"
+              },
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_hex",
+                "currency": "HEX",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-05T13:27:25"
+              },
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_usdt",
+                "currency": "USDT",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-05T13:27:25"
+              },
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_usdtb",
+                "currency": "USDtb",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-05T13:27:25"
+              }
+            ]
+          }
+        ],
+        "accounts": [
+          {
+            "id": "st_ledger_Ellerman_Settlements",
+            "account_number": "ST_LEDGER_ELLERMAN_SETTLEMENTS",
+            "label": "Ellerman_Settlements",
+            "wallets": [
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_eth",
+                "currency": "ETH",
+                "balance": 0.540003,
+                "value_usd": 1284.72,
+                "updated_at": "2026-05-05T13:36:40"
+              },
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_hex",
+                "currency": "HEX",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-05T13:27:25"
+              },
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_usdt",
+                "currency": "USDT",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-05T13:27:25"
+              },
+              {
+                "id": "wallet_st_ledger_Ellerman_Settlements_usdtb",
+                "currency": "USDtb",
+                "balance": 0,
+                "value_usd": 0,
+                "updated_at": "2026-05-05T13:27:25"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "st_xbo",
+        "name": "XBO Crypto (C2B, B2B)",
+        "country": "Global",
+        "is_verified": 1,
+        "last_modified": "2026-05-06T02:00:57",
+        "bank_accounts": [
+          {
+            "id": "st_xbo_spot_b2c",
+            "account_number": "XBO-SPOT-ST-B2C",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_st_xbo_btc_usdt",
+                "currency": "USDT",
+                "balance": 2794.17751,
+                "value_usd": 2794.17751,
+                "updated_at": "2026-05-06T20:47:46"
+              }
+            ]
+          },
+          {
+            "id": "st_xbo_spot_corp",
+            "account_number": "XBO-SPOT-ST-CORP",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_st_xbo_crop_usdt",
+                "currency": "USDT",
+                "balance": 82920.58911,
+                "value_usd": 82920.58911,
+                "updated_at": "2026-05-06T20:46:17"
+              }
+            ]
+          }
+        ],
+        "accounts": [
+          {
+            "id": "st_xbo_spot_b2c",
+            "account_number": "XBO-SPOT-ST-B2C",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_st_xbo_btc_usdt",
+                "currency": "USDT",
+                "balance": 2794.17751,
+                "value_usd": 2794.17751,
+                "updated_at": "2026-05-06T20:47:46"
+              }
+            ]
+          },
+          {
+            "id": "st_xbo_spot_corp",
+            "account_number": "XBO-SPOT-ST-CORP",
+            "label": null,
+            "wallets": [
+              {
+                "id": "wallet_st_xbo_crop_usdt",
+                "currency": "USDT",
+                "balance": 82920.58911,
+                "value_usd": 82920.58911,
+                "updated_at": "2026-05-06T20:46:17"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
