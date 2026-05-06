@@ -3,4 +3,3 @@ node_modules
 .env.local
 *.log
 debug_payload_log.json
-dist
