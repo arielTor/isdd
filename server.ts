@@ -224,52 +224,11 @@ async function startServer() {
     }
   });
 
+  // API Route: Trigger an outbound Zapier webhook (UI "Sync" button)
   app.post("/api/sync", async (req, res) => {
     const timestamp = new Date().toISOString();
-    
     try {
-      // Check if this is a data update via /api/sync
-      // We look for common payload keys or if it's the specific 'data' field the user mentioned
-      const isDataUpdate = req.body && (
-        req.body.data || 
-        req.body.payload || 
-        req.body.dashboard_data || 
-        Array.isArray(req.body)
-      );
-
-      if (isDataUpdate) {
-        console.log(`[${timestamp}] Received data update via /api/sync`);
-        
-        // Auth check for external requests (if token is configured)
-        const authHeader = req.headers['authorization'];
-        const expectedToken = process.env.GOOGLE_ACCESS_TOKEN;
-        if (expectedToken && authHeader === `Bearer ${expectedToken}`) {
-           console.log(`[${timestamp}] 🔐 Authenticated via Bearer Token on /api/sync`);
-        }
-
-        const dataToStore = extractCompanies(req.body);
-        if (dataToStore && Array.isArray(dataToStore)) {
-          latestData = dataToStore;
-          lastUpdateTime = Date.now();
-          
-          try {
-            fs.writeFileSync(DATA_FILE, JSON.stringify(latestData, null, 2));
-            console.log(`[${timestamp}] ✅ SUCCESS: Saved ${latestData.length} companies via /api/sync.`);
-            return res.json({ 
-              status: 'Updated', 
-              count: latestData.length,
-              timestamp: new Date().toISOString()
-            });
-          } catch (e) {
-            console.error(`[${timestamp}] Failed to persist latest data via /api/sync:`, e);
-          }
-        }
-      }
-
-      // If not handled as a data update, or if data extraction failed, proceed with trigger logic
       lastSyncTriggerTime = Date.now();
-      
-      // Server-side trigger to Zapier (avoids CORS issues)
       const zapierResponse = await fetch('https://hooks.zapier.com/hooks/catch/27155967/uv3omz3/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -278,11 +237,10 @@ async function startServer() {
           source: 'SmartTool Backend'
         })
       });
-      
       res.json({ status: 'Triggered', details: zapierResponse.statusText });
     } catch (error) {
-      console.error(`[${timestamp}] Sync/Update Error:`, error);
-      res.status(500).json({ error: 'System processing error' });
+      console.error(`[${timestamp}] Sync trigger error:`, error);
+      res.status(500).json({ error: 'Failed to trigger sync' });
     }
   });
 
@@ -387,53 +345,6 @@ async function startServer() {
     }
   });
 
-  // Proxy endpoint to push data to external ngrok URL from server-side (bypasses CORS)
-  app.post("/api/external-proxy-sync", async (req, res) => {
-    const timestamp = new Date().toISOString();
-    try {
-      console.log(`[${timestamp}] Routing sync request to external service via server proxy...`);
-      
-      const externalUrl = 'https://smarttool-dash-795899735826.europe-west2.run.app/api/update-data';
-      
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (process.env.GOOGLE_ACCESS_TOKEN) {
-        headers['Authorization'] = `Bearer ${process.env.GOOGLE_ACCESS_TOKEN}`;
-      }
-
-      const response = await fetch(externalUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(req.body)
-      });
-
-      if (!response.ok) {
-        throw new Error(`External service responded with ${response.status}: ${response.statusText}`);
-      }
-
-      // ALSO update local state if valid data is present in this request
-      const dataToStore = extractCompanies(req.body);
-      if (dataToStore && Array.isArray(dataToStore)) {
-        latestData = dataToStore;
-        lastUpdateTime = Date.now();
-        try {
-          fs.writeFileSync(DATA_FILE, JSON.stringify(latestData, null, 2));
-          console.log(`[${timestamp}] ✅ Local data updated via proxy endpoint.`);
-        } catch (e) {
-          console.error('Failed to persist local data in proxy:', e);
-        }
-      }
-
-      console.log(`[${timestamp}] ✅ Successfully pushed to external service.`);
-      res.json({ 
-        status: 'Success', 
-        detail: 'Data pushed via server proxy and updated locally',
-        count: dataToStore ? dataToStore.length : 0 
-      });
-    } catch (error) {
-      console.error(`[${timestamp}] Proxy Sync Error:`, error);
-      res.status(500).json({ error: 'Failed to push data to external service via server proxy', message: error instanceof Error ? error.message : String(error) });
-    }
-  });
 
   // 404 Handler for APIs (BEFORE Vite/Statics catch-all)
   app.use('/api/*', (req, res) => {
