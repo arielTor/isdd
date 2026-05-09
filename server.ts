@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import fs from "fs";
+import mysql from "mysql2/promise";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,6 +155,123 @@ async function startServer() {
     return null;
   };
 
+  // ── Direct DB query ──────────────────────────────────────────────────────
+  const SQL_QUERY = `
+    SELECT
+      c.id                 AS company_id,
+      c.name               AS company_name,
+      c.industry           AS company_industry,
+      c.status             AS company_status,
+      b.id                 AS bank_id,
+      b.name               AS bank_name,
+      b.country            AS bank_country,
+      b.is_verified        AS bank_is_verified,
+      b.last_modified_date AS bank_last_modified,
+      ba.id                AS bank_account_id,
+      ba.account_number    AS bank_account_number,
+      ba.label             AS bank_account_label,
+      w.id                 AS wallet_id,
+      w.currency           AS wallet_currency,
+      w.balance            AS wallet_balance,
+      w.value_usd          AS wallet_value_usd,
+      w.updated_at         AS wallet_updated_at
+    FROM companies c
+    INNER JOIN banks b       ON b.company_id = c.id AND b.is_verified = 1
+    INNER JOIN bank_accounts ba ON ba.bank_id = b.id
+    INNER JOIN wallets w     ON w.account_id = ba.id
+    ORDER BY c.id, b.id, ba.id, w.id
+  `;
+
+  async function queryDatabase(): Promise<void> {
+    const timestamp = new Date().toISOString();
+    const conn = await mysql.createConnection({
+      host:     process.env.DB_HOST     || 'clientsdbs.mysql.database.azure.com',
+      port:     Number(process.env.DB_PORT || 3306),
+      user:     process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      ssl: { rejectUnauthorized: false }, // Azure MySQL requires SSL
+      connectTimeout: 10000,
+    });
+
+    try {
+      const [rows] = await conn.execute(SQL_QUERY) as [any[], any];
+
+      // Transform flat rows → nested Company/Bank/Account/Wallet
+      const companiesMap = new Map<string, any>();
+
+      for (const row of rows) {
+        // Company
+        if (!companiesMap.has(row.company_id)) {
+          companiesMap.set(row.company_id, {
+            id: row.company_id,
+            name: row.company_name,
+            industry: row.company_industry,
+            status: row.company_status,
+            banks: new Map(),
+          });
+        }
+        const company = companiesMap.get(row.company_id);
+
+        // Bank
+        if (!company.banks.has(row.bank_id)) {
+          company.banks.set(row.bank_id, {
+            id: row.bank_id,
+            name: row.bank_name,
+            country: row.bank_country,
+            is_verified: row.bank_is_verified,
+            last_modified: row.bank_last_modified,
+            bank_accounts: new Map(),
+          });
+        }
+        const bank = company.banks.get(row.bank_id);
+
+        // Bank Account
+        if (!bank.bank_accounts.has(row.bank_account_id)) {
+          bank.bank_accounts.set(row.bank_account_id, {
+            id: row.bank_account_id,
+            account_number: row.bank_account_number,
+            label: row.bank_account_label,
+            wallets: [],
+          });
+        }
+        const account = bank.bank_accounts.get(row.bank_account_id);
+
+        // Wallet
+        account.wallets.push({
+          id: row.wallet_id,
+          currency: row.wallet_currency,
+          balance: Number(row.wallet_balance ?? 0),
+          value_usd: Number(row.wallet_value_usd ?? 0),
+          updated_at: row.wallet_updated_at,
+        });
+      }
+
+      // Convert Maps → arrays
+      const data = Array.from(companiesMap.values()).map((c: any) => ({
+        ...c,
+        banks: Array.from(c.banks.values()).map((b: any) => ({
+          ...b,
+          bank_accounts: Array.from(b.bank_accounts.values()),
+        })),
+      }));
+
+      latestData = data;
+      lastUpdateTime = Date.now();
+      fs.writeFileSync(DATA_FILE, JSON.stringify(latestData, null, 2));
+      console.log(`[${timestamp}] ✅ DB sync: ${rows.length} rows → ${data.length} companies`);
+    } finally {
+      await conn.end();
+    }
+  }
+
+  // Trigger an initial DB sync at startup (non-blocking)
+  queryDatabase().catch(err =>
+    console.error(`[STARTUP] DB sync failed: ${err.message}`)
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   // API Route: This is what the dashboard will call to get the latest data
   app.get("/api/liquidity", (req, res) => {
     res.json({
@@ -224,23 +342,20 @@ async function startServer() {
     }
   });
 
-  // API Route: Trigger an outbound Zapier webhook (UI "Sync" button)
+  // API Route: Sync button — queries DB directly and returns fresh data
   app.post("/api/sync", async (req, res) => {
     const timestamp = new Date().toISOString();
     try {
       lastSyncTriggerTime = Date.now();
-      const zapierResponse = await fetch('https://hooks.zapier.com/hooks/catch/27155967/uv3omz3/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestedAt: new Date().toISOString(),
-          source: 'SmartTool Backend'
-        })
+      await queryDatabase();
+      res.json({
+        status: 'Synced',
+        count: latestData.length,
+        timestamp: new Date().toISOString(),
       });
-      res.json({ status: 'Triggered', details: zapierResponse.statusText });
-    } catch (error) {
-      console.error(`[${timestamp}] Sync trigger error:`, error);
-      res.status(500).json({ error: 'Failed to trigger sync' });
+    } catch (error: any) {
+      console.error(`[${timestamp}] DB sync error:`, error);
+      res.status(500).json({ error: 'DB sync failed', message: error.message });
     }
   });
 
