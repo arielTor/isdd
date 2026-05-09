@@ -1,11 +1,11 @@
-import { 
-  Building2, 
-  LayoutDashboard, 
-  History, 
-  Settings, 
-  ShieldCheck, 
-  Search, 
-  Bell, 
+import {
+  Building2,
+  LayoutDashboard,
+  History,
+  Settings,
+  ShieldCheck,
+  Search,
+  Bell,
   ChevronRight,
   Globe,
   Wallet as WalletIcon,
@@ -22,12 +22,14 @@ import {
   Edit2,
   RefreshCcw,
   Terminal,
-  X
+  X,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
 import { MOCK_COMPANIES } from './mockData';
 import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate } from './types';
+import UploadScreen from './UploadScreen';
 
 // --- Exchange Rates Mock ---
 const EXCHANGE_RATES: ExchangeRate[] = [
@@ -51,7 +53,7 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
 };
 
 // --- Types ---
-type Page = 'dashboard' | 'users' | 'alerts';
+type Page = 'dashboard' | 'users' | 'alerts' | 'upload';
 
 // --- Sidebar Component ---
 
@@ -121,6 +123,7 @@ const Sidebar = ({
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
             { id: 'users', icon: Users, label: 'User Management' },
             { id: 'alerts', icon: BellRing, label: 'Alert Center' },
+            { id: 'upload', icon: Upload, label: 'Manual Data Upload' },
           ].map((item) => (
             <button 
               key={item.id}
@@ -1424,6 +1427,7 @@ export default function App() {
   const selectedCompanyName = useMemo(() => {
     if (activePage === 'users') return 'User Management';
     if (activePage === 'alerts') return 'Alert Configuration';
+    if (activePage === 'upload') return 'Manual Data Upload';
     if (!selectedCompanyId) return 'Liquidity Overview';
     return companies.find(c => c.id === selectedCompanyId)?.name || 'Dashboard';
   }, [selectedCompanyId, activePage, companies]);
@@ -1995,13 +1999,24 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <AlertsPage 
+                <AlertsPage
                   companies={companies}
                   alerts={alerts}
                   onAddAlert={handleAddAlert}
                   onDeleteAlert={handleDeleteAlert}
                   onToggleAlert={handleToggleAlert}
                 />
+              </motion.div>
+            )}
+
+            {activePage === 'upload' && (
+              <motion.div
+                key="upload"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <UploadScreen />
               </motion.div>
             )}
           </AnimatePresence>
