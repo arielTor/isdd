@@ -1,39 +1,168 @@
-# Docker
-# Build and push an image to Azure Container Registry
-# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
-
 trigger:
-- main
+  branches:
+    include:
+      - main
 
 resources:
 - repo: self
 
 variables:
-  # Container registry service connection established during pipeline creation
-  dockerRegistryServiceConnection: 'bf409b60-0e86-4956-84ea-49853fab38a0'
+  dockerRegistryServiceConnection: 'corpcompanyreg'
   imageRepository: 'financeboard'
-  containerRegistry: 'corpcompanyreg.azurecr.io'
+  ACR_NAME: 'corpcompanyreg'
+  SERVICE_CONNECTION: 'corp - company'
+  WEB_APP_NAME: 'COMP-FINDASH-PROD'
+  RG: 'corp-company'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
-  tag: '$(Build.BuildId)'
-
-  # Agent VM image name
   vmImageName: 'ubuntu-latest'
+  KEEP_TAGS: '5'
 
 stages:
-- stage: Build
-  displayName: Build and push stage
-  jobs:
-  - job: Build
-    displayName: Build
-    pool:
-      vmImage: $(vmImageName)
-    steps:
-    - task: Docker@2
-      displayName: Build and push an image to container registry
-      inputs:
-        command: buildAndPush
-        repository: $(imageRepository)
-        dockerfile: $(dockerfilePath)
-        containerRegistry: $(dockerRegistryServiceConnection)
-        tags: |
-          $(tag)
+
+  # -------------------------
+  # Stage 1: BuildImage
+  # -------------------------
+  - stage: BuildImage
+    displayName: 'BuildImage'
+    jobs:
+      - job: BuildImage
+        displayName: 'BuildImage'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - task: Docker@2
+            displayName: 'Build and push image to ACR'
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: $(dockerfilePath)
+              containerRegistry: $(dockerRegistryServiceConnection)
+              tags: |
+                $(Build.BuildId)-$(Build.SourceBranchName)
+                $(Build.SourceBranchName)
+
+          - task: AzureCLI@2
+            displayName: 'Clean old tags in ACR'
+            inputs:
+              azureSubscription: $(SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                ACR_NAME="$(ACR_NAME)"
+                REPO="$(imageRepository)"
+                KEEP_TAGS=${KEEP_TAGS:-5}
+
+                echo "ACR: $ACR_NAME  Repo: $REPO  Keep: $KEEP_TAGS"
+
+                TAGS=$(az acr repository show-tags \
+                  --name "$ACR_NAME" \
+                  --repository "$REPO" \
+                  --orderby time_desc \
+                  --output tsv)
+
+                if [[ -z "$TAGS" ]]; then
+                  echo "No tags found for $REPO"
+                  exit 0
+                fi
+
+                COUNT=0
+                while IFS= read -r tag; do
+                  if [[ "$tag" == "main" ]]; then
+                    echo "Skipping protected tag: $tag"
+                    continue
+                  fi
+                  COUNT=$((COUNT+1))
+                  if (( COUNT > KEEP_TAGS )); then
+                    echo "Deleting tag: $tag"
+                    az acr repository untag \
+                      --name "$ACR_NAME" \
+                      --image "$REPO:$tag"
+                  else
+                    echo "Keeping tag: $tag"
+                  fi
+                done <<<"$TAGS"
+
+                echo "Cleanup complete."
+
+  # -------------------------
+  # Stage 2: RestartApp
+  # -------------------------
+  - stage: RestartApp
+    displayName: 'RestartApp'
+    dependsOn: BuildImage
+    condition: succeeded()
+    jobs:
+      - job: RestartApp
+        displayName: 'Restart WebApp'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Restart WebApp'
+            inputs:
+              azureSubscription: $(SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo "Restarting WebApp: $(WEB_APP_NAME)"
+                az webapp restart \
+                  --name $(WEB_APP_NAME) \
+                  --resource-group $(RG)
+
+  # -------------------------
+  # Stage 3: Telegram Success
+  # -------------------------
+  - stage: TelegramSuccess
+    displayName: 'Telegram Success'
+    dependsOn:
+      - BuildImage
+      - RestartApp
+    condition: and(succeeded('BuildImage'), succeeded('RestartApp'))
+    jobs:
+      - job: NotifySuccess
+        displayName: 'Send Success Notification'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - script: |
+              export STATUS="SUCCESS"
+              export PIPELINE="$(Build.DefinitionName)"
+              export BRANCH="$(Build.SourceBranchName)"
+              export CHAT_ID="$(CHAT_ID)"
+              export BOT="$(BOT_TOKEN)"
+              export DEPLOY_TIME=$(date +"%Y-%m-%d %H:%M:%S")
+              export COMMIT_AUTHOR=$(git log --format='%an' -n 1)
+              export BUILD_ID="$(Build.BuildId)"
+              export BUILD_URL="$(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)"
+              bash $PWD/bin/tlg_notification.sh
+            displayName: 'Notify Success'
+
+  # -------------------------
+  # Stage 4: Telegram Failure
+  # -------------------------
+  - stage: TelegramFailure
+    displayName: 'Telegram Failure'
+    dependsOn:
+      - BuildImage
+      - RestartApp
+    condition: or(failed('BuildImage'), failed('RestartApp'))
+    jobs:
+      - job: NotifyFailure
+        displayName: 'Send Failure Notification'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - script: |
+              export STATUS="FAILED"
+              export PIPELINE="$(Build.DefinitionName)"
+              export BRANCH="$(Build.SourceBranchName)"
+              export CHAT_ID="$(CHAT_ID)"
+              export BOT="$(BOT_TOKEN)"
+              export DEPLOY_TIME=$(date +"%Y-%m-%d %H:%M:%S")
+              export COMMIT_AUTHOR=$(git log --format='%an' -n 1)
+              export BUILD_ID="$(Build.BuildId)"
+              export BUILD_URL="$(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)"
+              bash $PWD/bin/tlg_notification.sh
+            displayName: 'Notify Failure'
