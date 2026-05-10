@@ -10,7 +10,7 @@ variables:
   dockerRegistryServiceConnection: 'corpcompanyreg'
   imageRepository: 'financeboard'
   ACR_NAME: 'corpcompanyreg'
-  SERVICE_CONNECTION: 'corp - company'
+  SERVICE_CONNECTION: 'b8d9b6ee-f3a9-48de-95bb-5d712120a97f'
   WEB_APP_NAME: 'COMP-FINDASH-PROD'
   RG: 'corp-company'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
