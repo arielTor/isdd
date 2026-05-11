@@ -361,12 +361,16 @@ stages:
                       --data "{\"type\":\"CNAME\",\"name\":\"$DOM\",\"content\":\"$WEBAPP_DEFAULT\",\"ttl\":1,\"proxied\":false}")
                     CNAME_RESP=$(cat /tmp/cf_cname.json); rm -f /tmp/cf_cname.json
                     CNAME_EXISTS=$(echo "$CNAME_RESP" | python3 -c \
-                      "import sys,json; d=json.load(sys.stdin); print(any(e.get('code')==81058 for e in d.get('errors',[])))")
+                      "import sys,json; d=json.load(sys.stdin); print(any(e.get('code') in (81053,81058) for e in d.get('errors',[])))")
                     if [ "$CNAME_HTTP" -ge 400 ] && [ "$CNAME_EXISTS" != "True" ]; then
                       echo "##[error] CF API error $CNAME_HTTP creating CNAME record:"
                       echo "$CNAME_RESP"; exit 1
                     fi
-                    echo "  CNAME record created"
+                    if [ "$CNAME_EXISTS" = "True" ]; then
+                      echo "  [OK] CNAME record already exists (confirmed via POST)"
+                    else
+                      echo "  CNAME record created"
+                    fi
                     # Re-fetch so the proxy step below has the record ID
                     DNS_RESP=$(curl -s \
                       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DOM" \
