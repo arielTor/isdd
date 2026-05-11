@@ -327,7 +327,8 @@ stages:
                       cat /tmp/cf_txt_post.json; rm -f /tmp/cf_txt_post.json; exit 1
                     fi
                     rm -f /tmp/cf_txt_post.json
-                    echo "  TXT record created"
+                    echo "  TXT record created — waiting 30s for DNS propagation..."
+                    sleep 30
                   else
                     echo "  [OK] TXT record already exists for $TXT_NAME"
                   fi
