@@ -281,7 +281,7 @@ stages:
                 # Get Azure webapp details once — used for CNAME target and TXT verification
                 VERIFY_ID=$(az webapp show \
                   --name "$WEBAPP" --resource-group "$RG" \
-                  --query customDomainVerificationId --output tsv)
+                  --query customDomainVerificationId --output tsv | tr '[:upper:]' '[:lower:]')
                 WEBAPP_DEFAULT=$(az webapp show \
                   --name "$WEBAPP" --resource-group "$RG" \
                   --query defaultHostName --output tsv)
@@ -315,6 +315,23 @@ stages:
                   TXT_COUNT=$(echo "$TXT_RESP" | python3 -c \
                     "import sys,json; print(len(json.load(sys.stdin).get('result',[])))")
 
+                  # If existing TXT record has wrong content (e.g. uppercase), delete and recreate
+                  if [ "$TXT_COUNT" != "0" ]; then
+                    EXISTING_CONTENT=$(echo "$TXT_RESP" | python3 -c \
+                      "import sys,json; print(json.load(sys.stdin)['result'][0]['content'].lower())")
+                    if [ "$EXISTING_CONTENT" != "$VERIFY_ID" ]; then
+                      echo "  TXT record exists but content mismatch — deleting stale record..."
+                      STALE_ID=$(echo "$TXT_RESP" | python3 -c \
+                        "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
+                      curl -s -X DELETE \
+                        "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$STALE_ID" \
+                        -H "Authorization: Bearer $CF_API_TOKEN" > /dev/null
+                      TXT_COUNT="0"
+                    else
+                      echo "  [OK] TXT record already exists for $TXT_NAME"
+                    fi
+                  fi
+
                   if [ "$TXT_COUNT" = "0" ]; then
                     echo "  Creating TXT record $TXT_NAME..."
                     TXT_POST_HTTP=$(curl -s -o /tmp/cf_txt_post.json -w "%{http_code}" -X POST \
@@ -336,8 +353,6 @@ stages:
                       echo "  TXT record created — waiting 30s for DNS propagation..."
                       sleep 30
                     fi
-                  else
-                    echo "  [OK] TXT record already exists for $TXT_NAME"
                   fi
 
                   # Step 2: Ensure CNAME record exists (DNS-only initially so Azure can verify)
