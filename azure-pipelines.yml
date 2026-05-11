@@ -16,9 +16,6 @@ variables:
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   vmImageName: 'ubuntu-latest'
   KEEP_TAGS: '5'
-  # CF domain setup — set DOMAINS and CF_ZONE_ID as pipeline variables in Azure DevOps
-  # DOMAINS format: "app.example.com www.example.com subdomain.other.com@zone_id_for_other"
-  # CF_API_TOKEN: set as secret pipeline variable
 
 stages:
 
@@ -115,248 +112,14 @@ stages:
                   --resource-group $(RG)
 
   # -------------------------
-  # Stage 3: CFOriginCert
-  # -------------------------
-  - stage: CFOriginCert
-    displayName: '3 · CF Origin Cert & Domain TLS'
-    dependsOn: RestartApp
-    condition: succeeded()
-    jobs:
-      - job: CertSetup
-        displayName: 'Bind domains, upload certs, enable CF proxy'
-        pool:
-          vmImage: $(vmImageName)
-        steps:
-          - task: AzureCLI@2
-            displayName: 'Setup CF origin certificates and domain bindings'
-            env:
-              CF_API_TOKEN: $(CF_API_TOKEN)
-            inputs:
-              azureSubscription: $(SERVICE_CONNECTION)
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -e
-
-                WEBAPP="$(WEB_APP_NAME)"
-                RG="$(RG)"
-                DEFAULT_ZONE="$(CF_ZONE_ID)"
-                DOMAINS_INPUT="$(DOMAINS)"
-                THRESHOLD=$(date -d '+30 days' '+%Y-%m-%dT%H:%M:%S')
-
-                echo "Domains to process: $DOMAINS_INPUT"
-                echo ""
-
-                # Get Azure webapp details once — used for CNAME target and TXT verification
-                VERIFY_ID=$(az webapp show \
-                  --name "$WEBAPP" --resource-group "$RG" \
-                  --query customDomainVerificationId --output tsv | tr '[:upper:]' '[:lower:]')
-                WEBAPP_DEFAULT=$(az webapp show \
-                  --name "$WEBAPP" --resource-group "$RG" \
-                  --query defaultHostName --output tsv)
-                echo "Azure verification ID: $VERIFY_ID"
-                echo "Webapp default hostname: $WEBAPP_DEFAULT"
-                echo ""
-
-                for ENTRY in $DOMAINS_INPUT; do
-                  if [[ "$ENTRY" == *"@"* ]]; then
-                    DOM="${ENTRY%@*}"
-                    ZONE_ID="${ENTRY#*@}"
-                  else
-                    DOM="$ENTRY"
-                    ZONE_ID="$DEFAULT_ZONE"
-                  fi
-
-                  # Look up existing cert thumbprint from Azure (wildcard covers subdomains)
-                  DOM_ROOT=$(python3 -c "p='$DOM'.split('.'); print('.'.join(p[-2:]) if len(p)>2 else '$DOM')")
-                  THUMBPRINT=$(az webapp config ssl list \
-                    --resource-group "$RG" \
-                    --query "[?contains(subjectName,'$DOM_ROOT') && expirationDate > '$THRESHOLD'].thumbprint | [0]" \
-                    --output tsv 2>/dev/null || echo "")
-                  [ "$THUMBPRINT" = "None" ] && THUMBPRINT=""
-                  echo "  Cert root: $DOM_ROOT  Thumbprint: ${THUMBPRINT:-(not found)}"
-
-                  echo "--- $DOM ---"
-
-                  # Step 1: Ensure asuid TXT record for Azure domain ownership verification
-                  TXT_NAME="asuid.$DOM"
-                  TXT_HTTP=$(curl -s -o /tmp/cf_txt.json -w "%{http_code}" \
-                    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=TXT&name=$TXT_NAME" \
-                    -H "Authorization: Bearer $CF_API_TOKEN")
-                  if [ "$TXT_HTTP" -ge 400 ]; then
-                    echo "##[error] CF API error $TXT_HTTP checking TXT records:"
-                    cat /tmp/cf_txt.json; rm -f /tmp/cf_txt.json; exit 1
-                  fi
-                  TXT_RESP=$(cat /tmp/cf_txt.json); rm -f /tmp/cf_txt.json
-                  TXT_COUNT=$(echo "$TXT_RESP" | python3 -c \
-                    "import sys,json; print(len(json.load(sys.stdin).get('result',[])))")
-
-                  # If existing TXT record has wrong content (e.g. uppercase), delete and recreate
-                  if [ "$TXT_COUNT" != "0" ]; then
-                    EXISTING_CONTENT=$(echo "$TXT_RESP" | python3 -c \
-                      "import sys,json; print(json.load(sys.stdin)['result'][0]['content'].lower())")
-                    if [ "$EXISTING_CONTENT" != "$VERIFY_ID" ]; then
-                      echo "  TXT record exists but content mismatch — deleting stale record..."
-                      STALE_ID=$(echo "$TXT_RESP" | python3 -c \
-                        "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
-                      curl -s -X DELETE \
-                        "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$STALE_ID" \
-                        -H "Authorization: Bearer $CF_API_TOKEN" > /dev/null
-                      TXT_COUNT="0"
-                    else
-                      echo "  [OK] TXT record already exists for $TXT_NAME"
-                    fi
-                  fi
-
-                  if [ "$TXT_COUNT" = "0" ]; then
-                    echo "  Creating TXT record $TXT_NAME..."
-                    TXT_POST_HTTP=$(curl -s -o /tmp/cf_txt_post.json -w "%{http_code}" -X POST \
-                      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-                      -H "Authorization: Bearer $CF_API_TOKEN" \
-                      -H "Content-Type: application/json" \
-                      --data "{\"type\":\"TXT\",\"name\":\"$TXT_NAME\",\"content\":\"$VERIFY_ID\",\"ttl\":1}")
-                    TXT_POST_RESP=$(cat /tmp/cf_txt_post.json); rm -f /tmp/cf_txt_post.json
-                    # 81058 = "identical record already exists" — treat as success
-                    ALREADY_EXISTS=$(echo "$TXT_POST_RESP" | python3 -c \
-                      "import sys,json; d=json.load(sys.stdin); print(any(e.get('code')==81058 for e in d.get('errors',[])))")
-                    if [ "$TXT_POST_HTTP" -ge 400 ] && [ "$ALREADY_EXISTS" != "True" ]; then
-                      echo "##[error] CF API error $TXT_POST_HTTP creating TXT record:"
-                      echo "$TXT_POST_RESP"; exit 1
-                    fi
-                    if [ "$ALREADY_EXISTS" = "True" ]; then
-                      echo "  [OK] TXT record already exists (confirmed via POST)"
-                    else
-                      echo "  TXT record created — waiting 30s for DNS propagation..."
-                      sleep 30
-                    fi
-                  fi
-
-                  # Step 2: Ensure CNAME record exists (DNS-only initially so Azure can verify)
-                  DNS_HTTP=$(curl -s -o /tmp/cf_dns.json -w "%{http_code}" \
-                    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DOM" \
-                    -H "Authorization: Bearer $CF_API_TOKEN")
-                  if [ "$DNS_HTTP" -ge 400 ]; then
-                    echo "##[error] CF API error $DNS_HTTP checking DNS records:"
-                    cat /tmp/cf_dns.json; rm -f /tmp/cf_dns.json; exit 1
-                  fi
-                  DNS_RESP=$(cat /tmp/cf_dns.json); rm -f /tmp/cf_dns.json
-                  RECORD_COUNT=$(echo "$DNS_RESP" | python3 -c \
-                    "import sys,json; print(len(json.load(sys.stdin).get('result',[])))")
-
-                  if [ "$RECORD_COUNT" = "0" ]; then
-                    echo "  Creating CNAME $DOM → $WEBAPP_DEFAULT (DNS-only)..."
-                    CNAME_HTTP=$(curl -s -o /tmp/cf_cname.json -w "%{http_code}" -X POST \
-                      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-                      -H "Authorization: Bearer $CF_API_TOKEN" \
-                      -H "Content-Type: application/json" \
-                      --data "{\"type\":\"CNAME\",\"name\":\"$DOM\",\"content\":\"$WEBAPP_DEFAULT\",\"ttl\":1,\"proxied\":false}")
-                    CNAME_RESP=$(cat /tmp/cf_cname.json); rm -f /tmp/cf_cname.json
-                    CNAME_EXISTS=$(echo "$CNAME_RESP" | python3 -c \
-                      "import sys,json; d=json.load(sys.stdin); print(any(e.get('code') in (81053,81058) for e in d.get('errors',[])))")
-                    if [ "$CNAME_HTTP" -ge 400 ] && [ "$CNAME_EXISTS" != "True" ]; then
-                      echo "##[error] CF API error $CNAME_HTTP creating CNAME record:"
-                      echo "$CNAME_RESP"; exit 1
-                    fi
-                    if [ "$CNAME_EXISTS" = "True" ]; then
-                      echo "  [OK] CNAME record already exists (confirmed via POST)"
-                    else
-                      echo "  CNAME record created"
-                    fi
-                    # Re-fetch so the proxy step below has the record ID
-                    DNS_RESP=$(curl -s \
-                      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DOM" \
-                      -H "Authorization: Bearer $CF_API_TOKEN")
-                  else
-                    echo "  [OK] DNS record already exists for $DOM"
-                  fi
-
-                  # Step 3: Bind hostname to Azure webapp
-                  BOUND=$(az webapp config hostname list \
-                    --webapp-name "$WEBAPP" \
-                    --resource-group "$RG" \
-                    --query "[?name=='$DOM'].name" \
-                    --output tsv 2>/dev/null || echo "")
-
-                  if [ -n "$BOUND" ]; then
-                    echo "  [OK] Hostname already bound"
-                  else
-                    echo "  Binding hostname $DOM..."
-                    az webapp config hostname add \
-                      --webapp-name "$WEBAPP" \
-                      --resource-group "$RG" \
-                      --hostname "$DOM"
-                    echo "  Hostname bound"
-                  fi
-
-                  # Step 4: Bind cert (SNI) if we have a thumbprint for this zone
-                  if [ -n "$THUMBPRINT" ]; then
-                    HAS_BINDING=$(az webapp show \
-                      --name "$WEBAPP" \
-                      --resource-group "$RG" \
-                      --query "hostNameSslStates[?name=='$DOM' && sslState=='SniEnabled' && thumbprint=='$THUMBPRINT'].name | [0]" \
-                      --output tsv 2>/dev/null || echo "")
-
-                    if [ -n "$HAS_BINDING" ] && [ "$HAS_BINDING" != "None" ]; then
-                      echo "  [OK] SNI binding already set for $DOM"
-                    else
-                      echo "  Binding cert to $DOM (SNI)..."
-                      az webapp config ssl bind \
-                        --certificate-thumbprint "$THUMBPRINT" \
-                        --ssl-type SNI \
-                        --name "$WEBAPP" \
-                        --resource-group "$RG" \
-                        --hostname "$DOM" \
-                        --output none
-                      echo "  SNI binding created"
-                    fi
-                  else
-                    echo "  ##[warning] No thumbprint for zone $ZONE_ID — skipping cert bind"
-                  fi
-
-                  # Step 5: Enable CF proxy
-                  IS_PROXIED=$(echo "$DNS_RESP" | python3 -c \
-                    "import sys,json; print(json.load(sys.stdin)['result'][0]['proxied'])")
-
-                  if [ "$IS_PROXIED" = "True" ]; then
-                    echo "  [OK] CF proxy already enabled"
-                  else
-                    RECORD_ID=$(echo "$DNS_RESP" | python3 -c \
-                      "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
-                    REC_TYPE=$(echo "$DNS_RESP" | python3 -c \
-                      "import sys,json; print(json.load(sys.stdin)['result'][0]['type'])")
-                    REC_NAME=$(echo "$DNS_RESP" | python3 -c \
-                      "import sys,json; print(json.load(sys.stdin)['result'][0]['name'])")
-                    REC_CONTENT=$(echo "$DNS_RESP" | python3 -c \
-                      "import sys,json; print(json.load(sys.stdin)['result'][0]['content'])")
-
-                    PROXY_HTTP=$(curl -s -o /tmp/cf_proxy.json -w "%{http_code}" -X PUT \
-                      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
-                      -H "Authorization: Bearer $CF_API_TOKEN" \
-                      -H "Content-Type: application/json" \
-                      --data "{\"type\":\"$REC_TYPE\",\"name\":\"$REC_NAME\",\"content\":\"$REC_CONTENT\",\"ttl\":1,\"proxied\":true}")
-                    if [ "$PROXY_HTTP" -ge 400 ]; then
-                      echo "##[error] CF API error $PROXY_HTTP enabling proxy:"
-                      cat /tmp/cf_proxy.json; rm -f /tmp/cf_proxy.json; exit 1
-                    fi
-                    rm -f /tmp/cf_proxy.json
-                    echo "  CF proxy enabled"
-                  fi
-
-                  echo ""
-                done
-
-                echo "=== Domain setup complete ==="
-
-  # -------------------------
-  # Stage 4: Telegram Success
+  # Stage 3: Telegram Success
   # -------------------------
   - stage: TelegramSuccess
     displayName: 'Telegram Success'
     dependsOn:
       - BuildImage
       - RestartApp
-      - CFOriginCert
-    condition: and(succeeded('BuildImage'), succeeded('RestartApp'), succeeded('CFOriginCert'))
+    condition: and(succeeded('BuildImage'), succeeded('RestartApp'))
     jobs:
       - job: NotifySuccess
         displayName: 'Send Success Notification'
@@ -377,15 +140,14 @@ stages:
             displayName: 'Notify Success'
 
   # -------------------------
-  # Stage 5: Telegram Failure
+  # Stage 4: Telegram Failure
   # -------------------------
   - stage: TelegramFailure
     displayName: 'Telegram Failure'
     dependsOn:
       - BuildImage
       - RestartApp
-      - CFOriginCert
-    condition: or(failed('BuildImage'), failed('RestartApp'), failed('CFOriginCert'))
+    condition: or(failed('BuildImage'), failed('RestartApp'))
     jobs:
       - job: NotifyFailure
         displayName: 'Send Failure Notification'
