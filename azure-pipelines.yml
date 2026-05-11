@@ -304,41 +304,61 @@ stages:
 
                   # Step 1: Ensure asuid TXT record for Azure domain ownership verification
                   TXT_NAME="asuid.$DOM"
-                  TXT_RESP=$(curl -sf \
+                  TXT_HTTP=$(curl -s -o /tmp/cf_txt.json -w "%{http_code}" \
                     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=TXT&name=$TXT_NAME" \
                     -H "Authorization: Bearer $CF_API_TOKEN")
+                  if [ "$TXT_HTTP" -ge 400 ]; then
+                    echo "##[error] CF API error $TXT_HTTP checking TXT records:"
+                    cat /tmp/cf_txt.json; rm -f /tmp/cf_txt.json; exit 1
+                  fi
+                  TXT_RESP=$(cat /tmp/cf_txt.json); rm -f /tmp/cf_txt.json
                   TXT_COUNT=$(echo "$TXT_RESP" | python3 -c \
                     "import sys,json; print(len(json.load(sys.stdin).get('result',[])))")
 
                   if [ "$TXT_COUNT" = "0" ]; then
                     echo "  Creating TXT record $TXT_NAME..."
-                    curl -sf -X POST \
+                    TXT_POST_HTTP=$(curl -s -o /tmp/cf_txt_post.json -w "%{http_code}" -X POST \
                       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
                       -H "Authorization: Bearer $CF_API_TOKEN" \
                       -H "Content-Type: application/json" \
-                      --data "{\"type\":\"TXT\",\"name\":\"$TXT_NAME\",\"content\":\"$VERIFY_ID\",\"ttl\":1}" > /dev/null
+                      --data "{\"type\":\"TXT\",\"name\":\"$TXT_NAME\",\"content\":\"$VERIFY_ID\",\"ttl\":1}")
+                    if [ "$TXT_POST_HTTP" -ge 400 ]; then
+                      echo "##[error] CF API error $TXT_POST_HTTP creating TXT record:"
+                      cat /tmp/cf_txt_post.json; rm -f /tmp/cf_txt_post.json; exit 1
+                    fi
+                    rm -f /tmp/cf_txt_post.json
                     echo "  TXT record created"
                   else
                     echo "  [OK] TXT record already exists for $TXT_NAME"
                   fi
 
                   # Step 2: Ensure CNAME record exists (DNS-only initially so Azure can verify)
-                  DNS_RESP=$(curl -sf \
+                  DNS_HTTP=$(curl -s -o /tmp/cf_dns.json -w "%{http_code}" \
                     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DOM" \
                     -H "Authorization: Bearer $CF_API_TOKEN")
+                  if [ "$DNS_HTTP" -ge 400 ]; then
+                    echo "##[error] CF API error $DNS_HTTP checking DNS records:"
+                    cat /tmp/cf_dns.json; rm -f /tmp/cf_dns.json; exit 1
+                  fi
+                  DNS_RESP=$(cat /tmp/cf_dns.json); rm -f /tmp/cf_dns.json
                   RECORD_COUNT=$(echo "$DNS_RESP" | python3 -c \
                     "import sys,json; print(len(json.load(sys.stdin).get('result',[])))")
 
                   if [ "$RECORD_COUNT" = "0" ]; then
                     echo "  Creating CNAME $DOM → $WEBAPP_DEFAULT (DNS-only)..."
-                    curl -sf -X POST \
+                    CNAME_HTTP=$(curl -s -o /tmp/cf_cname.json -w "%{http_code}" -X POST \
                       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
                       -H "Authorization: Bearer $CF_API_TOKEN" \
                       -H "Content-Type: application/json" \
-                      --data "{\"type\":\"CNAME\",\"name\":\"$DOM\",\"content\":\"$WEBAPP_DEFAULT\",\"ttl\":1,\"proxied\":false}" > /dev/null
+                      --data "{\"type\":\"CNAME\",\"name\":\"$DOM\",\"content\":\"$WEBAPP_DEFAULT\",\"ttl\":1,\"proxied\":false}")
+                    if [ "$CNAME_HTTP" -ge 400 ]; then
+                      echo "##[error] CF API error $CNAME_HTTP creating CNAME record:"
+                      cat /tmp/cf_cname.json; rm -f /tmp/cf_cname.json; exit 1
+                    fi
+                    rm -f /tmp/cf_cname.json
                     echo "  CNAME record created"
                     # Re-fetch so the proxy step below has the record ID
-                    DNS_RESP=$(curl -sf \
+                    DNS_RESP=$(curl -s \
                       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DOM" \
                       -H "Authorization: Bearer $CF_API_TOKEN")
                   else
@@ -404,12 +424,16 @@ stages:
                     REC_CONTENT=$(echo "$DNS_RESP" | python3 -c \
                       "import sys,json; print(json.load(sys.stdin)['result'][0]['content'])")
 
-                    curl -sf -X PUT \
+                    PROXY_HTTP=$(curl -s -o /tmp/cf_proxy.json -w "%{http_code}" -X PUT \
                       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
                       -H "Authorization: Bearer $CF_API_TOKEN" \
                       -H "Content-Type: application/json" \
-                      --data "{\"type\":\"$REC_TYPE\",\"name\":\"$REC_NAME\",\"content\":\"$REC_CONTENT\",\"ttl\":1,\"proxied\":true}" \
-                      > /dev/null
+                      --data "{\"type\":\"$REC_TYPE\",\"name\":\"$REC_NAME\",\"content\":\"$REC_CONTENT\",\"ttl\":1,\"proxied\":true}")
+                    if [ "$PROXY_HTTP" -ge 400 ]; then
+                      echo "##[error] CF API error $PROXY_HTTP enabling proxy:"
+                      cat /tmp/cf_proxy.json; rm -f /tmp/cf_proxy.json; exit 1
+                    fi
+                    rm -f /tmp/cf_proxy.json
                     echo "  CF proxy enabled"
                   fi
 
