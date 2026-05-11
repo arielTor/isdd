@@ -142,141 +142,10 @@ stages:
                 RG="$(RG)"
                 DEFAULT_ZONE="$(CF_ZONE_ID)"
                 DOMAINS_INPUT="$(DOMAINS)"
+                THRESHOLD=$(date -d '+30 days' '+%Y-%m-%dT%H:%M:%S')
 
                 echo "Domains to process: $DOMAINS_INPUT"
                 echo ""
-
-                # ── 1. Parse domains and group by CF zone ──────────────────────
-                export DOMAINS_INPUT DEFAULT_ZONE
-                python3 - << 'PYEOF' > /tmp/zone_groups.json
-                import json, os
-                di = os.environ['DOMAINS_INPUT']
-                dz = os.environ['DEFAULT_ZONE']
-                groups = {}
-                for entry in di.split():
-                    entry = entry.strip()
-                    if not entry:
-                        continue
-                    if '@' in entry:
-                        dom, zone = entry.rsplit('@', 1)
-                    else:
-                        dom, zone = entry, dz
-                    groups.setdefault(zone, []).append(dom)
-                print(json.dumps(groups))
-                PYEOF
-
-                ZONES=$(python3 -c "import json; print(' '.join(json.load(open('/tmp/zone_groups.json')).keys()))")
-                echo "CF zones to process: $(echo $ZONES | wc -w)"
-                echo ""
-
-                # ── 2. Per zone: check existing cert, create + upload if needed ─
-                > /tmp/zone_thumbprints.txt
-                THRESHOLD=$(date -d '+30 days' '+%Y-%m-%dT%H:%M:%S')
-
-                for ZONE_ID in $ZONES; do
-                  ZONE_DOMS=$(python3 -c "
-                import json
-                print(' '.join(json.load(open('/tmp/zone_groups.json')).get('$ZONE_ID', [])))
-                ")
-                  FIRST_DOM=$(echo "$ZONE_DOMS" | awk '{print $1}')
-                  # For subdomains, use root domain — the wildcard cert covers them
-                  FIRST_ROOT=$(python3 -c "p='$FIRST_DOM'.split('.'); print('.'.join(p[-2:]) if len(p)>2 else '$FIRST_DOM')")
-
-                  echo "=== Zone: $ZONE_ID ==="
-                  echo "    Domains: $ZONE_DOMS"
-                  echo "    Cert root: $FIRST_ROOT"
-
-                  # Check for a valid non-expiring cert for this root already on Azure
-                  THUMBPRINT=$(az webapp config ssl list \
-                    --resource-group "$RG" \
-                    --query "[?contains(subjectName,'$FIRST_ROOT') && expirationDate > '$THRESHOLD'].thumbprint | [0]" \
-                    --output tsv 2>/dev/null || echo "")
-
-                  if [ -n "$THUMBPRINT" ] && [ "$THUMBPRINT" != "None" ]; then
-                    echo "    [OK] Valid cert exists (thumbprint: $THUMBPRINT) — skipping creation"
-                    echo "$ZONE_ID=$THUMBPRINT" >> /tmp/zone_thumbprints.txt
-                    continue
-                  fi
-
-                  echo "    No valid cert found — creating CF origin certificate..."
-
-                  # Cert covers root domain + wildcard (one cert handles all subdomains)
-                  HOSTNAMES_JSON=$(python3 -c "
-                import json
-                doms = '$ZONE_DOMS'.split()
-                roots = set()
-                for d in doms:
-                    p = d.split('.')
-                    roots.add('.'.join(p[-2:]) if len(p) > 2 else d)
-                h = []
-                for r in sorted(roots):
-                    h += [r, '*.' + r]
-                print(json.dumps(h))
-                ")
-                  echo "    Hostnames in cert: $HOSTNAMES_JSON"
-
-                  CF_HTTP=$(curl -s -o /tmp/cf_cert.json -w "%{http_code}" \
-                    -X POST "https://api.cloudflare.com/client/v4/certificates" \
-                    -H "Authorization: Bearer $CF_API_TOKEN" \
-                    -H "Content-Type: application/json" \
-                    --data "{\"hostnames\": $HOSTNAMES_JSON, \"requested_validity\": 5475, \"request_type\": \"origin-rsa\"}")
-                  CERT_RESPONSE=$(cat /tmp/cf_cert.json); rm -f /tmp/cf_cert.json
-
-                  if [ "$CF_HTTP" -ge 400 ]; then
-                    echo "##[error] CF API returned HTTP $CF_HTTP — full response:"
-                    echo "$CERT_RESPONSE"
-                    exit 1
-                  fi
-
-                  CF_SUCCESS=$(echo "$CERT_RESPONSE" | python3 -c \
-                    "import sys,json; print(json.load(sys.stdin).get('success', False))")
-
-                  if [ "$CF_SUCCESS" != "True" ]; then
-                    echo "##[error] CF certificate creation failed for zone $ZONE_ID:"
-                    echo "$CERT_RESPONSE" | python3 -c \
-                      "import sys,json; [print(e) for e in json.load(sys.stdin).get('errors',[])]"
-                    exit 1
-                  fi
-
-                  CF_CERT=$(echo "$CERT_RESPONSE" | python3 -c \
-                    "import sys,json; print(json.load(sys.stdin)['result']['certificate'])")
-                  CF_KEY=$(echo "$CERT_RESPONSE" | python3 -c \
-                    "import sys,json; print(json.load(sys.stdin)['result']['private_key'])")
-                  CF_CERT_ID=$(echo "$CERT_RESPONSE" | python3 -c \
-                    "import sys,json; print(json.load(sys.stdin)['result']['id'])")
-                  echo "    CF cert created (id: $CF_CERT_ID)"
-
-                  printf '%s' "$CF_CERT" > /tmp/cf-cert.pem
-                  printf '%s' "$CF_KEY"  > /tmp/cf-key.pem
-                  CERT_PASS=$(openssl rand -hex 20)
-
-                  # Convert PEM → PFX (Azure requires PFX format)
-                  openssl pkcs12 -export \
-                    -out /tmp/cf-cert.pfx -inkey /tmp/cf-key.pem -in /tmp/cf-cert.pem \
-                    -passout "pass:$CERT_PASS" -legacy 2>/dev/null || \
-                  openssl pkcs12 -export \
-                    -out /tmp/cf-cert.pfx -inkey /tmp/cf-key.pem -in /tmp/cf-cert.pem \
-                    -passout "pass:$CERT_PASS"
-
-                  THUMBPRINT=$(az webapp config ssl upload \
-                    --certificate-file /tmp/cf-cert.pfx \
-                    --certificate-password "$CERT_PASS" \
-                    --name "$WEBAPP" \
-                    --resource-group "$RG" \
-                    --query thumbprint \
-                    --output tsv)
-                  echo "    Cert uploaded (thumbprint: $THUMBPRINT)"
-
-                  rm -f /tmp/cf-cert.pem /tmp/cf-key.pem /tmp/cf-cert.pfx
-
-                  echo "$ZONE_ID=$THUMBPRINT" >> /tmp/zone_thumbprints.txt
-                  echo ""
-                done
-
-                echo "=== Cert upload phase complete ==="
-                echo ""
-
-                # ── 3. Per domain: add DNS records, bind hostname, SNI cert, enable CF proxy ────
 
                 # Get Azure webapp details once — used for CNAME target and TXT verification
                 VERIFY_ID=$(az webapp show \
@@ -298,7 +167,14 @@ stages:
                     ZONE_ID="$DEFAULT_ZONE"
                   fi
 
-                  THUMBPRINT=$(grep "^$ZONE_ID=" /tmp/zone_thumbprints.txt 2>/dev/null | cut -d'=' -f2 || echo "")
+                  # Look up existing cert thumbprint from Azure (wildcard covers subdomains)
+                  DOM_ROOT=$(python3 -c "p='$DOM'.split('.'); print('.'.join(p[-2:]) if len(p)>2 else '$DOM')")
+                  THUMBPRINT=$(az webapp config ssl list \
+                    --resource-group "$RG" \
+                    --query "[?contains(subjectName,'$DOM_ROOT') && expirationDate > '$THRESHOLD'].thumbprint | [0]" \
+                    --output tsv 2>/dev/null || echo "")
+                  [ "$THUMBPRINT" = "None" ] && THUMBPRINT=""
+                  echo "  Cert root: $DOM_ROOT  Thumbprint: ${THUMBPRINT:-(not found)}"
 
                   echo "--- $DOM ---"
 
@@ -469,8 +345,7 @@ stages:
                   echo ""
                 done
 
-                rm -f /tmp/zone_groups.json /tmp/zone_thumbprints.txt
-                echo "=== CF origin cert setup complete for all domains ==="
+                echo "=== Domain setup complete ==="
 
   # -------------------------
   # Stage 4: Telegram Success
