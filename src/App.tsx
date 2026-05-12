@@ -2074,7 +2074,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activePage === 'upload' && (
+            {activePage === 'upload' && (authUser?.role === 'Admin' || authUser?.role === 'Manager') && (
               <motion.div
                 key="upload"
                 initial={{ opacity: 0, x: 20 }}
