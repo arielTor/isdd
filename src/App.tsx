@@ -30,6 +30,16 @@ import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
 import { MOCK_COMPANIES } from './mockData';
 import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate } from './types';
 import UploadScreen from './UploadScreen';
+import LoginScreen from './LoginScreen';
+
+// ── Logged-in user type ───────────────────────────────────────────────────────
+interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  permissions: { company_id: string; bank_id: string | null }[];
+}
 
 // --- Exchange Rates Mock ---
 const EXCHANGE_RATES: ExchangeRate[] = [
@@ -57,19 +67,30 @@ type Page = 'dashboard' | 'users' | 'alerts' | 'upload';
 
 // --- Sidebar Component ---
 
-const Sidebar = ({ 
+const Sidebar = ({
   companies,
-  selectedCompanyId, 
+  selectedCompanyId,
   onSelectCompany,
   activePage,
-  onNavigate
-}: { 
+  onNavigate,
+  authUser,
+  onLogout,
+}: {
   companies: Company[],
-  selectedCompanyId: string | null, 
+  selectedCompanyId: string | null,
   onSelectCompany: (id: string | null) => void,
   activePage: Page,
-  onNavigate: (page: Page) => void
+  onNavigate: (page: Page) => void,
+  authUser: AuthUser | null,
+  onLogout: () => void,
 }) => {
+  // Filter nav items by role
+  const navItems = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'users', icon: Users, label: 'User Management', roles: ['Admin'] },
+    { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
+    { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
+  ].filter(item => !authUser || item.roles.includes(authUser.role));
   return (
     <div className="w-64 h-full bg-sidebar-bg text-white flex flex-col shrink-0">
       <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
@@ -119,18 +140,13 @@ const Sidebar = ({
 
         <div className="pt-6">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">System</div>
-          {[
-            { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-            { id: 'users', icon: Users, label: 'User Management' },
-            { id: 'alerts', icon: BellRing, label: 'Alert Center' },
-            { id: 'upload', icon: Upload, label: 'Manual Data Upload' },
-          ].map((item) => (
-            <button 
+          {navItems.map((item) => (
+            <button
               key={item.id}
               onClick={() => onNavigate(item.id as Page)}
               className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${
-                activePage === item.id 
-                  ? 'bg-slate-700/50 text-white' 
+                activePage === item.id
+                  ? 'bg-slate-700/50 text-white'
                   : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
@@ -142,14 +158,21 @@ const Sidebar = ({
       </nav>
 
       <div className="p-4 mt-auto border-t border-sidebar-border">
-        <div className="flex items-center gap-3 p-2 group cursor-pointer">
-          <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold ring-1 ring-slate-500 group-hover:ring-indigo-400 transition-all">
-            AT
+        <div className="flex items-center gap-3 p-2">
+          <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold ring-1 ring-slate-500 shrink-0">
+            {authUser?.name?.slice(0, 2).toUpperCase() || '??'}
           </div>
-          <div className="text-xs truncate">
-            <div className="font-medium text-slate-200">Arik T.</div>
-            <div className="text-slate-500">Smart Admin</div>
+          <div className="text-xs truncate flex-1 min-w-0">
+            <div className="font-medium text-slate-200 truncate">{authUser?.name || 'Unknown'}</div>
+            <div className="text-slate-500 truncate">{authUser?.role}</div>
           </div>
+          <button
+            onClick={onLogout}
+            title="Sign out"
+            className="text-slate-500 hover:text-red-400 transition-colors p-1 rounded shrink-0"
+          >
+            <Lock size={14} />
+          </button>
         </div>
       </div>
     </div>
@@ -1143,13 +1166,29 @@ const BankCard = ({ bank, onShowDetails, alerts }: { bank: Bank, onShowDetails: 
 // --- App Component ---
 
 export default function App() {
+  // ── Auth state ──────────────────────────────────────────────────────────
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.user) setAuthUser(data.user); })
+      .catch(() => {})
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setAuthUser(null);
+  };
+
+  // ── Company data ────────────────────────────────────────────────────────
   const [companies, setCompanies] = useState<Company[]>(() => {
     const saved = localStorage.getItem('smarttool_data');
     if (!saved) return [];
-    
     try {
       const parsedSaved = JSON.parse(saved);
-      // If it's the wrapped object, extract dashboard_data
       const rawData = parsedSaved.dashboard_data || parsedSaved;
       return Array.isArray(rawData) ? rawData : [];
     } catch (e) {
@@ -1186,22 +1225,24 @@ export default function App() {
       });
   });
 
-  // User Management State
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('smarttool_users');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'u1',
-        name: 'Arik T.',
-        email: 'arik@smarttool.com',
-        role: 'Admin',
-        status: 'Active',
-        lastActive: '2 mins ago',
-        permissions: [] // Initial admin with no explicit perms, effectively "All" in logic usually
+  // User Management State — loaded from DB
+  const [users, setUsers] = useState<User[]>([]);
+
+  const loadUsers = async () => {
+    try {
+      const res = await fetch('/api/users');
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.users || []);
       }
-    ];
-  });
+    } catch (e) {
+      console.error('Failed to load users:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (authUser?.role === 'Admin') loadUsers();
+  }, [authUser]);
 
   const [alerts, setAlerts] = useState<WalletAlert[]>(() => {
     const saved = localStorage.getItem('smarttool_alerts');
@@ -1224,9 +1265,7 @@ export default function App() {
     setIsBankDetailsModalOpen(true);
   };
 
-  useEffect(() => {
-    localStorage.setItem('smarttool_users', JSON.stringify(users));
-  }, [users]);
+  // Users are now stored in DB — no localStorage sync needed
 
   useEffect(() => {
     localStorage.setItem('smarttool_alerts', JSON.stringify(alerts));
@@ -1305,37 +1344,40 @@ export default function App() {
     setIsUserModalOpen(true);
   };
 
-  const handleDeleteUser = (userId: string) => {
-    // Check to prevent self-deletion
-    const user = users.find(u => u.id === userId);
-    if (user?.name === 'Arik T.') {
-      console.warn('Cannot delete the primary admin.');
+  const handleDeleteUser = async (userId: string) => {
+    // Prevent self-deletion
+    if (userId === authUser?.id) {
+      console.warn('Cannot delete your own account.');
       return;
     }
-    setUsers(users.filter(u => u.id !== userId));
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+      if (res.ok) await loadUsers();
+    } catch (e) {
+      console.error('Failed to delete user:', e);
+    }
   };
 
   const handleSaveUser = async (user: User) => {
-    if (editingUser) {
-      setUsers(users.map(u => u.id === user.id ? user : u));
-    } else {
-      setUsers([...users, user]);
-    }
-
-    // Call backend to trigger Zapier (User creation/update)
-    console.log('Firing user sync for:', user.name);
     try {
-      const response = await fetch('/api/users/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user)
-      });
-      const result = await response.json();
-      console.log('User sync result:', result);
+      const isEdit = !!editingUser;
+      const res = await fetch(
+        isEdit ? `/api/users/${user.id}` : '/api/users',
+        {
+          method: isEdit ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(user),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Save user failed:', err.error);
+        return;
+      }
+      await loadUsers(); // refresh from DB
     } catch (e) {
-      console.error('Failed to trigger user sync error:', e);
+      console.error('Failed to save user:', e);
     }
-
     setIsUserModalOpen(false);
   };
 
@@ -1594,14 +1636,32 @@ export default function App() {
 
   const hasAnyWallets = (c: Company) => (c.banks || []).some(b => (b.accounts || []).some(acc => (acc.wallets || []).length > 0));
 
+  // ── Auth gate ────────────────────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-500 text-sm">Loading…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return <LoginScreen onLogin={(user) => setAuthUser(user)} />;
+  }
+
   return (
     <div className="flex h-screen w-full overflow-hidden selection:bg-indigo-600/10 selection:text-indigo-600 font-sans">
-      <Sidebar 
+      <Sidebar
         companies={companies}
-        selectedCompanyId={selectedCompanyId} 
-        onSelectCompany={setSelectedCompanyId} 
+        selectedCompanyId={selectedCompanyId}
+        onSelectCompany={setSelectedCompanyId}
         activePage={activePage}
         onNavigate={setActivePage}
+        authUser={authUser}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">

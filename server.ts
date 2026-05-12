@@ -5,84 +5,139 @@ import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import fs from "fs";
 import mysql from "mysql2/promise";
+import session from "express-session";
+import bcrypt from "bcryptjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ── TypeScript: augment session to hold user ──────────────────────────────
+declare module "express-session" {
+  interface SessionData {
+    user?: {
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      permissions: { company_id: string; bank_id: string | null }[];
+    };
+  }
+}
 
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   // ── CORS — applied only to /api/* routes ─────────────────────────────────
-  // Static files and the SPA shell are served same-origin, so they don't
-  // need CORS headers. Cloudflare adds Origin to every proxied request, which
-  // would otherwise block even simple page loads if CORS were global.
-  //
-  // Allowed origins: APP_URL env var + hardcoded production domain + localhost.
-  // Set APP_URL=https://finboard.corp-domain.com in Azure App Settings if you
-  // want the env var to be the source of truth going forward.
+  // Static files and the SPA shell are served same-origin and don't need CORS.
+  // Cloudflare adds Origin to every proxied request, so we keep CORS off the
+  // static file routes to avoid blocking page loads when APP_URL is unset.
   const allowedOrigins = [
     process.env.APP_URL,
-    'https://finboard.corp-domain.com', // production fallback (Cloudflare proxied)
-    'http://localhost:3000',
-    'http://localhost:5173',
+    "https://finboard.corp-domain.com",
+    "http://localhost:3000",
+    "http://localhost:5173",
   ].filter(Boolean) as string[];
 
   const corsMiddleware = cors({
     origin: (origin, callback) => {
-      // Allow server-to-server requests (no Origin header) and listed origins
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin ${origin} not allowed`));
-      }
+      if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
   });
 
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-  // Request logger (console only — no log files in production)
+  // ── Session ───────────────────────────────────────────────────────────────
+  // SAML-ready: switching to SAML later only changes HOW the session.user is
+  // populated (SAML callback vs password check). Everything downstream — auth
+  // middleware, permission filtering, UI — stays exactly the same.
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        secure: process.env.NODE_ENV === "production",
+        httpOnly: true,
+        sameSite: "lax",
+        maxAge: 8 * 60 * 60 * 1000, // 8 hours
+      },
+    })
+  );
+
+  // Request logger
   app.use((req, _res, next) => {
     console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
     next();
   });
 
-  // ── In-memory data store ──────────────────────────────────────────────────
+  // ── Auth middleware ───────────────────────────────────────────────────────
+  function requireAuth(req: any, res: any, next: any) {
+    if (req.session?.user) return next();
+    res.status(401).json({ error: "Not authenticated" });
+  }
 
-  const DATA_FILE = path.join(process.cwd(), 'latest_liquidity_data.json');
+  function requireAdmin(req: any, res: any, next: any) {
+    if (req.session?.user?.role === "Admin") return next();
+    res.status(403).json({ error: "Admin access required" });
+  }
+
+  // ── In-memory data store ──────────────────────────────────────────────────
+  const DATA_FILE = path.join(process.cwd(), "latest_liquidity_data.json");
   let latestData: any[] = [];
   let lastUpdateTime = Date.now();
 
   if (fs.existsSync(DATA_FILE)) {
     try {
-      latestData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      latestData = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
       lastUpdateTime = fs.statSync(DATA_FILE).mtimeMs;
       console.log(`Loaded ${latestData.length} companies from disk.`);
     } catch (e) {
-      console.error('Failed to load persisted data:', e);
+      console.error("Failed to load persisted data:", e);
     }
   }
 
   // ── DB connection helper ──────────────────────────────────────────────────
-
   function dbConfig() {
     return {
-      host:           process.env.DB_HOST,
-      port:           Number(process.env.DB_PORT || 3306),
-      user:           process.env.DB_USER,
-      password:       process.env.DB_PASSWORD,
-      database:       process.env.DB_NAME,
-      // rejectUnauthorized: true in production (Azure MySQL uses DigiCert CA trusted by Node.js).
-      // Set DB_SSL_VERIFY=false only for local testing against non-Azure MySQL instances.
-      ssl:            { rejectUnauthorized: process.env.DB_SSL_VERIFY !== 'false' },
+      host: process.env.DB_HOST,
+      port: Number(process.env.DB_PORT || 3306),
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      ssl: { rejectUnauthorized: process.env.DB_SSL_VERIFY !== "false" },
       connectTimeout: 10000,
     };
   }
 
-  // ── SQL query ─────────────────────────────────────────────────────────────
+  // ── Helper: filter liquidity data by user permissions ────────────────────
+  function filterByPermissions(
+    data: any[],
+    permissions: { company_id: string; bank_id: string | null }[]
+  ) {
+    if (!permissions || permissions.length === 0) return data;
+    return data
+      .filter((company) =>
+        permissions.some((p) => p.company_id === company.id)
+      )
+      .map((company) => {
+        const perms = permissions.filter((p) => p.company_id === company.id);
+        const seeAllBanks = perms.some((p) => !p.bank_id);
+        return {
+          ...company,
+          banks: seeAllBanks
+            ? company.banks
+            : company.banks.filter((bank: any) =>
+                perms.some((p) => p.bank_id === bank.id)
+              ),
+        };
+      });
+  }
 
+  // ── SQL query ─────────────────────────────────────────────────────────────
   const SQL_QUERY = `
     SELECT
       c.id                 AS company_id,
@@ -117,28 +172,30 @@ async function startServer() {
       throw new Error(`DB connection failed: ${err.message}`);
     }
     try {
-      const [rows] = await conn.execute(SQL_QUERY) as [any[], any];
-
+      const [rows] = (await conn.execute(SQL_QUERY)) as [any[], any];
       const companiesMap = new Map<string, any>();
       for (const row of rows) {
         if (!companiesMap.has(row.company_id)) {
           companiesMap.set(row.company_id, {
-            id: row.company_id, name: row.company_name,
-            industry: row.company_industry, status: row.company_status,
+            id: row.company_id,
+            name: row.company_name,
+            industry: row.company_industry,
+            status: row.company_status,
             banks: new Map(),
           });
         }
         const company = companiesMap.get(row.company_id);
-
         if (!company.banks.has(row.bank_id)) {
           company.banks.set(row.bank_id, {
-            id: row.bank_id, name: row.bank_name,
-            country: row.bank_country, is_verified: row.bank_is_verified,
-            last_modified: row.bank_last_modified, bank_accounts: new Map(),
+            id: row.bank_id,
+            name: row.bank_name,
+            country: row.bank_country,
+            is_verified: row.bank_is_verified,
+            last_modified: row.bank_last_modified,
+            bank_accounts: new Map(),
           });
         }
         const bank = company.banks.get(row.bank_id);
-
         if (!bank.bank_accounts.has(row.bank_account_id)) {
           bank.bank_accounts.set(row.bank_account_id, {
             id: row.bank_account_id,
@@ -148,13 +205,13 @@ async function startServer() {
           });
         }
         bank.bank_accounts.get(row.bank_account_id).wallets.push({
-          id: row.wallet_id, currency: row.wallet_currency,
+          id: row.wallet_id,
+          currency: row.wallet_currency,
           balance: Number(row.wallet_balance ?? 0),
           value_usd: Number(row.wallet_value_usd ?? 0),
           updated_at: row.wallet_updated_at,
         });
       }
-
       const data = Array.from(companiesMap.values()).map((c: any) => ({
         ...c,
         banks: Array.from(c.banks.values()).map((b: any) => ({
@@ -162,7 +219,6 @@ async function startServer() {
           bank_accounts: Array.from(b.bank_accounts.values()),
         })),
       }));
-
       latestData = data;
       lastUpdateTime = Date.now();
       fs.writeFileSync(DATA_FILE, JSON.stringify(latestData, null, 2));
@@ -172,144 +228,403 @@ async function startServer() {
     }
   }
 
-  // Auto-sync on startup (non-blocking — never crashes the server)
-  queryDatabase().catch(err => {
-    const msg = err instanceof AggregateError
-      ? err.errors?.map((e: any) => e.message).join(' | ')
-      : err.message;
-    console.error(`[STARTUP] DB sync failed (will retry on next /api/sync): ${msg}`);
+  queryDatabase().catch((err) => {
+    const msg =
+      err instanceof AggregateError
+        ? err.errors?.map((e: any) => e.message).join(" | ")
+        : err.message;
+    console.error(`[STARTUP] DB sync failed: ${msg}`);
   });
 
-  // ── API Routes (CORS applied here, not globally) ──────────────────────────
+  // ════════════════════════════════════════════════════════════════════════
+  // AUTH ROUTES  (no requireAuth — these are the login endpoints)
+  // ════════════════════════════════════════════════════════════════════════
 
-  // Dashboard data
-  app.get('/api/liquidity', corsMiddleware, (_req, res) => {
-    res.json({ data: latestData, lastUpdateTime });
+  // Check whether any user has a password set yet (first-time setup)
+  app.get("/api/auth/setup-status", corsMiddleware, async (_req, res) => {
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const [rows] = (await conn.execute(
+        "SELECT COUNT(*) AS cnt FROM users WHERE password_hash IS NOT NULL"
+      )) as [any[], any];
+      res.json({ needsSetup: rows[0].cnt === 0 });
+    } catch {
+      // DB unreachable — surface setup page so admin can diagnose
+      res.json({ needsSetup: true });
+    } finally {
+      conn?.end();
+    }
   });
 
-  // Manual sync trigger — re-queries DB and updates in-memory store
-  app.post('/api/sync', corsMiddleware, async (_req, res) => {
+  // One-time initial setup: set first admin password
+  // Blocked as soon as ANY user has a password
+  app.post("/api/auth/setup-initial", corsMiddleware, async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.status(400).json({ error: "Email and password required" });
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const [check] = (await conn.execute(
+        "SELECT COUNT(*) AS cnt FROM users WHERE password_hash IS NOT NULL"
+      )) as [any[], any];
+      if (check[0].cnt > 0)
+        return res.status(403).json({ error: "Setup already completed. Use the login screen." });
+
+      const [users] = (await conn.execute(
+        "SELECT id, name, role FROM users WHERE email = ?",
+        [email]
+      )) as [any[], any];
+      if (users.length === 0)
+        return res.status(404).json({ error: "No user found with that email" });
+
+      const hash = await bcrypt.hash(password, 10);
+      await conn.execute(
+        "UPDATE users SET password_hash = ? WHERE email = ?",
+        [hash, email]
+      );
+      console.log(`✅ Initial password set for ${email}`);
+      res.json({ ok: true, name: users[0].name });
+    } catch (err: any) {
+      console.error("Setup error:", err.message);
+      res.status(500).json({ error: "Setup failed — check server logs" });
+    } finally {
+      conn?.end();
+    }
+  });
+
+  // Login
+  app.post("/api/auth/login", corsMiddleware, async (req: any, res) => {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.status(400).json({ error: "Email and password required" });
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const [users] = (await conn.execute(
+        "SELECT * FROM users WHERE email = ? AND status = 'Active'",
+        [email]
+      )) as [any[], any];
+
+      if (users.length === 0)
+        return res.status(401).json({ error: "Invalid email or password" });
+
+      const user = users[0];
+      if (!user.password_hash)
+        return res
+          .status(401)
+          .json({ error: "Password not set yet. Ask your admin." });
+
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid)
+        return res.status(401).json({ error: "Invalid email or password" });
+
+      // Load permissions
+      const [perms] = (await conn.execute(
+        "SELECT company_id, bank_id FROM user_permissions WHERE user_id = ?",
+        [user.id]
+      )) as [any[], any];
+
+      req.session.user = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        permissions: perms, // empty array = Admin sees everything
+      };
+
+      res.json({ user: req.session.user });
+    } catch (err: any) {
+      console.error("Login error:", err.message);
+      res.status(500).json({ error: "Login failed — check server logs" });
+    } finally {
+      conn?.end();
+    }
+  });
+
+  // Logout
+  app.post("/api/auth/logout", (req: any, res) => {
+    req.session.destroy(() => res.json({ ok: true }));
+  });
+
+  // Current session user
+  app.get("/api/auth/me", corsMiddleware, (req: any, res) => {
+    if (!req.session?.user)
+      return res.status(401).json({ error: "Not authenticated" });
+    res.json({ user: req.session.user });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // USER MANAGEMENT ROUTES  (require auth + admin)
+  // ════════════════════════════════════════════════════════════════════════
+
+  // List all users with their permissions
+  app.get("/api/users", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const [users] = (await conn.execute(
+        "SELECT id, name, email, role, status FROM users ORDER BY name"
+      )) as [any[], any];
+      const [perms] = (await conn.execute(
+        "SELECT user_id, company_id, bank_id FROM user_permissions"
+      )) as [any[], any];
+
+      const result = users.map((u: any) => ({
+        ...u,
+        permissions: (perms as any[])
+          .filter((p: any) => p.user_id === u.id)
+          .map((p: any) => ({
+            companyId: p.company_id,
+            bankIds: p.bank_id ? [p.bank_id] : [],
+          })),
+      }));
+
+      res.json({ users: result });
+    } catch (err: any) {
+      console.error("GET /api/users error:", err.message);
+      res.status(500).json({ error: "Failed to load users" });
+    } finally {
+      conn?.end();
+    }
+  });
+
+  // Create user
+  app.post("/api/users", corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const { name, email, role, status, password, permissions } = req.body;
+    if (!name || !email || !role)
+      return res.status(400).json({ error: "Name, email and role required" });
+
+    const id = `u_${Date.now()}`;
+    const passwordHash = password ? await bcrypt.hash(password, 10) : null;
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      // Check email not already taken
+      const [existing] = (await conn.execute(
+        "SELECT id FROM users WHERE email = ?",
+        [email]
+      )) as [any[], any];
+      if (existing.length > 0)
+        return res.status(409).json({ error: "A user with that email already exists" });
+
+      await conn.execute(
+        "INSERT INTO users (id, name, email, role, status, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
+        [id, name, email, role, status || "Active", passwordHash]
+      );
+
+      // Insert permissions (empty = all access)
+      if (permissions && permissions.length > 0) {
+        for (const p of permissions) {
+          if (!p.companyId) continue;
+          const bankIds: (string | null)[] =
+            p.bankIds && p.bankIds.length > 0 ? p.bankIds : [null];
+          for (const bankId of bankIds) {
+            await conn.execute(
+              "INSERT INTO user_permissions (user_id, company_id, bank_id) VALUES (?, ?, ?)",
+              [id, p.companyId, bankId]
+            );
+          }
+        }
+      }
+
+      res.json({ id, ok: true });
+    } catch (err: any) {
+      console.error("POST /api/users error:", err.message);
+      res.status(500).json({ error: "Failed to create user" });
+    } finally {
+      conn?.end();
+    }
+  });
+
+  // Update user
+  app.put("/api/users/:id", corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { name, email, role, status, password, permissions } = req.body;
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      if (password) {
+        const hash = await bcrypt.hash(password, 10);
+        await conn.execute(
+          "UPDATE users SET name=?, email=?, role=?, status=?, password_hash=? WHERE id=?",
+          [name, email, role, status, hash, id]
+        );
+      } else {
+        await conn.execute(
+          "UPDATE users SET name=?, email=?, role=?, status=? WHERE id=?",
+          [name, email, role, status, id]
+        );
+      }
+
+      // Replace permissions
+      await conn.execute("DELETE FROM user_permissions WHERE user_id = ?", [id]);
+      if (permissions && permissions.length > 0) {
+        for (const p of permissions) {
+          if (!p.companyId) continue;
+          const bankIds: (string | null)[] =
+            p.bankIds && p.bankIds.length > 0 ? p.bankIds : [null];
+          for (const bankId of bankIds) {
+            await conn.execute(
+              "INSERT INTO user_permissions (user_id, company_id, bank_id) VALUES (?, ?, ?)",
+              [id, p.companyId, bankId]
+            );
+          }
+        }
+      }
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("PUT /api/users/:id error:", err.message);
+      res.status(500).json({ error: "Failed to update user" });
+    } finally {
+      conn?.end();
+    }
+  });
+
+  // Delete user
+  app.delete("/api/users/:id", corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      await conn.execute("DELETE FROM user_permissions WHERE user_id = ?", [id]);
+      await conn.execute("DELETE FROM users WHERE id = ?", [id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("DELETE /api/users/:id error:", err.message);
+      res.status(500).json({ error: "Failed to delete user" });
+    } finally {
+      conn?.end();
+    }
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // DATA ROUTES  (require auth — data filtered by permissions)
+  // ════════════════════════════════════════════════════════════════════════
+
+  // Dashboard data — filtered per logged-in user's permissions
+  app.get("/api/liquidity", corsMiddleware, requireAuth, (req: any, res) => {
+    const user = req.session.user;
+    // Admins + users with no explicit permissions see everything
+    if (user.role === "Admin" || !user.permissions || user.permissions.length === 0) {
+      return res.json({ data: latestData, lastUpdateTime });
+    }
+    const filtered = filterByPermissions(latestData, user.permissions);
+    res.json({ data: filtered, lastUpdateTime });
+  });
+
+  // Manual sync trigger
+  app.post("/api/sync", corsMiddleware, requireAuth, async (_req, res) => {
     try {
       await queryDatabase();
-      res.json({ status: 'Synced', count: latestData.length, timestamp: new Date().toISOString() });
+      res.json({ status: "Synced", count: latestData.length, timestamp: new Date().toISOString() });
     } catch (err: any) {
-      console.error('DB sync error:', err.message); // full details server-side only
-      res.status(500).json({ error: 'Sync failed — check server logs' });
+      console.error("DB sync error:", err.message);
+      res.status(500).json({ error: "Sync failed — check server logs" });
     }
   });
 
   // Manual wallet balance update
-  app.post('/api/update-balances', corsMiddleware, async (req, res) => {
-    const updates: { wallet_id: string; wallet_balance: number; wallet_value_usd: number | null }[] = req.body?.updates;
-
-    if (!Array.isArray(updates) || updates.length === 0) {
-      return res.status(400).json({ error: 'No updates provided' });
-    }
+  app.post("/api/update-balances", corsMiddleware, requireAuth, async (req, res) => {
+    const updates: { wallet_id: string; wallet_balance: number; wallet_value_usd: number | null }[] =
+      req.body?.updates;
+    if (!Array.isArray(updates) || updates.length === 0)
+      return res.status(400).json({ error: "No updates provided" });
 
     let conn: any;
     try {
       conn = await mysql.createConnection(dbConfig());
     } catch (err: any) {
-      console.error('Balance update — DB connection failed:', err.message);
-      return res.status(500).json({ error: 'Database unavailable — check server logs' });
+      console.error("Balance update — DB connection failed:", err.message);
+      return res.status(500).json({ error: "Database unavailable — check server logs" });
     }
 
     let updated = 0;
     const notFound: string[] = [];
-
     try {
       for (const u of updates) {
         const hasusd = u.wallet_value_usd !== null && u.wallet_value_usd !== undefined;
         const sql = hasusd
-          ? `UPDATE wallets SET balance = ?, value_usd = ?, updated_at = NOW() WHERE id = ?`
-          : `UPDATE wallets SET balance = ?, updated_at = NOW() WHERE id = ?`;
+          ? "UPDATE wallets SET balance = ?, value_usd = ?, updated_at = NOW() WHERE id = ?"
+          : "UPDATE wallets SET balance = ?, updated_at = NOW() WHERE id = ?";
         const params = hasusd
           ? [u.wallet_balance, u.wallet_value_usd, u.wallet_id]
           : [u.wallet_balance, u.wallet_id];
-
-        const [result] = await conn.execute(sql, params) as any[];
+        const [result] = (await conn.execute(sql, params)) as any[];
         if (result.affectedRows === 0) notFound.push(u.wallet_id);
         else updated++;
       }
-
-      await queryDatabase().catch(err => console.warn('Post-update sync failed:', err.message));
+      await queryDatabase().catch((err) =>
+        console.warn("Post-update sync failed:", err.message)
+      );
       res.json({ updated, notFound });
     } catch (err: any) {
-      console.error('Balance update error:', err.message); // full details server-side only
-      res.status(500).json({ error: 'Update failed — check server logs' });
+      console.error("Balance update error:", err.message);
+      res.status(500).json({ error: "Update failed — check server logs" });
     } finally {
       await conn.end();
     }
   });
 
   // Alert rule saved → push to Zapier
-  app.post('/api/alerts/trigger', corsMiddleware, async (req, res) => {
+  app.post("/api/alerts/trigger", corsMiddleware, requireAuth, async (req, res) => {
     const webhookUrl = process.env.ZAPIER_ALERTS_WEBHOOK;
-    if (!webhookUrl) return res.status(503).json({ error: 'ZAPIER_ALERTS_WEBHOOK not configured' });
+    if (!webhookUrl)
+      return res.status(503).json({ error: "ZAPIER_ALERTS_WEBHOOK not configured" });
     try {
       const { id, companyId, bankId, walletId, threshold, email, isEnabled } = req.body;
       const payload = { id, company_id: companyId, bank_id: bankId, wallet_id: walletId, threshold, email, is_enabled: isEnabled ? 1 : 0 };
-      const r = await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      res.json({ status: 'Triggered', details: r.statusText });
+      const r = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      res.json({ status: "Triggered", details: r.statusText });
     } catch (err: any) {
-      console.error('alerts/trigger error:', err.message);
-      res.status(500).json({ error: 'Failed to trigger alert sync' });
-    }
-  });
-
-  // User saved → push to Zapier
-  app.post('/api/users/trigger', corsMiddleware, async (req, res) => {
-    const webhookUrl = process.env.ZAPIER_USERS_WEBHOOK;
-    if (!webhookUrl) return res.status(503).json({ error: 'ZAPIER_USERS_WEBHOOK not configured' });
-    try {
-      const user = req.body;
-      const permissions = (user.permissions || []).flatMap((p: any) =>
-        p.bankIds.length === 0
-          ? [{ user_id: user.id, company_id: p.companyId, bank_id: 'ALL' }]
-          : p.bankIds.map((bankId: string) => ({ user_id: user.id, company_id: p.companyId, bank_id: bankId }))
-      );
-      const payload = { user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }, permissions };
-      const r = await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      res.json({ status: 'Triggered', details: r.statusText });
-    } catch (err: any) {
-      console.error('users/trigger error:', err.message);
-      res.status(500).json({ error: 'Failed to trigger user sync' });
+      console.error("alerts/trigger error:", err.message);
+      res.status(500).json({ error: "Failed to trigger alert sync" });
     }
   });
 
   // Threshold breach notification → push to Zapier
-  app.post('/api/alerts/notify', corsMiddleware, async (req, res) => {
+  app.post("/api/alerts/notify", corsMiddleware, requireAuth, async (req, res) => {
     const webhookUrl = process.env.ZAPIER_NOTIFY_WEBHOOK;
-    if (!webhookUrl) return res.status(503).json({ error: 'ZAPIER_NOTIFY_WEBHOOK not configured' });
+    if (!webhookUrl)
+      return res.status(503).json({ error: "ZAPIER_NOTIFY_WEBHOOK not configured" });
     try {
-      const r = await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
-      res.json({ status: 'Triggered', details: r.statusText });
+      const r = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req.body) });
+      res.json({ status: "Triggered", details: r.statusText });
     } catch (err: any) {
-      console.error('alerts/notify error:', err.message);
-      res.status(500).json({ error: 'Failed to trigger alert notification' });
+      console.error("alerts/notify error:", err.message);
+      res.status(500).json({ error: "Failed to trigger alert notification" });
     }
   });
 
   // 404 for unknown API routes
-  app.use('/api/*', corsMiddleware, (req, res) => {
-    res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl });
+  app.use("/api/*", corsMiddleware, (req, res) => {
+    res.status(404).json({ error: "Endpoint not found", path: req.originalUrl });
   });
 
   // ── Frontend serving ──────────────────────────────────────────────────────
-
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true, allowedHosts: 'all' },
-      appType: 'spa',
+      server: { middlewareMode: true, allowedHosts: "all" },
+      appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
+    app.get("*", (_req, res) =>
+      res.sendFile(path.join(distPath, "index.html"))
+    );
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
