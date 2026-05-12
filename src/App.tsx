@@ -635,7 +635,8 @@ const AlertsPage = ({
     if (!selectedCompanyId || !selectedBankId || (!selectedWalletId && !applyToAllInBank) || !threshold || !email) return;
 
     if (applyToAllInBank && selectedBank) {
-      const wallets = selectedBank.accounts.flatMap(acc => acc.wallets);
+      const accs = selectedBank.bank_accounts || selectedBank.accounts || [];
+      const wallets = accs.flatMap(acc => acc.wallets || []);
       wallets.forEach(w => {
         onAddAlert({
           companyId: selectedCompanyId,
@@ -720,7 +721,7 @@ const AlertsPage = ({
                 className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white text-sm disabled:opacity-50"
               >
                 <option value="">Select Wallet</option>
-                {selectedBank?.accounts.flatMap(acc => acc.wallets).map(w => (
+                {(selectedBank?.bank_accounts || selectedBank?.accounts || []).flatMap(acc => acc.wallets || []).map(w => (
                   <option key={w.id} value={w.id}>{w.id} ({w.currency})</option>
                 ))}
               </select>
@@ -1245,7 +1246,7 @@ export default function App() {
 
       const company = companies.find(c => c.id === alert.companyId);
       const bank = company?.banks.find(b => b.id === alert.bankId);
-      const wallet = bank?.accounts.flatMap(acc => acc.wallets).find(w => w.id === alert.walletId);
+      const wallet = (bank?.bank_accounts || bank?.accounts || []).flatMap(acc => acc.wallets || []).find(w => w.id === alert.walletId);
 
       if (wallet && wallet.balance <= alert.threshold) {
         // Threshold triggered
@@ -1263,7 +1264,7 @@ export default function App() {
             threshold: alert.threshold,
             email_address: alert.email,
             // Context of all wallets in the bank
-            all_bank_wallets: bank?.accounts.flatMap(acc => acc.wallets).map(w => ({
+            all_bank_wallets: (bank?.bank_accounts || bank?.accounts || []).flatMap(acc => acc.wallets || []).map(w => ({
               id: w.id,
               balance: w.balance,
               currency: w.currency
