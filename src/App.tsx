@@ -1532,64 +1532,42 @@ export default function App() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    const initiatedAt = Date.now();
     try {
-      // POST to our backend proxy to avoid CORS issues
-      await fetch('/api/external-proxy-sync', { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: companies })
-      });
-      
-      // Wait a bit for the external service to process and push back to our dashboard
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Trigger a fresh DB query on the server
+      await fetch('/api/sync', { method: 'POST' });
 
-      let dataFound = false;
-      // Increased polling frequency (every 1s) and maintained 120s total
-      for (let i = 0; i < 120; i++) {
-        const res = await fetch('/api/liquidity');
-        const result = await res.json();
-        
-        const data = result.data || result.dashboard_data || (Array.isArray(result) ? result : null);
-        const lastUpdate = result.lastUpdateTime || 0;
+      // Fetch the updated data
+      const res = await fetch('/api/liquidity');
+      const result = await res.json();
+      const data = result.data || result.dashboard_data || (Array.isArray(result) ? result : null);
+      const lastUpdate = result.lastUpdateTime || 0;
 
-        // Detection logic:
-        // 1. Actually new (updated after we clicked Sync)
-        // 2. Different from our current state (someone updated it externally)
-        const isActuallyNew = lastUpdate >= (initiatedAt - 2000); 
-        const isDifferent = JSON.stringify(data) !== JSON.stringify(companiesRef.current);
+      if (data && Array.isArray(data) && data.length > 0) {
+        console.log('%c [Sync] Data refreshed from DB.', 'color: #22c55e; font-weight: bold;');
+        setCompanies(data);
+        localStorage.setItem('smarttool_data', JSON.stringify(data));
 
-        if (data && Array.isArray(data) && data.length > 0 && (isActuallyNew || isDifferent)) {
-          console.log('%c [Sync] New data detected!', 'color: #22c55e; font-weight: bold;');
-          setCompanies(data);
-          localStorage.setItem('smarttool_data', JSON.stringify(data));
-          
-          const syncTime = new Date(lastUpdate).toLocaleTimeString('en-GB', { 
-            timeZone: 'Asia/Jerusalem',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true
-          });
-          setLastSynced(syncTime);
-          localStorage.setItem('smarttool_last_sync', syncTime);
-          
-          dataFound = true;
-          break;
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
-      if (!dataFound) {
-        console.warn('Sync still in progress or failed to return data within 120s.');
-        const res = await fetch('/api/liquidity');
-        const result = await res.json();
-        const data = result.data || result.dashboard_data || (Array.isArray(result) ? result : null);
-        const lastUpdate = result.lastUpdateTime || 0;
-        
-        if (data && data.length > 0) {
-          setCompanies(data);
-          const syncTime = new Date(lastUpdate).toLocaleTimeString('en-GB', { 
+        const syncTime = new Date(lastUpdate).toLocaleTimeString('en-GB', {
+          timeZone: 'Asia/Jerusalem',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        });
+        setLastSynced(syncTime);
+        localStorage.setItem('smarttool_last_sync', syncTime);
+      } else {
+        console.warn('Sync complete — no data returned (DB may be empty or unreachable).');
+
+        // Still update the in-memory view with whatever we got
+        const fallbackRes = await fetch('/api/liquidity');
+        const fallbackResult = await fallbackRes.json();
+        const fallbackData = fallbackResult.data || fallbackResult.dashboard_data || (Array.isArray(fallbackResult) ? fallbackResult : null);
+        const fallbackUpdate = fallbackResult.lastUpdateTime || 0;
+
+        if (fallbackData && fallbackData.length > 0) {
+          setCompanies(fallbackData);
+          const syncTime = new Date(fallbackUpdate).toLocaleTimeString('en-GB', {
             timeZone: 'Asia/Jerusalem',
             hour: '2-digit',
             minute: '2-digit',
