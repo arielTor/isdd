@@ -23,7 +23,9 @@ import {
   RefreshCcw,
   Terminal,
   X,
-  Upload
+  Upload,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
@@ -201,6 +203,8 @@ const UserModal = ({
     status: 'Active',
     permissions: []
   });
+  const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -214,6 +218,8 @@ const UserModal = ({
         permissions: []
       });
     }
+    setPassword('');
+    setShowPw(false);
   }, [user, isOpen]);
 
   const togglePermission = (companyId: string, bankId?: string) => {
@@ -337,6 +343,25 @@ const UserModal = ({
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              {user ? 'Change Password' : 'Password'}{user ? ' (leave blank to keep current)' : ''}
+            </label>
+            <div className="relative">
+              <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder={user ? '••••••••' : 'Min. 8 characters'}
+                className="w-full pl-9 pr-10 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all"
+              />
+              <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-3">
             <label className="text-[11px] font-bold text-slate-500 uppercase block tracking-wider">Company & Bank Access</label>
             <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
@@ -405,13 +430,14 @@ const UserModal = ({
             >
               Cancel
             </button>
-            <button 
-              onClick={() => onSave({ 
-                ...formData, 
-                id: user?.id || `u_${Date.now()}`, 
-                lastActive: user?.lastActive || 'Never' 
+            <button
+              onClick={() => onSave({
+                ...formData,
+                id: user?.id || `u_${Date.now()}`,
+                lastActive: user?.lastActive || 'Never',
+                ...(password ? { password } : {}),
               } as User)}
-              disabled={!formData.name || !formData.email}
+              disabled={!formData.name || !formData.email || (!user && !password)}
               className="px-6 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold shadow-lg shadow-slate-900/10 hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2"
             >
               {user ? 'Update User' : 'Grant Access'}

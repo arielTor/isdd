@@ -45,6 +45,7 @@ export interface User {
   status: 'Active' | 'Inactive';
   lastActive: string;
   permissions: UserPermission[];
+  password?: string; // only used when creating/updating — never returned by API
 }
 
 export interface Company {
