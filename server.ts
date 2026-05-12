@@ -191,7 +191,7 @@ async function startServer() {
             name: row.bank_name,
             country: row.bank_country,
             is_verified: row.bank_is_verified,
-            last_modified: row.bank_last_modified,
+            last_modified_date: row.bank_last_modified,
             bank_accounts: new Map(),
           });
         }
@@ -519,6 +519,45 @@ async function startServer() {
     }
     const filtered = filterByPermissions(latestData, user.permissions);
     res.json({ data: filtered, lastUpdateTime });
+  });
+
+  // All wallets for Manual Data Upload (Admin + Manager only, all banks regardless of is_verified)
+  app.get("/api/wallets", corsMiddleware, requireAuth, async (req: any, res) => {
+    const role = req.session.user?.role;
+    if (role !== "Admin" && role !== "Manager")
+      return res.status(403).json({ error: "Admin or Manager access required" });
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const [rows] = (await conn.execute(`
+        SELECT
+          c.id     AS company_id,
+          c.name   AS company_name,
+          b.id     AS bank_id,
+          b.name   AS bank_name,
+          b.country AS bank_country,
+          ba.id           AS account_id,
+          ba.account_number AS account_number,
+          ba.label          AS account_label,
+          w.id        AS wallet_id,
+          w.currency  AS wallet_currency,
+          w.balance   AS wallet_balance,
+          w.value_usd AS wallet_value_usd
+        FROM companies c
+        INNER JOIN banks b          ON b.company_id = c.id
+        INNER JOIN bank_accounts ba ON ba.bank_id = b.id
+        INNER JOIN wallets w        ON w.account_id = ba.id
+        ORDER BY c.name, b.name, ba.account_number, w.currency
+      `)) as [any[], any];
+
+      res.json({ wallets: rows });
+    } catch (err: any) {
+      console.error("GET /api/wallets error:", err.message);
+      res.status(500).json({ error: "Failed to load wallets" });
+    } finally {
+      conn?.end();
+    }
   });
 
   // Manual sync trigger

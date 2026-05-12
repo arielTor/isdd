@@ -6,13 +6,15 @@ import { RefreshCcw, AlertTriangle, CheckCircle, Save } from 'lucide-react';
 interface WalletRow {
   wallet_id: string;
   company_name: string;
+  bank_id: string;
   bank_name: string;
   bank_country: string;
+  account_id: string;
   account_number: string;
   account_label: string;
-  currency: string;
-  current_balance: number;
-  current_value_usd: number;
+  wallet_currency: string;
+  wallet_balance: number;
+  wallet_value_usd: number;
   new_balance: string;
   new_value_usd: string;
   dirty: boolean;
@@ -28,44 +30,40 @@ export default function UploadScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // ── Load wallets from /api/liquidity ─────────────────────────────────────
+  // ── Load all wallets from /api/wallets ───────────────────────────────────
 
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
         setLoadError(null);
-        const res = await fetch('/api/liquidity');
-        const json = await res.json();
-        const companies: any[] = json.data || [];
-
-        const flat: WalletRow[] = [];
-        for (const company of companies) {
-          for (const bank of (company.banks || [])) {
-            for (const account of (bank.bank_accounts || bank.accounts || [])) {
-              for (const wallet of (account.wallets || [])) {
-                flat.push({
-                  wallet_id: wallet.id,
-                  company_name: company.name,
-                  bank_name: bank.name,
-                  bank_country: bank.country || '',
-                  account_number: account.account_number || '',
-                  account_label: account.label || '',
-                  currency: wallet.currency,
-                  current_balance: Number(wallet.balance ?? 0),
-                  current_value_usd: Number(wallet.value_usd ?? 0),
-                  new_balance: '',
-                  new_value_usd: '',
-                  dirty: false,
-                  saving: false,
-                  saved: false,
-                  saveError: null,
-                });
-              }
-            }
-          }
+        const res = await fetch('/api/wallets');
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Server error (${res.status})`);
         }
-        setRows(flat);
+        const json = await res.json();
+        const wallets: any[] = json.wallets || [];
+
+        setRows(wallets.map(w => ({
+          wallet_id: w.wallet_id,
+          company_name: w.company_name,
+          bank_id: w.bank_id,
+          bank_name: w.bank_name,
+          bank_country: w.bank_country || '',
+          account_id: w.account_id,
+          account_number: w.account_number || '',
+          account_label: w.account_label || '',
+          wallet_currency: w.wallet_currency,
+          wallet_balance: Number(w.wallet_balance ?? 0),
+          wallet_value_usd: Number(w.wallet_value_usd ?? 0),
+          new_balance: '',
+          new_value_usd: '',
+          dirty: false,
+          saving: false,
+          saved: false,
+          saveError: null,
+        })));
       } catch (e: any) {
         setLoadError('Failed to load wallet list: ' + e.message);
       } finally {
@@ -85,7 +83,7 @@ export default function UploadScreen() {
     ));
   }
 
-  // ── Save a single row ────────────────────────────────────────────────────
+  // ── Save a single row ─────────────────────────────────────────────────────
 
   async function handleSave(wallet_id: string) {
     const row = rows.find(r => r.wallet_id === wallet_id);
@@ -96,7 +94,7 @@ export default function UploadScreen() {
 
     if (isNaN(newBal) || newBal < 0) {
       setRows(prev => prev.map(r =>
-        r.wallet_id === wallet_id ? { ...r, saveError: 'Balance must be a positive number' } : r
+        r.wallet_id === wallet_id ? { ...r, saveError: 'Balance must be ≥ 0' } : r
       ));
       return;
     }
@@ -110,22 +108,18 @@ export default function UploadScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          updates: [{
-            wallet_id,
-            wallet_balance: newBal,
-            wallet_value_usd: newUsd,
-          }],
+          updates: [{ wallet_id, wallet_balance: newBal, wallet_value_usd: newUsd }],
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Server error');
+      if (!res.ok) throw new Error(json.error || 'Server error');
 
       setRows(prev => prev.map(r =>
         r.wallet_id === wallet_id
           ? {
               ...r,
-              current_balance: newBal,
-              current_value_usd: newUsd ?? r.current_value_usd,
+              wallet_balance: newBal,
+              wallet_value_usd: newUsd ?? r.wallet_value_usd,
               new_balance: '',
               new_value_usd: '',
               dirty: false,
@@ -136,7 +130,6 @@ export default function UploadScreen() {
           : r
       ));
 
-      // Clear the saved checkmark after 3 seconds
       setTimeout(() => {
         setRows(prev => prev.map(r =>
           r.wallet_id === wallet_id ? { ...r, saved: false } : r
@@ -149,7 +142,7 @@ export default function UploadScreen() {
     }
   }
 
-  // ── Group by company ──────────────────────────────────────────────────────
+  // ── Group rows ────────────────────────────────────────────────────────────
 
   const companyNames = [...new Set(rows.map(r => r.company_name))];
 
@@ -184,6 +177,13 @@ export default function UploadScreen() {
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
           <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
           <p className="text-sm text-red-700">{loadError}</p>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && !loadError && rows.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+          <p className="text-sm">No wallets found in the database.</p>
         </div>
       )}
 
@@ -252,18 +252,18 @@ export default function UploadScreen() {
                         {/* Currency */}
                         <td className="px-6 py-4 text-center">
                           <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                            {row.currency}
+                            {row.wallet_currency}
                           </span>
                         </td>
 
                         {/* Current balance */}
                         <td className="px-6 py-4 text-right font-mono font-semibold text-slate-700">
-                          {row.current_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                          {row.wallet_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
                         </td>
 
                         {/* Current value_usd */}
                         <td className="px-6 py-4 text-right font-mono text-slate-500 text-xs">
-                          ${row.current_value_usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${row.wallet_value_usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
 
                         {/* New balance input */}
@@ -341,7 +341,6 @@ export default function UploadScreen() {
           </div>
         );
       })}
-
     </div>
   );
 }
