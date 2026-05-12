@@ -205,6 +205,7 @@ const UserModal = ({
   });
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [modalError, setModalError] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -220,6 +221,7 @@ const UserModal = ({
     }
     setPassword('');
     setShowPw(false);
+    setModalError('');
   }, [user, isOpen]);
 
   const togglePermission = (companyId: string, bankId?: string) => {
@@ -352,7 +354,8 @@ const UserModal = ({
               <input
                 type={showPw ? 'text' : 'password'}
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={e => { setPassword(e.target.value); setModalError(''); }}
+                onInput={e => { setPassword((e.target as HTMLInputElement).value); setModalError(''); }}
                 placeholder={user ? '••••••••' : 'Min. 8 characters'}
                 className="w-full pl-9 pr-10 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all"
               />
@@ -420,24 +423,43 @@ const UserModal = ({
         </div>
 
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-          <p className="text-[10px] text-slate-400 font-medium max-w-[200px]">
-            * Permissions are immediately applied upon saving.
-          </p>
+          <div>
+            {modalError ? (
+              <p className="text-xs text-red-500 font-medium flex items-center gap-1">
+                <span>⚠</span> {modalError}
+              </p>
+            ) : (
+              <p className="text-[10px] text-slate-400 font-medium max-w-[200px]">
+                * Permissions are immediately applied upon saving.
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={onClose}
               className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
             >
               Cancel
             </button>
             <button
-              onClick={() => onSave({
-                ...formData,
-                id: user?.id || `u_${Date.now()}`,
-                lastActive: user?.lastActive || 'Never',
-                ...(password ? { password } : {}),
-              } as User)}
-              disabled={!formData.name || !formData.email || (!user && !password)}
+              onClick={() => {
+                if (!formData.name || !formData.email) {
+                  setModalError('Name and email are required.');
+                  return;
+                }
+                if (!user && !password) {
+                  setModalError('Password is required for new users.');
+                  return;
+                }
+                setModalError('');
+                onSave({
+                  ...formData,
+                  id: user?.id || `u_${Date.now()}`,
+                  lastActive: user?.lastActive || 'Never',
+                  ...(password ? { password } : {}),
+                } as User);
+              }}
+              disabled={!formData.name || !formData.email}
               className="px-6 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold shadow-lg shadow-slate-900/10 hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2"
             >
               {user ? 'Update User' : 'Grant Access'}
@@ -481,7 +503,7 @@ const UserManagementPage = ({
           className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all flex items-center gap-2"
         >
           <Plus size={18} />
-          Provision New Identity
+          Add New User
         </button>
       </div>
 
