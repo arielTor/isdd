@@ -6,6 +6,7 @@ import cors from "cors";
 import fs from "fs";
 import mysql from "mysql2/promise";
 import session from "express-session";
+import MySQLStoreFactory from "express-mysql-session";
 import bcrypt from "bcryptjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,13 +51,28 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-  // ── Session ───────────────────────────────────────────────────────────────
+  // ── Session — stored in MySQL so sessions survive server restarts ─────────
   // SAML-ready: switching to SAML later only changes HOW the session.user is
   // populated (SAML callback vs password check). Everything downstream — auth
   // middleware, permission filtering, UI — stays exactly the same.
+  const MySQLStore = MySQLStoreFactory(session as any);
+  const sessionStore = new MySQLStore({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+    ssl: process.env.DB_SSL_VERIFY === "false" ? undefined : { rejectUnauthorized: true },
+    createDatabaseTable: true, // auto-creates the `sessions` table
+    clearExpired: true,
+    checkExpirationInterval: 15 * 60 * 1000, // clean up every 15 min
+    expiration: 8 * 60 * 60 * 1000, // match cookie max age
+  } as any);
+
   app.use(
     session({
       secret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
+      store: sessionStore,
       resave: false,
       saveUninitialized: false,
       cookie: {
@@ -90,14 +106,11 @@ async function startServer() {
   let latestData: any[] = [];
   let lastUpdateTime = Date.now();
 
+  // Delete stale JSON cache on startup — always fetch fresh from DB so
+  // last_modified_date and balances are never served from a stale file.
   if (fs.existsSync(DATA_FILE)) {
-    try {
-      latestData = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-      lastUpdateTime = fs.statSync(DATA_FILE).mtimeMs;
-      console.log(`Loaded ${latestData.length} companies from disk.`);
-    } catch (e) {
-      console.error("Failed to load persisted data:", e);
-    }
+    try { fs.unlinkSync(DATA_FILE); } catch (_) {}
+    console.log("Cleared stale data cache — will fetch fresh from DB.");
   }
 
   // ── DB connection helper ──────────────────────────────────────────────────
