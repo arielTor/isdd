@@ -112,14 +112,130 @@ stages:
                   --resource-group $(RG)
 
   # -------------------------
-  # Stage 3: Telegram Success
+  # Stage 3: CFNetworkRestrictions
+  # -------------------------
+  - stage: CFNetworkRestrictions
+    displayName: '3 · Apply Cloudflare IP Restrictions'
+    dependsOn: RestartApp
+    condition: succeeded()
+    jobs:
+      - job: ApplyCFRestrictions
+        displayName: 'Sync Cloudflare CIDRs to App Service'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Validate and sync Cloudflare IP restrictions'
+            inputs:
+              azureSubscription: $(SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -e
+
+                echo "Fetching Cloudflare IP ranges from api.cloudflare.com..."
+                CF_RESPONSE=$(curl -sf "https://api.cloudflare.com/client/v4/ips")
+                if [ $? -ne 0 ] || [ -z "$CF_RESPONSE" ]; then
+                  echo "##[error] Failed to fetch Cloudflare IPs — aborting."
+                  exit 1
+                fi
+
+                SUCCESS=$(echo "$CF_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success','false'))")
+                if [ "$SUCCESS" != "True" ]; then
+                  echo "##[error] Cloudflare API returned success=false — aborting."
+                  exit 1
+                fi
+
+                IPV4=$(echo "$CF_RESPONSE" | python3 -c "
+                import sys, json
+                for ip in json.load(sys.stdin)['result']['ipv4_cidrs']:
+                    print(ip)
+                ")
+
+                IPV6=$(echo "$CF_RESPONSE" | python3 -c "
+                import sys, json
+                for ip in json.load(sys.stdin)['result']['ipv6_cidrs']:
+                    print(ip)
+                ")
+
+                ALL_CF_IPS=$(printf '%s\n%s' "$IPV4" "$IPV6" | grep -v '^$')
+                CF_COUNT=$(echo "$ALL_CF_IPS" | wc -l | tr -d ' ')
+                echo "Fetched $CF_COUNT Cloudflare CIDRs (IPv4 + IPv6)"
+
+                echo ""
+                echo "Reading existing access restrictions on $(WEB_APP_NAME)..."
+                EXISTING=$(az webapp config access-restriction show \
+                  --name $(WEB_APP_NAME) \
+                  --resource-group $(RG) \
+                  --query "ipSecurityRestrictions[].ipAddress" \
+                  --output tsv 2>/dev/null || echo "")
+
+                echo ""
+                echo "Validating all CF IPs are present:"
+                MISSING_IPS=""
+                while IFS= read -r IP; do
+                  [ -z "$IP" ] && continue
+                  if echo "$EXISTING" | grep -qF "$IP"; then
+                    echo "  [OK]      $IP"
+                  else
+                    echo "  [MISSING] $IP"
+                    MISSING_IPS=$(printf '%s\n%s' "$MISSING_IPS" "$IP")
+                  fi
+                done <<< "$ALL_CF_IPS"
+
+                MISSING_IPS=$(echo "$MISSING_IPS" | grep -v '^$' || true)
+
+                if [ -z "$MISSING_IPS" ]; then
+                  echo ""
+                  echo "All $CF_COUNT Cloudflare IPs are already present. No changes needed."
+                  exit 0
+                fi
+
+                MISSING_COUNT=$(echo "$MISSING_IPS" | wc -l | tr -d ' ')
+                echo ""
+                echo "$MISSING_COUNT CF IP(s) missing — adding now..."
+
+                MAX_PRI=$(az webapp config access-restriction show \
+                  --name $(WEB_APP_NAME) \
+                  --resource-group $(RG) \
+                  --query "max(ipSecurityRestrictions[?priority < \`1000\`].priority)" \
+                  --output tsv 2>/dev/null || echo "")
+
+                if [ -z "$MAX_PRI" ] || [ "$MAX_PRI" = "None" ]; then
+                  NEXT_PRI=100
+                else
+                  NEXT_PRI=$((MAX_PRI + 1))
+                fi
+
+                while IFS= read -r IP; do
+                  [ -z "$IP" ] && continue
+                  RULE_NAME="CF-$(echo "$IP" | tr '/.:' '---' | cut -c1-32)"
+                  echo "  Adding $IP as '$RULE_NAME' (priority $NEXT_PRI)..."
+                  az webapp config access-restriction add \
+                    --name $(WEB_APP_NAME) \
+                    --resource-group $(RG) \
+                    --rule-name "$RULE_NAME" \
+                    --action Allow \
+                    --ip-address "$IP" \
+                    --priority $NEXT_PRI \
+                    --output none
+                  echo "  Added: $IP"
+                  NEXT_PRI=$((NEXT_PRI + 1))
+                done <<< "$MISSING_IPS"
+
+                echo ""
+                echo "CF restriction sync complete. Added $MISSING_COUNT new rule(s)."
+
+  # -------------------------
+  # Stage 4: Telegram Success
   # -------------------------
   - stage: TelegramSuccess
     displayName: 'Telegram Success'
     dependsOn:
       - BuildImage
       - RestartApp
-    condition: and(succeeded('BuildImage'), succeeded('RestartApp'))
+      - CFNetworkRestrictions
+    condition: and(succeeded('BuildImage'), succeeded('RestartApp'), succeeded('CFNetworkRestrictions'))
     jobs:
       - job: NotifySuccess
         displayName: 'Send Success Notification'
@@ -140,14 +256,15 @@ stages:
             displayName: 'Notify Success'
 
   # -------------------------
-  # Stage 4: Telegram Failure
+  # Stage 5: Telegram Failure
   # -------------------------
   - stage: TelegramFailure
     displayName: 'Telegram Failure'
     dependsOn:
       - BuildImage
       - RestartApp
-    condition: or(failed('BuildImage'), failed('RestartApp'))
+      - CFNetworkRestrictions
+    condition: or(failed('BuildImage'), failed('RestartApp'), failed('CFNetworkRestrictions'))
     jobs:
       - job: NotifyFailure
         displayName: 'Send Failure Notification'
