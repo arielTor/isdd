@@ -190,10 +190,10 @@ const UserModal = ({
   onSave, 
   companies 
 }: { 
-  user?: User | null, 
-  isOpen: boolean, 
-  onClose: () => void, 
-  onSave: (user: User) => void,
+  user?: User | null,
+  isOpen: boolean,
+  onClose: () => void,
+  onSave: (user: User) => Promise<void>,
   companies: Company[]
 }) => {
   const [formData, setFormData] = useState<Partial<User>>(user || {
@@ -206,6 +206,7 @@ const UserModal = ({
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [modalError, setModalError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -222,6 +223,7 @@ const UserModal = ({
     setPassword('');
     setShowPw(false);
     setModalError('');
+    setSaving(false);
   }, [user, isOpen]);
 
   const togglePermission = (companyId: string, bankId?: string) => {
@@ -442,7 +444,7 @@ const UserModal = ({
               Cancel
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (!formData.name || !formData.email) {
                   setModalError('Name and email are required.');
                   return;
@@ -452,17 +454,26 @@ const UserModal = ({
                   return;
                 }
                 setModalError('');
-                onSave({
-                  ...formData,
-                  id: user?.id || `u_${Date.now()}`,
-                  lastActive: user?.lastActive || 'Never',
-                  ...(password ? { password } : {}),
-                } as User);
+                setSaving(true);
+                try {
+                  await onSave({
+                    ...formData,
+                    id: user?.id || `u_${Date.now()}`,
+                    lastActive: user?.lastActive || 'Never',
+                    ...(password ? { password } : {}),
+                  } as User);
+                } catch (e: any) {
+                  setModalError(e.message || 'Something went wrong. Please try again.');
+                } finally {
+                  setSaving(false);
+                }
               }}
-              disabled={!formData.name || !formData.email}
+              disabled={!formData.name || !formData.email || saving}
               className="px-6 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold shadow-lg shadow-slate-900/10 hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2"
             >
-              {user ? 'Update User' : 'Grant Access'}
+              {saving
+                ? <><RefreshCcw size={14} className="animate-spin" />{user ? 'Saving…' : 'Creating…'}</>
+                : user ? 'Update User' : 'Grant Access'}
             </button>
           </div>
         </div>
@@ -1406,26 +1417,21 @@ export default function App() {
     }
   };
 
-  const handleSaveUser = async (user: User) => {
-    try {
-      const isEdit = !!editingUser;
-      const res = await fetch(
-        isEdit ? `/api/users/${user.id}` : '/api/users',
-        {
-          method: isEdit ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(user),
-        }
-      );
-      if (!res.ok) {
-        const err = await res.json();
-        console.error('Save user failed:', err.error);
-        return;
+  const handleSaveUser = async (user: User): Promise<void> => {
+    const isEdit = !!editingUser;
+    const res = await fetch(
+      isEdit ? `/api/users/${user.id}` : '/api/users',
+      {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
       }
-      await loadUsers(); // refresh from DB
-    } catch (e) {
-      console.error('Failed to save user:', e);
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error (${res.status})`);
     }
+    await loadUsers();
     setIsUserModalOpen(false);
   };
 
