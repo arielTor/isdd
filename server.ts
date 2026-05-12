@@ -562,6 +562,23 @@ async function startServer() {
         if (result.affectedRows === 0) notFound.push(u.wallet_id);
         else updated++;
       }
+
+      // Update last_modified_date on the parent bank for every wallet that was changed
+      if (updated > 0) {
+        const updatedWalletIds = updates
+          .filter(u => !notFound.includes(u.wallet_id))
+          .map(u => u.wallet_id);
+        const placeholders = updatedWalletIds.map(() => "?").join(", ");
+        await conn.execute(
+          `UPDATE banks b
+           INNER JOIN bank_accounts ba ON ba.bank_id = b.id
+           INNER JOIN wallets w ON w.account_id = ba.id
+           SET b.last_modified_date = NOW()
+           WHERE w.id IN (${placeholders})`,
+          updatedWalletIds
+        );
+      }
+
       await queryDatabase().catch((err) =>
         console.warn("Post-update sync failed:", err.message)
       );
