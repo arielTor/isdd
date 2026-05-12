@@ -13,17 +13,24 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-  // ── CORS — restrict to APP_URL and localhost ──────────────────────────────
-  // Set APP_URL=https://finboard.corp-domain.com in Azure App Settings.
+  // ── CORS — applied only to /api/* routes ─────────────────────────────────
+  // Static files and the SPA shell are served same-origin, so they don't
+  // need CORS headers. Cloudflare adds Origin to every proxied request, which
+  // would otherwise block even simple page loads if CORS were global.
+  //
+  // Allowed origins: APP_URL env var + hardcoded production domain + localhost.
+  // Set APP_URL=https://finboard.corp-domain.com in Azure App Settings if you
+  // want the env var to be the source of truth going forward.
   const allowedOrigins = [
     process.env.APP_URL,
+    'https://finboard.corp-domain.com', // production fallback (Cloudflare proxied)
     'http://localhost:3000',
     'http://localhost:5173',
   ].filter(Boolean) as string[];
 
-  app.use(cors({
+  const corsMiddleware = cors({
     origin: (origin, callback) => {
-      // Allow server-to-server requests (no origin) and allowed origins
+      // Allow server-to-server requests (no Origin header) and listed origins
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -31,7 +38,8 @@ async function startServer() {
       }
     },
     credentials: true,
-  }));
+  });
+
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -172,15 +180,15 @@ async function startServer() {
     console.error(`[STARTUP] DB sync failed (will retry on next /api/sync): ${msg}`);
   });
 
-  // ── API Routes ────────────────────────────────────────────────────────────
+  // ── API Routes (CORS applied here, not globally) ──────────────────────────
 
   // Dashboard data
-  app.get('/api/liquidity', (_req, res) => {
+  app.get('/api/liquidity', corsMiddleware, (_req, res) => {
     res.json({ data: latestData, lastUpdateTime });
   });
 
   // Manual sync trigger — re-queries DB and updates in-memory store
-  app.post('/api/sync', async (_req, res) => {
+  app.post('/api/sync', corsMiddleware, async (_req, res) => {
     try {
       await queryDatabase();
       res.json({ status: 'Synced', count: latestData.length, timestamp: new Date().toISOString() });
@@ -191,7 +199,7 @@ async function startServer() {
   });
 
   // Manual wallet balance update
-  app.post('/api/update-balances', async (req, res) => {
+  app.post('/api/update-balances', corsMiddleware, async (req, res) => {
     const updates: { wallet_id: string; wallet_balance: number; wallet_value_usd: number | null }[] = req.body?.updates;
 
     if (!Array.isArray(updates) || updates.length === 0) {
@@ -235,7 +243,7 @@ async function startServer() {
   });
 
   // Alert rule saved → push to Zapier
-  app.post('/api/alerts/trigger', async (req, res) => {
+  app.post('/api/alerts/trigger', corsMiddleware, async (req, res) => {
     const webhookUrl = process.env.ZAPIER_ALERTS_WEBHOOK;
     if (!webhookUrl) return res.status(503).json({ error: 'ZAPIER_ALERTS_WEBHOOK not configured' });
     try {
@@ -250,7 +258,7 @@ async function startServer() {
   });
 
   // User saved → push to Zapier
-  app.post('/api/users/trigger', async (req, res) => {
+  app.post('/api/users/trigger', corsMiddleware, async (req, res) => {
     const webhookUrl = process.env.ZAPIER_USERS_WEBHOOK;
     if (!webhookUrl) return res.status(503).json({ error: 'ZAPIER_USERS_WEBHOOK not configured' });
     try {
@@ -270,7 +278,7 @@ async function startServer() {
   });
 
   // Threshold breach notification → push to Zapier
-  app.post('/api/alerts/notify', async (req, res) => {
+  app.post('/api/alerts/notify', corsMiddleware, async (req, res) => {
     const webhookUrl = process.env.ZAPIER_NOTIFY_WEBHOOK;
     if (!webhookUrl) return res.status(503).json({ error: 'ZAPIER_NOTIFY_WEBHOOK not configured' });
     try {
@@ -283,7 +291,7 @@ async function startServer() {
   });
 
   // 404 for unknown API routes
-  app.use('/api/*', (req, res) => {
+  app.use('/api/*', corsMiddleware, (req, res) => {
     res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl });
   });
 
