@@ -47,6 +47,12 @@ async function startServer() {
     credentials: true,
   });
 
+  // Trust the first proxy (Cloudflare → Azure App Service).
+  // Without this, Express sees req.secure=false (HTTP between CF and Azure),
+  // so express-session refuses to set the Secure cookie → every post-login
+  // request gets a new empty session → 401 "Not authenticated".
+  app.set("trust proxy", 1);
+
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
