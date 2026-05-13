@@ -121,10 +121,6 @@ async function startServer() {
   }
 
   const sessionStore = new MySQLSessionStore();
-  // Create the sessions table if it doesn't exist (non-blocking)
-  sessionStore._ensureTable().catch(e =>
-    console.warn("[Session] Could not create sessions table:", e.message)
-  );
 
   app.use(
     session({
@@ -297,14 +293,6 @@ async function startServer() {
       await conn.end();
     }
   }
-
-  queryDatabase().catch((err) => {
-    const msg =
-      err instanceof AggregateError
-        ? err.errors?.map((e: any) => e.message).join(" | ")
-        : err.message;
-    console.error(`[STARTUP] DB sync failed: ${msg}`);
-  });
 
   // ════════════════════════════════════════════════════════════════════════
   // AUTH ROUTES  (no requireAuth — these are the login endpoints)
@@ -749,6 +737,19 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"))
     );
   }
+
+  // Ensure sessions table exists BEFORE the server accepts any requests
+  await sessionStore._ensureTable().catch(e =>
+    console.warn("[Session] Could not create sessions table — falling back to in-memory sessions:", e.message)
+  );
+
+  // Kick off DB data load (non-blocking — server starts immediately)
+  queryDatabase().catch((err) => {
+    const msg = err instanceof AggregateError
+      ? err.errors?.map((e: any) => e.message).join(" | ")
+      : err.message;
+    console.error(`[STARTUP] DB sync failed: ${msg}`);
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

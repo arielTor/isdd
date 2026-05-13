@@ -1237,25 +1237,6 @@ export default function App() {
       .finally(() => setAuthLoading(false));
   }, []);
 
-  // Global 401 interceptor — if the server restarts and clears in-memory
-  // sessions, any subsequent API call returns 401. We detect that here and
-  // force re-login immediately so the user isn't stuck on a frozen screen.
-  useEffect(() => {
-    const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-      const res = await originalFetch(...args);
-      if (res.status === 401) {
-        const url = typeof args[0] === 'string' ? args[0] : '';
-        // Don't intercept the auth endpoints themselves
-        if (!url.includes('/api/auth/')) {
-          setAuthUser(null);
-        }
-      }
-      return res;
-    };
-    return () => { window.fetch = originalFetch; };
-  }, []);
-
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     setAuthUser(null);
