@@ -1872,7 +1872,7 @@ export default function App() {
                                       accountNumber: acc.account_number || acc.accountNumber,
                                       bankName: bank.name,
                                       isVerified: isVerified,
-                                      lastSync: bank.last_modified || bank.last_modified_date
+                                      lastSync: bank.last_modified_date
                                     }));
                                   });
 

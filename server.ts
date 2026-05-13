@@ -220,7 +220,7 @@ async function startServer() {
       b.name               AS bank_name,
       b.country            AS bank_country,
       b.is_verified        AS bank_is_verified,
-      DATE_FORMAT(b.last_modified_date, '%Y-%m-%dT%H:%i:%sZ') AS bank_last_modified,
+      DATE_FORMAT(b.last_modified_date, '%Y-%m-%d %H:%i') AS bank_last_modified,
       ba.id                AS bank_account_id,
       ba.account_number    AS bank_account_number,
       ba.label             AS bank_account_label,
