@@ -6,7 +6,6 @@ import cors from "cors";
 import fs from "fs";
 import mysql from "mysql2/promise";
 import session from "express-session";
-import MySQLStoreFactory from "express-mysql-session";
 import bcrypt from "bcryptjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -51,23 +50,81 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-  // ── Session — stored in MySQL so sessions survive server restarts ─────────
-  // SAML-ready: switching to SAML later only changes HOW the session.user is
-  // populated (SAML callback vs password check). Everything downstream — auth
-  // middleware, permission filtering, UI — stays exactly the same.
-  const MySQLStore = MySQLStoreFactory(session as any);
-  const sessionStore = new MySQLStore({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME,
-    ssl: process.env.DB_SSL_VERIFY === "false" ? undefined : { rejectUnauthorized: true },
-    createDatabaseTable: true, // auto-creates the `sessions` table
-    clearExpired: true,
-    checkExpirationInterval: 15 * 60 * 1000, // clean up every 15 min
-    expiration: 8 * 60 * 60 * 1000, // match cookie max age
-  } as any);
+  // ── Custom MySQL session store (pure mysql2 — ESM compatible) ─────────────
+  // Stores sessions in the `sessions` DB table so they survive restarts.
+  // SAML-ready: only the login mechanism changes when switching to SAML;
+  // session.user shape and all downstream middleware stay identical.
+  class MySQLSessionStore extends session.Store {
+    async _getConn() { return mysql.createConnection(dbConfig()); }
+
+    async _ensureTable() {
+      const conn = await this._getConn();
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS sessions (
+            session_id VARCHAR(128) NOT NULL PRIMARY KEY,
+            expires     BIGINT      NOT NULL,
+            data        MEDIUMTEXT,
+            INDEX idx_expires (expires)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+      } finally { conn.end(); }
+    }
+
+    get(sid: string, cb: (err: any, session?: any) => void) {
+      this._getConn().then(async conn => {
+        try {
+          const [rows] = await conn.execute(
+            "SELECT data, expires FROM sessions WHERE session_id = ?", [sid]
+          ) as [any[], any];
+          if (!rows.length || Date.now() > rows[0].expires) return cb(null, null);
+          cb(null, JSON.parse(rows[0].data));
+        } catch (e) { cb(e); } finally { conn.end(); }
+      }).catch(cb);
+    }
+
+    set(sid: string, sessionData: any, cb: (err?: any) => void) {
+      const expires = Date.now() + (8 * 60 * 60 * 1000);
+      const data = JSON.stringify(sessionData);
+      this._getConn().then(async conn => {
+        try {
+          await conn.execute(
+            `INSERT INTO sessions (session_id, expires, data) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE expires = VALUES(expires), data = VALUES(data)`,
+            [sid, expires, data]
+          );
+          cb();
+        } catch (e) { cb(e); } finally { conn.end(); }
+      }).catch(cb);
+    }
+
+    destroy(sid: string, cb: (err?: any) => void) {
+      this._getConn().then(async conn => {
+        try {
+          await conn.execute("DELETE FROM sessions WHERE session_id = ?", [sid]);
+          cb();
+        } catch (e) { cb(e); } finally { conn.end(); }
+      }).catch(cb);
+    }
+
+    touch(sid: string, sessionData: any, cb: (err?: any) => void) {
+      const expires = Date.now() + (8 * 60 * 60 * 1000);
+      this._getConn().then(async conn => {
+        try {
+          await conn.execute(
+            "UPDATE sessions SET expires = ? WHERE session_id = ?", [expires, sid]
+          );
+          cb();
+        } catch (e) { cb(e); } finally { conn.end(); }
+      }).catch(cb);
+    }
+  }
+
+  const sessionStore = new MySQLSessionStore();
+  // Create the sessions table if it doesn't exist (non-blocking)
+  sessionStore._ensureTable().catch(e =>
+    console.warn("[Session] Could not create sessions table:", e.message)
+  );
 
   app.use(
     session({
