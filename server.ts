@@ -214,7 +214,7 @@ async function startServer() {
       b.name               AS bank_name,
       b.country            AS bank_country,
       b.is_verified        AS bank_is_verified,
-      b.last_modified_date AS bank_last_modified,
+      DATE_FORMAT(b.last_modified_date, '%Y-%m-%dT%H:%i:%sZ') AS bank_last_modified,
       ba.id                AS bank_account_id,
       ba.account_number    AS bank_account_number,
       ba.label             AS bank_account_label,
@@ -394,7 +394,15 @@ async function startServer() {
         permissions: perms, // empty array = Admin sees everything
       };
 
-      res.json({ user: req.session.user });
+      // Explicitly save session before responding so MySQL store persists it
+      // BEFORE the browser makes its next request (prevents "Not authenticated")
+      req.session.save((saveErr: any) => {
+        if (saveErr) {
+          console.error("Session save error:", saveErr.message);
+          return res.status(500).json({ error: "Session error — please try again" });
+        }
+        res.json({ user: req.session.user });
+      });
     } catch (err: any) {
       console.error("Login error:", err.message);
       res.status(500).json({ error: "Login failed — check server logs" });
