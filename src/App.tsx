@@ -1549,7 +1549,7 @@ export default function App() {
           setCompanies(data);
           localStorage.setItem('smarttool_data', JSON.stringify(data));
           if (serverUpdate > 0) {
-            const syncTime = new Date(serverUpdate).toLocaleTimeString('en-GB', { 
+            const syncTime = new Date(serverUpdate).toLocaleTimeString('en-GB', {
               timeZone: 'Asia/Jerusalem',
               hour: '2-digit',
               minute: '2-digit',
@@ -1560,11 +1560,8 @@ export default function App() {
             localStorage.setItem('smarttool_last_sync', syncTime);
           }
         }
-        
-        handleRefresh();
       } catch (err) {
         console.error('Initial setup failed:', err);
-        handleRefresh();
       }
       
       // Hidden helper for the user to inject data manually for testing
@@ -1681,6 +1678,13 @@ export default function App() {
       setIsRefreshing(false);
     }
   };
+
+  // Trigger a full DB sync the moment the user logs in (or on page reload while
+  // already authenticated). This mirrors the manual Sync button behaviour so the
+  // dashboard always shows live DB data immediately after login, not stale cache.
+  useEffect(() => {
+    if (authUser) handleRefresh();
+  }, [authUser]);
 
   const stats = useMemo(() => {
     return {
