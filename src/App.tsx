@@ -1087,7 +1087,7 @@ const BankDetailsModal = ({
                       </div>
                       <div className="space-y-2">
                         {walletsArray.map(wallet => {
-                          const hasDbUsd = wallet.value_usd && wallet.value_usd > 0;
+                          const hasDbUsd = wallet.value_usd !== undefined && wallet.value_usd !== null && wallet.value_usd !== 0;
                           const isEstimated = !!(wallet as any).value_usd_estimated;
                           return (
                             <div key={wallet.id} className="flex items-center justify-between p-3 bg-slate-50/50 rounded-lg border border-slate-100/50">
@@ -1103,11 +1103,15 @@ const BankDetailsModal = ({
                                 <p className={`text-sm font-bold font-mono tracking-tight ${shouldHighlightRow(wallet.id) ? 'text-red-500 animate-pulse' : 'text-slate-900'}`}>
                                    {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </p>
-                                {hasDbUsd && (
-                                  <p className={`text-[10px] font-mono ${isEstimated ? 'text-slate-400 italic' : 'font-bold text-slate-500'}`}>
-                                    {isEstimated ? '~' : ''}${(wallet.value_usd!).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                )}
+                                {hasDbUsd && (() => {
+                                  const neg = (wallet.value_usd ?? 0) < 0;
+                                  const abs = Math.abs(wallet.value_usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                  return (
+                                    <p className={`text-[10px] font-mono ${isEstimated ? 'text-slate-400 italic' : 'font-bold text-slate-500'}`}>
+                                      {neg ? '-' : ''}{isEstimated ? '~' : ''}${abs}
+                                    </p>
+                                  );
+                                })()}
                               </div>
                             </div>
                           );
@@ -1903,8 +1907,9 @@ export default function App() {
                                   // Add active rows (Wallets)
                                   activeRows.forEach((wallet, idx) => {
                                     const usdVal = wallet.value_usd ?? (wallet as any).usd_value ?? (wallet as any).valueUsd ?? (wallet as any).usdValue;
-                                    const converted = (usdVal !== undefined && usdVal !== null && Number(usdVal) > 0)
-                                      ? { amount: Number(usdVal), label: 'USD', estimated: !!(wallet as any).value_usd_estimated }
+                                    // Allow negative values (overdrafts) — only hide when truly absent or exactly zero balance with no DB value
+                                    const converted = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0)
+                                      ? { amount: Number(usdVal), estimated: !!(wallet as any).value_usd_estimated }
                                       : null;
                                     const isFirstInBank = idx === 0;
                                     
@@ -1949,11 +1954,15 @@ export default function App() {
                                           </span>
                                         </td>
                                         <td className="px-6 py-4 border-b border-slate-100 text-right font-mono">
-                                          {converted ? (
-                                            <span className={converted.estimated ? 'text-slate-400 italic text-xs' : 'font-bold text-slate-700 text-sm'}>
-                                              {converted.estimated ? '~' : ''}${converted.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                          ) : (
+                                          {converted ? (() => {
+                                            const neg = converted.amount < 0;
+                                            const abs = Math.abs(converted.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                            return (
+                                              <span className={converted.estimated ? 'text-slate-400 italic text-xs' : 'font-bold text-slate-700 text-sm'}>
+                                                {neg ? '-' : ''}{converted.estimated ? '~' : ''}${abs}
+                                              </span>
+                                            );
+                                          })() : (
                                             <span className="text-slate-300 text-xs">—</span>
                                           )}
                                         </td>

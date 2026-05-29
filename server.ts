@@ -371,18 +371,18 @@ async function startServer() {
         const currency   = row.wallet_currency as string;
         const rate       = rates[currency];
 
-        // Use DB value when present; otherwise compute from live rate.
-        const valueUsd        = (dbValueUsd !== null && dbValueUsd > 0)
-          ? dbValueUsd
-          : (rate !== undefined ? balance * rate : 0);
-        const valueUsdEstimated = dbValueUsd === null || dbValueUsd === 0;
+        // Use DB value when present (non-null); otherwise estimate from live rate.
+        // Negative balances are valid (overdrafts) and must not be discarded.
+        const hasDbValue      = dbValueUsd !== null;
+        const valueUsd        = hasDbValue ? dbValueUsd! : (rate !== undefined ? balance * rate : null);
+        const valueUsdEstimated = !hasDbValue && rate !== undefined && valueUsd !== null;
 
         bank.bank_accounts.get(row.bank_account_id).wallets.push({
           id: row.wallet_id,
           currency,
           balance,
-          value_usd:           valueUsd,
-          value_usd_estimated: valueUsdEstimated && rate !== undefined && valueUsd > 0,
+          value_usd:           valueUsd ?? 0,
+          value_usd_estimated: valueUsdEstimated,
           updated_at: row.wallet_updated_at,
         });
       }
