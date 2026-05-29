@@ -1010,9 +1010,7 @@ const BankDetailsModal = ({
     return triggeredLocally || (bankHasActiveAlert && hasAlertConfigured);
   };
 
-  const totalBalance = allWallets.reduce((sum, wallet) => {
-    return sum + (wallet.balance || 0);
-  }, 0);
+  const totalUsd = allWallets.reduce((sum, wallet) => sum + (wallet.value_usd || 0), 0);
 
   const currencyTotals = allWallets.reduce((acc, wallet) => {
     acc[wallet.currency] = (acc[wallet.currency] || 0) + (wallet.balance || 0);
@@ -1052,6 +1050,15 @@ const BankDetailsModal = ({
         <div className="p-6 space-y-6 overflow-y-auto">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 gap-4">
+            {/* Total USD value across all wallets */}
+            {totalUsd > 0 && (
+              <div className="col-span-2 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Total USD Value</p>
+                <p className="text-2xl font-bold text-indigo-700 font-mono">
+                  ${totalUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+            )}
             {Object.entries(currencyTotals).map(([currency, total]) => (
               <div key={currency} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total {currency}</p>
@@ -1080,12 +1087,13 @@ const BankDetailsModal = ({
                       </div>
                       <div className="space-y-2">
                         {walletsArray.map(wallet => {
-                          const converted = convertCurrency(wallet.balance, wallet.currency);
+                          const hasDbUsd = wallet.value_usd && wallet.value_usd > 0;
+                          const isEstimated = !!(wallet as any).value_usd_estimated;
                           return (
                             <div key={wallet.id} className="flex items-center justify-between p-3 bg-slate-50/50 rounded-lg border border-slate-100/50">
                               <div className="flex items-center gap-3">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold 
-                                    ${wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold
+                                    ${wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' :
                                       wallet.currency === 'USD' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
                                     {wallet.currency}
                                   </span>
@@ -1095,9 +1103,9 @@ const BankDetailsModal = ({
                                 <p className={`text-sm font-bold font-mono tracking-tight ${shouldHighlightRow(wallet.id) ? 'text-red-500 animate-pulse' : 'text-slate-900'}`}>
                                    {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </p>
-                                {converted && (
-                                  <p className="text-[10px] font-bold text-slate-400 font-mono italic">
-                                    ≈ {converted.label} {converted.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                {hasDbUsd && (
+                                  <p className={`text-[10px] font-mono ${isEstimated ? 'text-slate-400 italic' : 'font-bold text-slate-500'}`}>
+                                    {isEstimated ? '~' : ''}${(wallet.value_usd!).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </p>
                                 )}
                               </div>
@@ -1894,10 +1902,10 @@ export default function App() {
 
                                   // Add active rows (Wallets)
                                   activeRows.forEach((wallet, idx) => {
-                                    const usdVal = wallet.value_usd ?? wallet.usd_value ?? wallet.valueUsd ?? wallet.usdValue;
-                                    const converted = usdVal !== undefined && usdVal !== null
-                                      ? { amount: Number(usdVal), label: 'USDT' }
-                                      : convertCurrency(wallet.balance, wallet.currency);
+                                    const usdVal = wallet.value_usd ?? (wallet as any).usd_value ?? (wallet as any).valueUsd ?? (wallet as any).usdValue;
+                                    const converted = (usdVal !== undefined && usdVal !== null && Number(usdVal) > 0)
+                                      ? { amount: Number(usdVal), label: 'USD', estimated: !!(wallet as any).value_usd_estimated }
+                                      : null;
                                     const isFirstInBank = idx === 0;
                                     
                                     const bankHasActiveAlert = accounts.flatMap(acc => acc.wallets || []).some(w => {
@@ -1940,8 +1948,14 @@ export default function App() {
                                             {wallet.currency}
                                           </span>
                                         </td>
-                                        <td className="px-6 py-4 border-b border-slate-100 text-right font-mono font-bold italic text-slate-400">
-                                          {converted ? `≈ ${converted.label} ${converted.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '—'}
+                                        <td className="px-6 py-4 border-b border-slate-100 text-right font-mono">
+                                          {converted ? (
+                                            <span className={converted.estimated ? 'text-slate-400 italic text-xs' : 'font-bold text-slate-700 text-sm'}>
+                                              {converted.estimated ? '~' : ''}${converted.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          ) : (
+                                            <span className="text-slate-300 text-xs">—</span>
+                                          )}
                                         </td>
                                       </tr>
                                     );

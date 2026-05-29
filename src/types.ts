@@ -2,8 +2,9 @@ export interface Wallet {
   id: string;
   currency: string;
   balance: number;
-  value_usd?: number; // Normalized USD value from user spec
-  updated_at?: string; // Standard updated_at from user spec
+  value_usd?: number;           // Authoritative USD value from integration
+  value_usd_estimated?: boolean; // true = computed from live rate, not from DB
+  updated_at?: string;
 }
 
 export interface BankAccount {

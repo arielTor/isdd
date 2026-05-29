@@ -172,6 +172,89 @@ async function startServer() {
     console.log("Cleared stale data cache — will fetch fresh from DB.");
   }
 
+  // ── Live exchange-rate engine ─────────────────────────────────────────────
+  // Rates are fetched at most once every 5 minutes and cached in memory.
+  // value_usd from integrations is always authoritative — rates only fill in
+  // wallets where value_usd is NULL / 0 in the database.
+
+  // Stablecoins we treat as exactly 1 USD (no API call needed)
+  const STABLECOINS = new Set(["USDT", "USDtb", "USDC", "TUSD", "BUSD", "DAI", "USD"]);
+
+  // Map from our currency ticker → CoinGecko coin id
+  const COINGECKO_IDS: Record<string, string> = {
+    BTC:  "bitcoin",
+    ETH:  "ethereum",
+    PEPE: "pepe",
+    HEX:  "hex",
+    SOL:  "solana",
+    BNB:  "binancecoin",
+    XRP:  "ripple",
+    LTC:  "litecoin",
+  };
+
+  // usdRates[ticker] = how many USD 1 unit of ticker is worth
+  const rateCache: { usdRates: Record<string, number>; fetchedAt: number } = {
+    usdRates: {},
+    fetchedAt: 0,
+  };
+  const RATE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+  async function refreshRates(): Promise<Record<string, number>> {
+    const rates: Record<string, number> = { USD: 1 };
+
+    // All stablecoins = 1 USD
+    for (const sc of STABLECOINS) rates[sc] = 1;
+
+    // ── Fiat rates via open.er-api.com (free, no API key) ──────────────────
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const data: any = await res.json();
+        // data.rates[X] = how many X per 1 USD → invert → USD per X
+        if (data?.rates) {
+          for (const [cur, perUsd] of Object.entries(data.rates as Record<string, number>)) {
+            rates[cur] = 1 / perUsd;
+          }
+        }
+        console.log("[Rates] Fiat rates updated");
+      }
+    } catch (e: any) {
+      console.warn("[Rates] Fiat fetch failed:", e.message);
+    }
+
+    // ── Crypto rates via CoinGecko free API ───────────────────────────────
+    try {
+      const ids = Object.values(COINGECKO_IDS).join(",");
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      if (res.ok) {
+        const data: any = await res.json();
+        for (const [ticker, cgId] of Object.entries(COINGECKO_IDS)) {
+          if (data[cgId]?.usd) rates[ticker] = data[cgId].usd;
+        }
+        console.log("[Rates] Crypto rates updated");
+      }
+    } catch (e: any) {
+      console.warn("[Rates] Crypto fetch failed:", e.message);
+    }
+
+    rateCache.usdRates = rates;
+    rateCache.fetchedAt = Date.now();
+    return rates;
+  }
+
+  async function getUsdRates(): Promise<Record<string, number>> {
+    if (
+      Object.keys(rateCache.usdRates).length > 0 &&
+      Date.now() - rateCache.fetchedAt < RATE_TTL_MS
+    ) {
+      return rateCache.usdRates;
+    }
+    return refreshRates();
+  }
+
   // ── DB connection helper ──────────────────────────────────────────────────
   function dbConfig() {
     return {
@@ -244,6 +327,10 @@ async function startServer() {
       throw new Error(`DB connection failed: ${err.message}`);
     }
     try {
+      // Fetch live rates before building the dataset — wallets without a
+      // DB-supplied value_usd will get an estimated value from these rates.
+      const rates = await getUsdRates();
+
       const [rows] = (await conn.execute(SQL_QUERY)) as [any[], any];
       const companiesMap = new Map<string, any>();
       for (const row of rows) {
@@ -276,11 +363,26 @@ async function startServer() {
             wallets: [],
           });
         }
+
+        const dbValueUsd = row.wallet_value_usd !== null && row.wallet_value_usd !== undefined
+          ? Number(row.wallet_value_usd)
+          : null;
+        const balance    = Number(row.wallet_balance ?? 0);
+        const currency   = row.wallet_currency as string;
+        const rate       = rates[currency];
+
+        // Use DB value when present; otherwise compute from live rate.
+        const valueUsd        = (dbValueUsd !== null && dbValueUsd > 0)
+          ? dbValueUsd
+          : (rate !== undefined ? balance * rate : 0);
+        const valueUsdEstimated = dbValueUsd === null || dbValueUsd === 0;
+
         bank.bank_accounts.get(row.bank_account_id).wallets.push({
           id: row.wallet_id,
-          currency: row.wallet_currency,
-          balance: Number(row.wallet_balance ?? 0),
-          value_usd: Number(row.wallet_value_usd ?? 0),
+          currency,
+          balance,
+          value_usd:           valueUsd,
+          value_usd_estimated: valueUsdEstimated && rate !== undefined && valueUsd > 0,
           updated_at: row.wallet_updated_at,
         });
       }
@@ -640,6 +742,16 @@ async function startServer() {
     } catch (err: any) {
       console.error("DB sync error:", err.message);
       res.status(500).json({ error: "Sync failed — check server logs" });
+    }
+  });
+
+  // Current exchange rates (read-only, for the rates panel in the UI)
+  app.get("/api/rates", corsMiddleware, requireAuth, async (_req, res) => {
+    try {
+      const rates = await getUsdRates();
+      res.json({ rates, fetchedAt: new Date(rateCache.fetchedAt).toISOString() });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch rates" });
     }
   });
 
