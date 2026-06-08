@@ -734,6 +734,109 @@ async function startServer() {
     }
   });
 
+  // Historical snapshot for a specific date
+  app.get("/api/liquidity/snapshot", corsMiddleware, requireAuth, async (req: any, res) => {
+    const date = req.query.date as string;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+      return res.status(400).json({ error: "date query param required (YYYY-MM-DD)" });
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      // Check whether any snapshot exists for this date
+      const [check] = await conn.execute(
+        "SELECT COUNT(*) AS cnt FROM wallet_snapshots WHERE snapshot_date = ?", [date]
+      ) as [any[], any];
+      if (check[0].cnt === 0) {
+        return res.json({ data: null, date, empty: true });
+      }
+
+      const rates = await getUsdRates();
+
+      const [rows] = await conn.execute(`
+        SELECT
+          c.id                 AS company_id,
+          c.name               AS company_name,
+          c.industry           AS company_industry,
+          c.status             AS company_status,
+          b.id                 AS bank_id,
+          b.name               AS bank_name,
+          b.country            AS bank_country,
+          b.is_verified        AS bank_is_verified,
+          DATE_FORMAT(b.last_modified_date, '%Y-%m-%d %H:%i') AS bank_last_modified,
+          ba.id                AS bank_account_id,
+          ba.account_number    AS bank_account_number,
+          ba.label             AS bank_account_label,
+          w.id                 AS wallet_id,
+          w.currency           AS wallet_currency,
+          ws.balance           AS wallet_balance,
+          ws.value_usd         AS wallet_value_usd
+        FROM companies c
+        INNER JOIN banks b             ON b.company_id = c.id AND b.is_verified = 1
+        INNER JOIN bank_accounts ba    ON ba.bank_id = b.id
+        INNER JOIN wallets w           ON w.account_id = ba.id
+        INNER JOIN wallet_snapshots ws ON ws.wallet_id = w.id AND ws.snapshot_date = ?
+        ORDER BY c.id, b.id, ba.id, w.id
+      `, [date]) as [any[], any];
+
+      const companiesMap = new Map<string, any>();
+      for (const row of rows) {
+        if (!companiesMap.has(row.company_id)) {
+          companiesMap.set(row.company_id, {
+            id: row.company_id, name: row.company_name,
+            industry: row.company_industry, status: row.company_status,
+            banks: new Map(),
+          });
+        }
+        const company = companiesMap.get(row.company_id);
+        if (!company.banks.has(row.bank_id)) {
+          company.banks.set(row.bank_id, {
+            id: row.bank_id, name: row.bank_name, country: row.bank_country,
+            is_verified: row.bank_is_verified, last_modified_date: row.bank_last_modified,
+            bank_accounts: new Map(),
+          });
+        }
+        const bank = company.banks.get(row.bank_id);
+        if (!bank.bank_accounts.has(row.bank_account_id)) {
+          bank.bank_accounts.set(row.bank_account_id, {
+            id: row.bank_account_id, account_number: row.bank_account_number,
+            label: row.bank_account_label, wallets: [],
+          });
+        }
+        const dbValueUsd = row.wallet_value_usd != null ? Number(row.wallet_value_usd) : null;
+        const balance    = Number(row.wallet_balance ?? 0);
+        const currency   = row.wallet_currency as string;
+        const rate       = rates[currency];
+        const hasDbValue = dbValueUsd !== null;
+        const valueUsd   = hasDbValue ? dbValueUsd! : (rate !== undefined ? balance * rate : null);
+        bank.bank_accounts.get(row.bank_account_id).wallets.push({
+          id: row.wallet_id, currency, balance,
+          value_usd: valueUsd ?? 0,
+          value_usd_estimated: !hasDbValue && rate !== undefined && valueUsd !== null,
+        });
+      }
+
+      const data = Array.from(companiesMap.values()).map((c: any) => ({
+        ...c,
+        banks: Array.from(c.banks.values()).map((b: any) => ({
+          ...b, bank_accounts: Array.from(b.bank_accounts.values()),
+        })),
+      }));
+
+      const user = req.session.user;
+      const filtered = (user.role === "Admin" || !user.permissions?.length)
+        ? data : filterByPermissions(data, user.permissions);
+
+      res.json({ data: filtered, date, empty: false });
+    } catch (err: any) {
+      console.error("GET /api/liquidity/snapshot error:", err.message);
+      res.status(500).json({ error: "Failed to load snapshot" });
+    } finally {
+      conn?.end();
+    }
+  });
+
   // Manual sync trigger
   app.post("/api/sync", corsMiddleware, requireAuth, async (_req, res) => {
     try {

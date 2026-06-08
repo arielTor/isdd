@@ -1280,6 +1280,42 @@ export default function App() {
 
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // ── Historical date picker ────────────────────────────────────────────────
+  const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const [historyDate, setHistoryDate] = useState<string>('');      // '' = live
+  const [historyData, setHistoryData] = useState<any[] | null>(null);
+  const [historyEmpty, setHistoryEmpty] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const isHistoricalMode = historyDate !== '';
+
+  const handleDateChange = async (date: string) => {
+    if (!date) {
+      // Reset to live
+      setHistoryDate('');
+      setHistoryData(null);
+      setHistoryEmpty(false);
+      return;
+    }
+    setHistoryDate(date);
+    setHistoryEmpty(false);
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/liquidity/snapshot?date=${date}`);
+      const json = await res.json();
+      if (json.empty || !json.data) {
+        setHistoryData(null);
+        setHistoryEmpty(true);
+      } else {
+        setHistoryData(json.data);
+        setHistoryEmpty(false);
+      }
+    } catch {
+      setHistoryEmpty(true);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -1497,7 +1533,8 @@ export default function App() {
   };
 
   const filteredCompanies = useMemo(() => {
-    let result = companies;
+    // Use historical snapshot data when in history mode, otherwise live data
+    let result = (isHistoricalMode && historyData) ? historyData : companies;
     
     // Primary Filter: Sidebar selection
     if (selectedCompanyId) {
@@ -1754,46 +1791,107 @@ export default function App() {
                 className="max-w-7xl mx-auto p-8 space-y-8"
               >
                 <div className="space-y-6">
+
+                  {/* Historical mode banner */}
+                  {isHistoricalMode && !historyLoading && (
+                    <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <History size={16} className="text-amber-500 shrink-0" />
+                        <p className="text-sm font-bold text-amber-800">
+                          Viewing historical snapshot —&nbsp;
+                          {new Date(historyDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </p>
+                        {historyEmpty && (
+                          <span className="text-sm text-amber-700">· No data available for this date</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDateChange('')}
+                        className="text-xs font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors"
+                      >
+                        ← Back to Live
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                     <div className="flex items-center gap-4">
-                       <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
-                          {isRefreshing ? <Globe size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
+                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
+                          {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : isRefreshing ? <Globe size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
                        </div>
                        <div>
                           <h3 className="text-xl font-bold text-slate-900">Asset Breakdown</h3>
                           <div className="flex items-center gap-2">
                              <p className="text-xs text-slate-500 font-medium tracking-tight">
-                                Aggregated visibility across all linked accounts and wallets
+                                {isHistoricalMode ? 'Showing historical snapshot data — read only' : 'Aggregated visibility across all linked accounts and wallets'}
                              </p>
-                             {isRefreshing && <span className="text-[10px] text-indigo-600 font-bold animate-pulse uppercase tracking-widest ml-2">Syncing Data...</span>}
+                             {isRefreshing && !isHistoricalMode && <span className="text-[10px] text-indigo-600 font-bold animate-pulse uppercase tracking-widest ml-2">Syncing Data...</span>}
+                             {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest ml-2">Loading snapshot...</span>}
                           </div>
                        </div>
                     </div>
-                    <div className="flex items-center gap-6">
-                       <div className="text-right hidden sm:flex flex-col items-end">
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Last Global Sync</p>
-                          <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <p className="text-xs text-slate-700 font-mono font-bold">{lastSynced}</p>
-                          </div>
+                    <div className="flex items-center gap-4">
+                       {/* Date picker */}
+                       <div className="flex flex-col items-end gap-1">
+                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">View Date</label>
+                         <input
+                           type="date"
+                           max={todayStr}
+                           value={historyDate || todayStr}
+                           onChange={e => {
+                             const val = e.target.value;
+                             if (val === todayStr) handleDateChange('');
+                             else handleDateChange(val);
+                           }}
+                           className="text-xs font-mono border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
+                         />
                        </div>
-                       <button 
-                        onClick={handleRefresh}
-                        disabled={isRefreshing}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm ${
-                            isRefreshing 
-                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200' 
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/10'
-                        }`}
-                       >
-                          {isRefreshing ? <Globe size={14} className="animate-spin" /> : <Globe size={14} />}
-                          {isRefreshing ? 'Refreshing Hub...' : 'Sync All Accounts'}
-                       </button>
+                       {/* Last sync / Sync button — hidden in historical mode */}
+                       {!isHistoricalMode && (
+                         <>
+                           <div className="text-right hidden sm:flex flex-col items-end">
+                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Last Global Sync</p>
+                             <div className="flex items-center gap-2">
+                               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                               <p className="text-xs text-slate-700 font-mono font-bold">{lastSynced}</p>
+                             </div>
+                           </div>
+                           <button
+                             onClick={handleRefresh}
+                             disabled={isRefreshing}
+                             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm ${
+                               isRefreshing
+                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                 : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/10'
+                             }`}
+                           >
+                             {isRefreshing ? <Globe size={14} className="animate-spin" /> : <Globe size={14} />}
+                             {isRefreshing ? 'Refreshing Hub...' : 'Sync All Accounts'}
+                           </button>
+                         </>
+                       )}
                     </div>
                   </div>
 
                   <div className="space-y-12">
-                    {filteredCompanies.length === 0 ? (
+                    {historyEmpty ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-12 text-center">
+                        <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200">
+                          <History size={24} className="text-amber-400" />
+                        </div>
+                        <h4 className="text-slate-900 font-bold text-lg">No Historical Data</h4>
+                        <p className="text-slate-500 text-sm max-w-sm mx-auto mt-2">
+                          Sorry, we don't have historical data for this date. Try a different date or go back to live data.
+                        </p>
+                        <button
+                          onClick={() => handleDateChange('')}
+                          className="mt-6 px-6 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-all flex items-center gap-2 mx-auto"
+                        >
+                          <History size={16} />
+                          Back to Live Data
+                        </button>
+                      </div>
+                    ) : filteredCompanies.length === 0 ? (
                       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
                         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
                           <LayoutDashboard size={24} className="text-slate-300" />
@@ -1802,7 +1900,7 @@ export default function App() {
                         <p className="text-slate-500 text-sm max-w-sm mx-auto mt-2">
                           Please run the sync or feed data from your database to see the liquidity breakdown.
                         </p>
-                        <button 
+                        <button
                           onClick={handleRefresh}
                           className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all flex items-center gap-2 mx-auto"
                         >
