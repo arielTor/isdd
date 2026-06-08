@@ -349,7 +349,9 @@ const UserModal = ({
 
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              {user ? 'Change Password' : 'Password'}{user ? ' (leave blank to keep current)' : ''}
+              {user ? 'Change Password' : 'Password'}
+              {!user && <span className="text-red-500 ml-0.5">*</span>}
+              {user && <span className="text-slate-400 normal-case font-normal ml-1">(leave blank to keep current)</span>}
             </label>
             <div className="relative">
               <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -359,7 +361,7 @@ const UserModal = ({
                 onChange={e => { setPassword(e.target.value); setModalError(''); }}
                 onInput={e => { setPassword((e.target as HTMLInputElement).value); setModalError(''); }}
                 placeholder={user ? '••••••••' : 'Min. 8 characters'}
-                className="w-full pl-9 pr-10 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all"
+                className={`w-full pl-9 pr-10 py-2 rounded-lg border focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all ${!user && !password ? 'border-red-200 bg-red-50/30' : 'border-slate-200'}`}
               />
               <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
