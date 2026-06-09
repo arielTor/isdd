@@ -1796,6 +1796,9 @@ export default function App() {
 
   const hasAnyWallets = (c: Company) => (c.banks || []).some(b => (b.accounts || []).some(acc => (acc.wallets || []).length > 0));
 
+  // Mobile sidebar open/close state — must be declared before any early returns
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // ── Auth gate ────────────────────────────────────────────────────────────
   if (authLoading) {
     return (
@@ -1811,8 +1814,6 @@ export default function App() {
   if (!authUser) {
     return <LoginScreen onLogin={(user) => setAuthUser(user)} />;
   }
-
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="flex h-screen w-full overflow-hidden selection:bg-indigo-600/10 selection:text-indigo-600 font-sans">
