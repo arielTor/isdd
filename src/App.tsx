@@ -25,7 +25,8 @@ import {
   X,
   Upload,
   Eye,
-  EyeOff
+  EyeOff,
+  Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
@@ -77,6 +78,8 @@ const Sidebar = ({
   onNavigate,
   authUser,
   onLogout,
+  isOpen,
+  onClose,
 }: {
   companies: Company[],
   selectedCompanyId: string | null,
@@ -85,6 +88,8 @@ const Sidebar = ({
   onNavigate: (page: Page) => void,
   authUser: AuthUser | null,
   onLogout: () => void,
+  isOpen: boolean,
+  onClose: () => void,
 }) => {
   // Filter nav items by role
   const navItems = [
@@ -93,26 +98,36 @@ const Sidebar = ({
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
-  return (
-    <div className="w-64 h-full bg-sidebar-bg text-white flex flex-col shrink-0">
-      <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
-        <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
-          L
+  const sidebarContent = (
+    <div className="w-64 h-full bg-sidebar-bg text-white flex flex-col">
+      <div className="p-6 flex items-center justify-between border-b border-sidebar-border">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+            L
+          </div>
+          <span className="text-xl font-bold tracking-tight">Liquidity</span>
         </div>
-        <span className="text-xl font-bold tracking-tight">Liquidity Dashboard</span>
+        {/* Close button — mobile only */}
+        <button
+          onClick={onClose}
+          className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
+        >
+          <X size={18} />
+        </button>
       </div>
 
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">Companies</div>
-        
-        <button 
+
+        <button
           onClick={() => {
             onSelectCompany(null);
             onNavigate('dashboard');
+            onClose();
           }}
           className={`w-full flex items-center justify-between p-3 rounded-lg transition-all cursor-pointer group ${
             selectedCompanyId === null && activePage === 'dashboard'
-              ? 'bg-indigo-600 shadow-lg shadow-indigo-900/20' 
+              ? 'bg-indigo-600 shadow-lg shadow-indigo-900/20'
               : 'hover:bg-slate-700/50 text-slate-300'
           }`}
         >
@@ -121,15 +136,16 @@ const Sidebar = ({
         </button>
 
         {companies.map((company) => (
-          <button 
+          <button
             key={company.id}
             onClick={() => {
               onSelectCompany(company.id);
               onNavigate('dashboard');
+              onClose();
             }}
             className={`w-full flex items-center justify-between p-3 rounded-lg transition-all cursor-pointer group ${
               selectedCompanyId === company.id && activePage === 'dashboard'
-                ? 'bg-indigo-600 shadow-lg shadow-indigo-900/20' 
+                ? 'bg-indigo-600 shadow-lg shadow-indigo-900/20'
                 : 'hover:bg-slate-700/50 text-slate-300'
             }`}
           >
@@ -145,7 +161,7 @@ const Sidebar = ({
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id as Page)}
+              onClick={() => { onNavigate(item.id as Page); onClose(); }}
               className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${
                 activePage === item.id
                   ? 'bg-slate-700/50 text-white'
@@ -178,6 +194,30 @@ const Sidebar = ({
         </div>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar — always visible on md+ */}
+      <div className="hidden md:flex h-full shrink-0">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile sidebar — slide-in drawer */}
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm md:hidden"
+            onClick={onClose}
+          />
+          {/* Drawer */}
+          <div className="fixed inset-y-0 left-0 z-50 md:hidden flex">
+            {sidebarContent}
+          </div>
+        </>
+      )}
+    </>
   );
 };
 
@@ -284,11 +324,11 @@ const UserModal = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <motion.div 
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+      <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 w-full sm:max-w-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
       >
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <h3 className="font-bold text-slate-800">{user ? 'Edit User' : 'Add New User'}</h3>
@@ -298,7 +338,7 @@ const UserModal = ({
         </div>
 
         <div className="p-6 space-y-6 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Full Name</label>
               <input 
@@ -945,28 +985,39 @@ const AlertsPage = ({
 
 // --- Header Component ---
 
-const Header = ({ title, searchTerm, onSearch }: { title: string, searchTerm: string, onSearch: (val: string) => void }) => {
+const Header = ({ title, searchTerm, onSearch, onMenuClick }: { title: string, searchTerm: string, onSearch: (val: string) => void, onMenuClick: () => void }) => {
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shrink-0">
-      <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-slate-900 leading-none">{title}</h1>
-        <span className="text-slate-300">|</span>
-        <span className="text-sm text-slate-500">Active View: <span className="font-medium text-slate-900 uppercase tracking-wider text-[11px]">Secure Connection</span></span>
+    <header className="h-14 md:h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3">
+      <div className="flex items-center gap-3 min-w-0">
+        {/* Hamburger — mobile only */}
+        <button
+          onClick={onMenuClick}
+          className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors shrink-0"
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
+
+        <h1 className="text-base md:text-lg font-semibold text-slate-900 leading-none truncate">{title}</h1>
+        <span className="text-slate-300 hidden sm:block">|</span>
+        <span className="text-sm text-slate-500 hidden sm:block">
+          Active View: <span className="font-medium text-slate-900 uppercase tracking-wider text-[11px]">Secure Connection</span>
+        </span>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4 shrink-0">
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-md text-xs font-medium border border-slate-200">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
           Syncing
         </div>
-        <div className="relative">
+        <div className="relative hidden sm:block">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search resources..." 
+          <input
+            type="text"
+            placeholder="Search resources..."
             value={searchTerm}
             onChange={(e) => onSearch(e.target.value)}
-            className="w-64 h-9 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+            className="w-40 md:w-64 h-9 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
           />
         </div>
         <button className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
@@ -1020,11 +1071,11 @@ const BankDetailsModal = ({
   }, {} as Record<string, number>);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <motion.div 
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+      <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 w-full sm:max-w-xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
       >
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-3">
@@ -1761,6 +1812,8 @@ export default function App() {
     return <LoginScreen onLogin={(user) => setAuthUser(user)} />;
   }
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <div className="flex h-screen w-full overflow-hidden selection:bg-indigo-600/10 selection:text-indigo-600 font-sans">
       <Sidebar
@@ -1771,13 +1824,16 @@ export default function App() {
         onNavigate={setActivePage}
         authUser={authUser}
         onLogout={handleLogout}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
-        <Header 
-          title={selectedCompanyName} 
+        <Header
+          title={selectedCompanyName}
           searchTerm={searchQuery}
           onSearch={setSearchQuery}
+          onMenuClick={() => setSidebarOpen(true)}
         />
 
         <main ref={mainContentRef} className="flex-1 overflow-y-auto">
@@ -1788,7 +1844,7 @@ export default function App() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="max-w-7xl mx-auto p-8 space-y-8"
+                className="max-w-7xl mx-auto p-4 md:p-8 space-y-6 md:space-y-8"
               >
                 <div className="space-y-6">
 
@@ -1814,25 +1870,25 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center gap-4">
-                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between bg-white p-4 md:p-6 rounded-xl border border-slate-200 shadow-sm gap-4">
+                    <div className="flex items-center gap-3 md:gap-4">
+                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
                           {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : isRefreshing ? <Globe size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
                        </div>
                        <div>
-                          <h3 className="text-xl font-bold text-slate-900">Asset Breakdown</h3>
-                          <div className="flex items-center gap-2">
+                          <h3 className="text-base md:text-xl font-bold text-slate-900">Asset Breakdown</h3>
+                          <div className="flex items-center gap-2 flex-wrap">
                              <p className="text-xs text-slate-500 font-medium tracking-tight">
-                                {isHistoricalMode ? 'Showing historical snapshot data — read only' : 'Aggregated visibility across all linked accounts and wallets'}
+                                {isHistoricalMode ? 'Historical snapshot — read only' : 'Aggregated across all linked accounts'}
                              </p>
-                             {isRefreshing && !isHistoricalMode && <span className="text-[10px] text-indigo-600 font-bold animate-pulse uppercase tracking-widest ml-2">Syncing Data...</span>}
-                             {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest ml-2">Loading snapshot...</span>}
+                             {isRefreshing && !isHistoricalMode && <span className="text-[10px] text-indigo-600 font-bold animate-pulse uppercase tracking-widest">Syncing...</span>}
+                             {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest">Loading...</span>}
                           </div>
                        </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 md:gap-4 flex-wrap">
                        {/* Date picker */}
-                       <div className="flex flex-col items-end gap-1">
+                       <div className="flex flex-col gap-1">
                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">View Date</label>
                          <input
                            type="date"
@@ -1866,7 +1922,7 @@ export default function App() {
                              }`}
                            >
                              {isRefreshing ? <Globe size={14} className="animate-spin" /> : <Globe size={14} />}
-                             {isRefreshing ? 'Refreshing Hub...' : 'Sync All Accounts'}
+                             {isRefreshing ? 'Refreshing...' : 'Sync All'}
                            </button>
                          </>
                        )}
