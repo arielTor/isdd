@@ -1897,81 +1897,82 @@ export default function App() {
                     };
 
                     return (
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between bg-white p-4 md:p-6 rounded-xl border border-slate-200 shadow-sm gap-4">
-                    <div className="flex items-center gap-3 md:gap-4">
-                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
-                          {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : isRefreshing ? <Globe size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
-                       </div>
-                       <div>
-                          <h3 className="text-base md:text-xl font-bold text-slate-900">Asset Breakdown</h3>
-                          <div className="flex items-center gap-2 flex-wrap">
-                             <p className="text-xs text-slate-500 font-medium tracking-tight">
-                                {isHistoricalMode ? 'Historical snapshot — read only' : 'Aggregated across all linked accounts'}
-                             </p>
-                             {isRefreshing && !isHistoricalMode && <span className="text-[10px] text-indigo-600 font-bold animate-pulse uppercase tracking-widest">Syncing...</span>}
-                             {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest">Loading...</span>}
+                  <div className="flex flex-wrap items-center bg-white px-4 md:px-6 py-4 md:py-5 rounded-xl border border-slate-200 shadow-sm gap-x-6 gap-y-4">
+
+                    {/* ① Label */}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
+                        {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : isRefreshing ? <Globe size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
+                      </div>
+                      <div>
+                        <h3 className="text-base md:text-lg font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
+                        <p className="text-xs text-slate-400 font-medium">
+                          {isHistoricalMode ? 'Historical — read only' : 'Aggregated across all accounts'}
+                        </p>
+                        {isRefreshing && !isHistoricalMode && <span className="text-[10px] text-indigo-600 font-bold animate-pulse uppercase tracking-widest">Syncing...</span>}
+                        {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest">Loading...</span>}
+                      </div>
+                    </div>
+
+                    {/* ② Fiat (top) + Crypto (bottom) stacked */}
+                    <div className="flex flex-col gap-2 border-l border-slate-100 pl-6 shrink-0">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fiat (USD)</p>
+                        <p className={`text-xl font-bold font-mono leading-tight ${fiatTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(fiatTotal)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Crypto (USD)</p>
+                        <p className={`text-xl font-bold font-mono leading-tight ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
+                      </div>
+                    </div>
+
+                    {/* ③ Total Portfolio — bigger, right of the stack */}
+                    <div className="border-l border-slate-100 pl-6 shrink-0">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
+                      <p className={`text-3xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(grandTotalUsd)}</p>
+                    </div>
+
+                    {/* ④ Date picker + Sync — pushed to the far right */}
+                    <div className="flex items-center gap-4 ml-auto shrink-0 flex-wrap">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">View Date</label>
+                        <input
+                          type="date"
+                          max={todayStr}
+                          value={historyDate || todayStr}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === todayStr) handleDateChange('');
+                            else handleDateChange(val);
+                          }}
+                          className="text-xs font-mono border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
+                        />
+                      </div>
+                      {!isHistoricalMode && (
+                        <>
+                          <div className="flex flex-col items-end hidden sm:flex">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Last Global Sync</p>
+                            <div className="flex items-center gap-2">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <p className="text-xs text-slate-700 font-mono font-bold">{lastSynced}</p>
+                            </div>
                           </div>
-                       </div>
+                          <button
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm ${
+                              isRefreshing
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/10'
+                            }`}
+                          >
+                            {isRefreshing ? <Globe size={14} className="animate-spin" /> : <Globe size={14} />}
+                            {isRefreshing ? 'Refreshing...' : 'Sync All'}
+                          </button>
+                        </>
+                      )}
                     </div>
-                    {/* Fiat / Total / Crypto — same size, evenly spaced */}
-                    <div className="flex items-center divide-x divide-slate-100">
-                      {/* Fiat */}
-                      <div className="flex flex-col items-center px-6">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Fiat (USD)</p>
-                        <p className={`text-2xl font-bold font-mono ${fiatTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(fiatTotal)}</p>
-                      </div>
-                      {/* Total Portfolio — centre */}
-                      <div className="flex flex-col items-center px-6">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
-                        <p className={`text-2xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(grandTotalUsd)}</p>
-                      </div>
-                      {/* Crypto */}
-                      <div className="flex flex-col items-center px-6">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Crypto (USD)</p>
-                        <p className={`text-2xl font-bold font-mono ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 md:gap-4 flex-wrap">
-                       {/* Date picker */}
-                       <div className="flex flex-col gap-1">
-                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">View Date</label>
-                         <input
-                           type="date"
-                           max={todayStr}
-                           value={historyDate || todayStr}
-                           onChange={e => {
-                             const val = e.target.value;
-                             if (val === todayStr) handleDateChange('');
-                             else handleDateChange(val);
-                           }}
-                           className="text-xs font-mono border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
-                         />
-                       </div>
-                       {/* Last sync / Sync button — hidden in historical mode */}
-                       {!isHistoricalMode && (
-                         <>
-                           <div className="text-right hidden sm:flex flex-col items-end">
-                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Last Global Sync</p>
-                             <div className="flex items-center gap-2">
-                               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                               <p className="text-xs text-slate-700 font-mono font-bold">{lastSynced}</p>
-                             </div>
-                           </div>
-                           <button
-                             onClick={handleRefresh}
-                             disabled={isRefreshing}
-                             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm ${
-                               isRefreshing
-                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                 : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/10'
-                             }`}
-                           >
-                             {isRefreshing ? <Globe size={14} className="animate-spin" /> : <Globe size={14} />}
-                             {isRefreshing ? 'Refreshing...' : 'Sync All'}
-                           </button>
-                         </>
-                       )}
-                    </div>
+
                   </div>
                     ); // end IIFE return
                   })(/* Asset Breakdown card */)}
