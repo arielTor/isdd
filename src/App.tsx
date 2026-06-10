@@ -1160,8 +1160,8 @@ const BankDetailsModal = ({
                                   const neg = (wallet.value_usd ?? 0) < 0;
                                   const abs = Math.abs(wallet.value_usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                                   return (
-                                    <p className={`text-[10px] font-mono ${isEstimated ? 'text-slate-400 italic' : 'font-bold text-slate-500'}`}>
-                                      {neg ? '-' : ''}{isEstimated ? '~' : ''}${abs}
+                                    <p className={`text-[10px] font-mono font-bold ${neg ? 'text-red-500' : 'text-slate-500'}`}>
+                                      {neg ? '-' : ''}${abs}
                                     </p>
                                   );
                                 })()}
@@ -1871,6 +1871,24 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* ── Asset Breakdown header card ──────────────────── */}
+                  {(() => {
+                    // Compute grand total USD across all visible companies
+                    const grandTotalUsd = filteredCompanies.reduce((sum, company) => {
+                      return sum + (company.banks || []).reduce((bSum, bank) => {
+                        const accounts = bank.bank_accounts || bank.accounts || [];
+                        return bSum + (accounts as any[]).reduce((aSum: number, acc: any) => {
+                          let wallets = acc.wallets || [];
+                          if (typeof wallets === 'string') try { wallets = JSON.parse(wallets); } catch { wallets = []; }
+                          return aSum + (wallets as any[]).reduce((wSum: number, w: any) => wSum + (Number(w.value_usd) || 0), 0);
+                        }, 0);
+                      }, 0);
+                    }, 0);
+                    const isVerifiedBank = (bank: Bank) => bank.is_verified !== undefined
+                      ? (bank.is_verified === 1 || bank.is_verified === "1" || bank.is_verified === true)
+                      : bank.isVerified === true;
+
+                    return (
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between bg-white p-4 md:p-6 rounded-xl border border-slate-200 shadow-sm gap-4">
                     <div className="flex items-center gap-3 md:gap-4">
                        <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
@@ -1886,6 +1904,13 @@ export default function App() {
                              {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest">Loading...</span>}
                           </div>
                        </div>
+                    </div>
+                    {/* Grand total USD */}
+                    <div className="hidden md:flex flex-col items-end border-r border-slate-100 pr-6 mr-2">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
+                      <p className={`text-2xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                        {grandTotalUsd < 0 ? '-' : ''}${Math.abs(grandTotalUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
                     </div>
                     <div className="flex items-center gap-3 md:gap-4 flex-wrap">
                        {/* Date picker */}
@@ -1929,6 +1954,162 @@ export default function App() {
                        )}
                     </div>
                   </div>
+                    ); // end IIFE return
+                  })(/* Asset Breakdown card */)}
+
+                  {/* ── Cross-company summary table ──────────────────── */}
+                  {!historyEmpty && filteredCompanies.length > 0 && (() => {
+                    // Build: bankKey → currency → companyId → { lcy, usd }
+                    type CellData = { lcy: number; usd: number };
+                    const companyIds = filteredCompanies.map(c => c.id);
+
+                    // Ordered list of [bankName, currency] rows
+                    const rowKeys: { bankName: string; currency: string }[] = [];
+                    const seen = new Set<string>();
+
+                    // Map: bankName → currency → companyId → CellData
+                    const dataMap: Record<string, Record<string, Record<string, CellData>>> = {};
+                    // Map: bankName → companyId → usd subtotal
+                    const bankSubUsd: Record<string, Record<string, number>> = {};
+
+                    filteredCompanies.forEach(company => {
+                      (company.banks || []).forEach(bank => {
+                        const isVerified = bank.is_verified !== undefined
+                          ? (bank.is_verified === 1 || bank.is_verified === "1" || bank.is_verified === true)
+                          : bank.isVerified === true;
+                        if (!isVerified) return;
+
+                        const bankName = bank.name;
+                        if (!dataMap[bankName]) dataMap[bankName] = {};
+                        if (!bankSubUsd[bankName]) bankSubUsd[bankName] = {};
+
+                        const accounts = (bank.bank_accounts || bank.accounts || []) as any[];
+                        accounts.forEach(acc => {
+                          let wallets = acc.wallets || [];
+                          if (typeof wallets === 'string') try { wallets = JSON.parse(wallets); } catch { wallets = []; }
+                          (wallets as any[]).forEach(w => {
+                            const currency: string = w.currency || '?';
+                            const key = `${bankName}||${currency}`;
+                            if (!seen.has(key)) { seen.add(key); rowKeys.push({ bankName, currency }); }
+                            if (!dataMap[bankName][currency]) dataMap[bankName][currency] = {};
+                            const prev = dataMap[bankName][currency][company.id] || { lcy: 0, usd: 0 };
+                            const newUsd = Number(w.value_usd) || 0;
+                            dataMap[bankName][currency][company.id] = { lcy: prev.lcy + (Number(w.balance) || 0), usd: prev.usd + newUsd };
+                            bankSubUsd[bankName][company.id] = (bankSubUsd[bankName][company.id] || 0) + newUsd;
+                          });
+                        });
+                      });
+                    });
+
+                    // Group rowKeys by bankName preserving order
+                    const banks: string[] = [];
+                    rowKeys.forEach(({ bankName }) => { if (!banks.includes(bankName)) banks.push(bankName); });
+
+                    const fmt = (n: number) => {
+                      const neg = n < 0;
+                      const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      return (neg ? '-' : '') + s;
+                    };
+                    const fmtUsd = (n: number) => {
+                      const neg = n < 0;
+                      const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      return (neg ? '-$' : '$') + s;
+                    };
+
+                    const grandTotalUsdByCompany: Record<string, number> = {};
+                    companyIds.forEach(cid => {
+                      grandTotalUsdByCompany[cid] = banks.reduce((s, b) => s + (bankSubUsd[b]?.[cid] || 0), 0);
+                    });
+                    const grandTotalUsd = companyIds.reduce((s, cid) => s + grandTotalUsdByCompany[cid], 0);
+
+                    return (
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
+                          <WalletIcon size={16} className="text-indigo-500" />
+                          <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
+                          <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">All Companies</span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-xs" style={{ minWidth: `${300 + companyIds.length * 260}px` }}>
+                            <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              <tr>
+                                <th className="px-4 py-3 border-b border-slate-100 w-36">Bank</th>
+                                <th className="px-4 py-3 border-b border-slate-100 w-20">Currency</th>
+                                {filteredCompanies.map(c => (
+                                  <Fragment key={c.id}>
+                                    <th className="px-4 py-3 border-b border-slate-100 text-right border-l border-slate-100">{c.name} (LCY)</th>
+                                    <th className="px-4 py-3 border-b border-slate-100 text-right">{c.name} (USD)</th>
+                                  </Fragment>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {banks.map(bankName => {
+                                const currencies = rowKeys.filter(r => r.bankName === bankName).map(r => r.currency);
+                                return (
+                                  <Fragment key={bankName}>
+                                    {currencies.map((currency, cidx) => (
+                                      <tr key={currency} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-4 py-2.5 border-b border-slate-50 font-medium text-slate-700">
+                                          {cidx === 0 ? bankName : <span className="text-slate-300 text-[10px] ml-2">↳</span>}
+                                        </td>
+                                        <td className="px-4 py-2.5 border-b border-slate-50">
+                                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currency === 'USD' || currency === 'USDT' ? 'bg-emerald-100 text-emerald-700' : currency === 'BTC' || currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{currency}</span>
+                                        </td>
+                                        {filteredCompanies.map(company => {
+                                          const cell = dataMap[bankName]?.[currency]?.[company.id];
+                                          const lcy = cell?.lcy;
+                                          const usd = cell?.usd;
+                                          return (
+                                            <Fragment key={company.id}>
+                                              <td className="px-4 py-2.5 border-b border-slate-50 text-right font-mono text-slate-600 border-l border-slate-100">
+                                                {lcy !== undefined ? `${CURRENCY_SYMBOLS[currency] || ''}${fmt(lcy)}` : <span className="text-slate-200">—</span>}
+                                              </td>
+                                              <td className={`px-4 py-2.5 border-b border-slate-50 text-right font-mono font-bold ${usd !== undefined && usd < 0 ? 'text-red-600' : 'text-slate-700'}`}>
+                                                {usd !== undefined ? fmtUsd(usd) : <span className="text-slate-200 font-normal">—</span>}
+                                              </td>
+                                            </Fragment>
+                                          );
+                                        })}
+                                      </tr>
+                                    ))}
+                                    {/* Bank sub-total */}
+                                    <tr className="bg-slate-50 font-bold">
+                                      <td colSpan={2} className="px-4 py-2 border-b border-slate-200 text-[10px] text-slate-500 uppercase tracking-widest">
+                                        {bankName} Sub-Total
+                                      </td>
+                                      {filteredCompanies.map(company => (
+                                        <Fragment key={company.id}>
+                                          <td className="px-4 py-2 border-b border-slate-200 border-l border-slate-100" />
+                                          <td className={`px-4 py-2 border-b border-slate-200 text-right font-mono text-sm ${(bankSubUsd[bankName]?.[company.id] || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                                            {fmtUsd(bankSubUsd[bankName]?.[company.id] || 0)}
+                                          </td>
+                                        </Fragment>
+                                      ))}
+                                    </tr>
+                                  </Fragment>
+                                );
+                              })}
+                              {/* Grand total */}
+                              <tr className="bg-indigo-50 font-bold border-t-2 border-indigo-100">
+                                <td colSpan={2} className="px-4 py-3 text-[11px] text-indigo-700 uppercase tracking-widest font-bold">
+                                  Total
+                                </td>
+                                {filteredCompanies.map(company => (
+                                  <Fragment key={company.id}>
+                                    <td className="px-4 py-3 border-l border-indigo-100" />
+                                    <td className={`px-4 py-3 text-right font-mono text-sm font-bold ${grandTotalUsdByCompany[company.id] < 0 ? 'text-red-600' : 'text-indigo-700'}`}>
+                                      {fmtUsd(grandTotalUsdByCompany[company.id] || 0)}
+                                    </td>
+                                  </Fragment>
+                                ))}
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="space-y-12">
                     {historyEmpty ? (
@@ -2115,8 +2296,8 @@ export default function App() {
                                             const neg = converted.amount < 0;
                                             const abs = Math.abs(converted.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                                             return (
-                                              <span className={converted.estimated ? 'text-slate-400 italic text-xs' : 'font-bold text-slate-700 text-sm'}>
-                                                {neg ? '-' : ''}{converted.estimated ? '~' : ''}${abs}
+                                              <span className={`font-bold text-sm ${neg ? 'text-red-600' : 'text-slate-900'}`}>
+                                                {neg ? '-' : ''}${abs}
                                               </span>
                                             );
                                           })() : (
