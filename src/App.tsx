@@ -985,11 +985,22 @@ const AlertsPage = ({
 
 // --- Header Component ---
 
-const Header = ({ title, searchTerm, onSearch, onMenuClick }: { title: string, searchTerm: string, onSearch: (val: string) => void, onMenuClick: () => void }) => {
+const Header = ({
+  title, searchTerm, onSearch, onMenuClick, lastSynced, isRefreshing, onRefresh, isHistoricalMode
+}: {
+  title: string;
+  searchTerm: string;
+  onSearch: (val: string) => void;
+  onMenuClick: () => void;
+  lastSynced: string;
+  isRefreshing: boolean;
+  onRefresh: () => void;
+  isHistoricalMode: boolean;
+}) => {
   return (
-    <header className="h-14 md:h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3">
+    <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-14 md:h-16">
+      {/* Left — hamburger + title */}
       <div className="flex items-center gap-3 min-w-0">
-        {/* Hamburger — mobile only */}
         <button
           onClick={onMenuClick}
           className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors shrink-0"
@@ -997,27 +1008,49 @@ const Header = ({ title, searchTerm, onSearch, onMenuClick }: { title: string, s
         >
           <Menu size={20} />
         </button>
-
         <h1 className="text-base md:text-lg font-semibold text-slate-900 leading-none truncate">{title}</h1>
-        <span className="text-slate-300 hidden sm:block">|</span>
-        <span className="text-sm text-slate-500 hidden sm:block">
+        <span className="text-slate-300 hidden lg:block">|</span>
+        <span className="text-sm text-slate-500 hidden lg:block">
           Active View: <span className="font-medium text-slate-900 uppercase tracking-wider text-[11px]">Secure Connection</span>
         </span>
       </div>
 
-      <div className="flex items-center gap-2 md:gap-4 shrink-0">
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-md text-xs font-medium border border-slate-200">
-          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-          Syncing
-        </div>
+      {/* Right — sync info + search + bell */}
+      <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        {/* Last sync time — hidden on mobile */}
+        {!isHistoricalMode && (
+          <div className="hidden sm:flex flex-col items-end leading-tight">
+            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Last Sync</p>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-xs text-slate-700 font-mono font-bold">{lastSynced}</p>
+            </div>
+          </div>
+        )}
+        {/* Sync All button */}
+        {!isHistoricalMode && (
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
+              isRefreshing
+                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/10'
+            }`}
+          >
+            <Globe size={13} className={isRefreshing ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">{isRefreshing ? 'Syncing…' : 'Sync All'}</span>
+          </button>
+        )}
+        {/* Search */}
         <div className="relative hidden sm:block">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search resources..."
+            placeholder="Search…"
             value={searchTerm}
             onChange={(e) => onSearch(e.target.value)}
-            className="w-40 md:w-64 h-9 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+            className="w-32 md:w-48 h-8 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
           />
         </div>
         <button className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
@@ -1835,6 +1868,10 @@ export default function App() {
           searchTerm={searchQuery}
           onSearch={setSearchQuery}
           onMenuClick={() => setSidebarOpen(true)}
+          lastSynced={lastSynced}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          isHistoricalMode={isHistoricalMode}
         />
 
         <main ref={mainContentRef} className="flex-1 overflow-y-auto">
@@ -1897,43 +1934,46 @@ export default function App() {
                     };
 
                     return (
-                  <div className="flex flex-wrap items-center bg-white px-4 md:px-6 py-4 md:py-5 rounded-xl border border-slate-200 shadow-sm gap-x-6 gap-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 items-center bg-white px-4 md:px-6 py-4 md:py-5 rounded-xl border border-slate-200 shadow-sm gap-4">
 
-                    {/* ① Label */}
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
-                        {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : isRefreshing ? <Globe size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
+                    {/* ① Left — title */}
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
+                        {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
                       </div>
                       <div>
-                        <h3 className="text-base md:text-lg font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
+                        <h3 className="text-lg font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
                         <p className="text-xs text-slate-400 font-medium">
                           {isHistoricalMode ? 'Historical — read only' : 'Aggregated across all accounts'}
                         </p>
-                        {isRefreshing && !isHistoricalMode && <span className="text-[10px] text-indigo-600 font-bold animate-pulse uppercase tracking-widest">Syncing...</span>}
                         {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest">Loading...</span>}
                       </div>
                     </div>
 
-                    {/* ② Fiat (top) + Crypto (bottom) stacked */}
-                    <div className="flex flex-col gap-2 border-l border-slate-100 pl-6 shrink-0">
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fiat (USD)</p>
-                        <p className={`text-xl font-bold font-mono leading-tight ${fiatTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(fiatTotal)}</p>
+                    {/* ② Center — totals */}
+                    <div className="flex items-center justify-center gap-6">
+                      {/* Fiat + Crypto stacked */}
+                      <div className="flex flex-col gap-2">
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fiat (USD)</p>
+                          <p className={`text-xl font-bold font-mono leading-tight ${fiatTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(fiatTotal)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Crypto (USD)</p>
+                          <p className={`text-xl font-bold font-mono leading-tight ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
+                        </div>
                       </div>
+                      {/* Divider */}
+                      <div className="w-px h-14 bg-slate-100 hidden sm:block" />
+                      {/* Total Portfolio */}
                       <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Crypto (USD)</p>
-                        <p className={`text-xl font-bold font-mono leading-tight ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
+                        <p className={`text-3xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(grandTotalUsd)}</p>
                       </div>
                     </div>
 
-                    {/* ③ Total Portfolio — bigger, right of the stack */}
-                    <div className="border-l border-slate-100 pl-6 shrink-0">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
-                      <p className={`text-3xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(grandTotalUsd)}</p>
-                    </div>
-
-                    {/* ④ Date picker + Sync — pushed to the far right */}
-                    <div className="flex items-center gap-4 ml-auto shrink-0 flex-wrap">
+                    {/* ③ Right — date picker only */}
+                    <div className="flex justify-end">
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">View Date</label>
                         <input
@@ -1948,29 +1988,6 @@ export default function App() {
                           className="text-xs font-mono border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
                         />
                       </div>
-                      {!isHistoricalMode && (
-                        <>
-                          <div className="flex flex-col items-end hidden sm:flex">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Last Global Sync</p>
-                            <div className="flex items-center gap-2">
-                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              <p className="text-xs text-slate-700 font-mono font-bold">{lastSynced}</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={handleRefresh}
-                            disabled={isRefreshing}
-                            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm ${
-                              isRefreshing
-                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/10'
-                            }`}
-                          >
-                            {isRefreshing ? <Globe size={14} className="animate-spin" /> : <Globe size={14} />}
-                            {isRefreshing ? 'Refreshing...' : 'Sync All'}
-                          </button>
-                        </>
-                      )}
                     </div>
 
                   </div>
