@@ -1108,7 +1108,7 @@ const BankDetailsModal = ({
               <div className="col-span-2 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
                 <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Total USD Value</p>
                 <p className="text-2xl font-bold text-indigo-700 font-mono">
-                  ${totalUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${totalUsd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                 </p>
               </div>
             )}
@@ -1116,7 +1116,7 @@ const BankDetailsModal = ({
               <div key={currency} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total {currency}</p>
                 <p className="text-xl font-bold text-slate-900 font-mono">
-                  {CURRENCY_SYMBOLS[currency] || ''} {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  {CURRENCY_SYMBOLS[currency] || ''} {total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                 </p>
               </div>
             ))}
@@ -1154,11 +1154,11 @@ const BankDetailsModal = ({
                               </div>
                               <div className="text-right">
                                 <p className={`text-sm font-bold font-mono tracking-tight ${shouldHighlightRow(wallet.id) ? 'text-red-500 animate-pulse' : 'text-slate-900'}`}>
-                                   {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                   {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                 </p>
                                 {hasDbUsd && (() => {
                                   const neg = (wallet.value_usd ?? 0) < 0;
-                                  const abs = Math.abs(wallet.value_usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                  const abs = Math.abs(wallet.value_usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                                   return (
                                     <p className={`text-[10px] font-mono font-bold ${neg ? 'text-red-500' : 'text-slate-500'}`}>
                                       {neg ? '-' : ''}${abs}
@@ -1261,7 +1261,7 @@ const BankCard = ({ bank, onShowDetails, alerts }: { bank: Bank, onShowDetails: 
                 </td>
                 <td className={`px-5 py-3 border-b ${shouldHighlightRow(wallet.id) ? 'border-red-100' : 'border-slate-100'} text-right font-mono font-bold ${shouldHighlightRow(wallet.id) ? 'text-red-600 animate-pulse' : 'text-slate-700'}`}>
                   <div className="flex flex-col items-end">
-                    <span>{CURRENCY_SYMBOLS[wallet.currency] || ''} {wallet.balance.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</span>
+                    <span>{CURRENCY_SYMBOLS[wallet.currency] || ''} {wallet.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     {convertCurrency(wallet.balance, wallet.currency) && (
                       <span className="text-[9px] text-slate-400 italic">
                         ≈ {convertCurrency(wallet.balance, wallet.currency)?.label} {convertCurrency(wallet.balance, wallet.currency)?.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -1893,7 +1893,7 @@ export default function App() {
                     const grandTotalUsd = cryptoTotal + fiatTotal;
                     const fmtUsdHdr = (n: number) => {
                       const neg = n < 0;
-                      return (neg ? '-$' : '$') + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      return (neg ? '-$' : '$') + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                     };
 
                     return (
@@ -1981,13 +1981,13 @@ export default function App() {
                   {/* ── Portfolio Summary (flat + 3 mini tables) ─────── */}
                   {!historyEmpty && filteredCompanies.length > 0 && (() => {
                     // ── helpers ──────────────────────────────────────────
-                    const fmtN = (n: number, dp = 2) => {
+                    const fmtN = (n: number) => {
                       const neg = n < 0;
-                      const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+                      const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                       return neg ? `(${s})` : s;
                     };
                     const fmtUsd = (n: number) => {
-                      const neg = n < 0; const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      const neg = n < 0; const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                       return (neg ? '-$' : '$') + s;
                     };
                     const usdCls = (n: number) => n < 0 ? 'text-red-600' : 'text-slate-800';
@@ -2091,7 +2091,7 @@ export default function App() {
                                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span>
                                     </td>
                                     <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>
-                                      {CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance, 3)}
+                                      {CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}
                                     </td>
                                     <td className="px-5 py-3 text-right font-mono text-slate-500">
                                       {row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '—'}
@@ -2295,7 +2295,7 @@ export default function App() {
                                         </td>
                                         <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
                                         <td className={`px-6 py-4 border-b border-slate-100 text-right font-mono font-bold ${isAlertRow ? 'text-red-600 animate-pulse' : 'text-slate-900'}`}>
-                                          {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                          {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                         </td>
                                         <td className="px-6 py-4 border-b border-slate-100 text-right">
                                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wallet.currency === 'USD' || wallet.currency === 'USDT' ? 'bg-emerald-100 text-emerald-700' : wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
@@ -2305,7 +2305,7 @@ export default function App() {
                                         <td className="px-6 py-4 border-b border-slate-100 text-right font-mono">
                                           {converted ? (() => {
                                             const neg = converted.amount < 0;
-                                            const abs = Math.abs(converted.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                            const abs = Math.abs(converted.amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                                             return (
                                               <span className={`font-bold text-sm ${neg ? 'text-red-600' : 'text-slate-900'}`}>
                                                 {neg ? '-' : ''}${abs}
