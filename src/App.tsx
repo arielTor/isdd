@@ -1913,24 +1913,22 @@ export default function App() {
                           </div>
                        </div>
                     </div>
-                    {/* Fiat / Crypto split + Grand total */}
-                    <div className="flex items-center gap-6 flex-wrap justify-end">
+                    {/* Fiat / Total / Crypto — same size, evenly spaced */}
+                    <div className="flex items-center divide-x divide-slate-100">
                       {/* Fiat */}
-                      <div className="flex flex-col items-end">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fiat (USD)</p>
+                      <div className="flex flex-col items-center px-6">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Fiat (USD)</p>
                         <p className={`text-2xl font-bold font-mono ${fiatTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(fiatTotal)}</p>
                       </div>
-                      <div className="text-slate-300 text-xl font-light hidden sm:block">+</div>
-                      {/* Crypto */}
-                      <div className="flex flex-col items-end">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Crypto (USD)</p>
-                        <p className={`text-2xl font-bold font-mono ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
-                      </div>
-                      <div className="text-slate-300 text-xl font-light hidden sm:block">=</div>
-                      {/* Grand total */}
-                      <div className="flex flex-col items-end border-l border-slate-100 pl-6">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Total Portfolio (USD)</p>
+                      {/* Total Portfolio — centre */}
+                      <div className="flex flex-col items-center px-6">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
                         <p className={`text-2xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(grandTotalUsd)}</p>
+                      </div>
+                      {/* Crypto */}
+                      <div className="flex flex-col items-center px-6">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Crypto (USD)</p>
+                        <p className={`text-2xl font-bold font-mono ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 md:gap-4 flex-wrap">
