@@ -1914,21 +1914,21 @@ export default function App() {
                        </div>
                     </div>
                     {/* Fiat / Crypto split + Grand total */}
-                    <div className="flex items-center gap-5 flex-wrap justify-end">
+                    <div className="flex items-center gap-6 flex-wrap justify-end">
                       {/* Fiat */}
                       <div className="flex flex-col items-end">
-                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-0.5">Fiat (USD)</p>
-                        <p className={`text-base font-bold font-mono ${fiatTotal < 0 ? 'text-red-600' : 'text-blue-700'}`}>{fmtUsdHdr(fiatTotal)}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fiat (USD)</p>
+                        <p className={`text-2xl font-bold font-mono ${fiatTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(fiatTotal)}</p>
                       </div>
-                      <div className="text-slate-200 text-lg font-light hidden sm:block">+</div>
+                      <div className="text-slate-300 text-xl font-light hidden sm:block">+</div>
                       {/* Crypto */}
                       <div className="flex flex-col items-end">
-                        <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-0.5">Crypto (USD)</p>
-                        <p className={`text-base font-bold font-mono ${cryptoTotal < 0 ? 'text-red-600' : 'text-orange-600'}`}>{fmtUsdHdr(cryptoTotal)}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Crypto (USD)</p>
+                        <p className={`text-2xl font-bold font-mono ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
                       </div>
-                      <div className="text-slate-200 text-lg font-light hidden sm:block">=</div>
+                      <div className="text-slate-300 text-xl font-light hidden sm:block">=</div>
                       {/* Grand total */}
-                      <div className="flex flex-col items-end border-l border-slate-100 pl-5">
+                      <div className="flex flex-col items-end border-l border-slate-100 pl-6">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Total Portfolio (USD)</p>
                         <p className={`text-2xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(grandTotalUsd)}</p>
                       </div>
