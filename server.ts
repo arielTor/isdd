@@ -1010,8 +1010,14 @@ async function startServer() {
 
         const balance = Number(wallet.balance) || 0;
         if (balance <= alert.threshold) {
-          // Skip if already fired — alert fires once then auto-disables
-          if (alert.last_fired_at) continue;
+          // Atomic claim: only fire if last_fired_at is still NULL at the moment we update.
+          // This prevents duplicate emails when two checkAlerts() calls run concurrently
+          // (e.g. the 5-min interval and the on-create trigger overlapping).
+          const [claimed] = await conn.execute(
+            "UPDATE wallet_alerts SET last_fired_at=NOW(), is_enabled=0 WHERE id=? AND last_fired_at IS NULL AND is_enabled=1",
+            [alert.id]
+          ) as any;
+          if ((claimed as any).affectedRows === 0) continue; // another process already fired it
 
           const usdVal = wallet.value_usd ?? (rates[wallet.currency] ? balance * rates[wallet.currency] : balance);
           const payload = {
@@ -1028,8 +1034,6 @@ async function startServer() {
 
           try {
             const r = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-            // Disable alert after firing so it never fires again until manually re-enabled
-            await conn.execute("UPDATE wallet_alerts SET last_fired_at=NOW(), is_enabled=0 WHERE id=?", [alert.id]);
             console.log(`[Alert] Fired for wallet ${alert.wallet_id} — balance ${balance} ≤ threshold ${alert.threshold} (HTTP ${r.status}). Alert auto-disabled.`);
           } catch (e: any) {
             console.error(`[Alert] Webhook failed for ${alert.wallet_id}:`, e.message);
