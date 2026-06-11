@@ -917,6 +917,145 @@ async function startServer() {
     }
   });
 
+  // ── Alerts DB table ───────────────────────────────────────────────────────
+  (async () => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute(`
+        CREATE TABLE IF NOT EXISTS wallet_alerts (
+          id          VARCHAR(64)  NOT NULL PRIMARY KEY,
+          company_id  VARCHAR(64)  NOT NULL,
+          bank_id     VARCHAR(64)  NOT NULL,
+          wallet_id   VARCHAR(64)  NOT NULL,
+          threshold   DOUBLE       NOT NULL,
+          email       VARCHAR(255) NOT NULL,
+          is_enabled  TINYINT      NOT NULL DEFAULT 1,
+          last_fired_at DATETIME   NULL,
+          created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      `);
+      console.log("[Alerts] wallet_alerts table ready");
+    } catch (e: any) { console.warn("[Alerts] table init:", e.message); }
+    finally { conn.end(); }
+  })();
+
+  // GET /api/alerts — list all alerts
+  app.get("/api/alerts", corsMiddleware, requireAuth, async (_req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = await conn.execute("SELECT * FROM wallet_alerts ORDER BY created_at DESC") as any;
+      const alerts = (rows as any[]).map(r => ({
+        id: r.id, companyId: r.company_id, bankId: r.bank_id, walletId: r.wallet_id,
+        threshold: r.threshold, email: r.email, isEnabled: r.is_enabled === 1,
+      }));
+      res.json(alerts);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    finally { conn.end(); }
+  });
+
+  // POST /api/alerts — create alert
+  app.post("/api/alerts", corsMiddleware, requireAuth, async (req, res) => {
+    const { id, companyId, bankId, walletId, threshold, email, isEnabled } = req.body;
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute(
+        "INSERT INTO wallet_alerts (id, company_id, bank_id, wallet_id, threshold, email, is_enabled) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE threshold=VALUES(threshold), email=VALUES(email), is_enabled=VALUES(is_enabled)",
+        [id, companyId, bankId, walletId, threshold, email, isEnabled ? 1 : 0]
+      );
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    finally { conn.end(); }
+  });
+
+  // DELETE /api/alerts/:id — delete alert
+  app.delete("/api/alerts/:id", corsMiddleware, requireAuth, async (req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute("DELETE FROM wallet_alerts WHERE id=?", [req.params.id]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    finally { conn.end(); }
+  });
+
+  // PUT /api/alerts/:id/toggle — enable/disable
+  app.put("/api/alerts/:id/toggle", corsMiddleware, requireAuth, async (req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute("UPDATE wallet_alerts SET is_enabled = NOT is_enabled WHERE id=?", [req.params.id]);
+      const [rows] = await conn.execute("SELECT is_enabled FROM wallet_alerts WHERE id=?", [req.params.id]) as any;
+      res.json({ isEnabled: (rows as any[])[0]?.is_enabled === 1 });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    finally { conn.end(); }
+  });
+
+  // ── Server-side alert checker ─────────────────────────────────────────────
+  async function checkAlerts() {
+    const webhookUrl = process.env.ZAPIER_NOTIFY_WEBHOOK;
+    if (!webhookUrl) return;
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [alertRows] = await conn.execute("SELECT * FROM wallet_alerts WHERE is_enabled=1") as any;
+      if (!(alertRows as any[]).length) return;
+
+      const rates = await getUsdRates();
+
+      for (const alert of alertRows as any[]) {
+        // Get current balance for this wallet
+        const [wRows] = await conn.execute(
+          "SELECT w.balance, w.currency, w.value_usd, b.name as bank_name, c.name as company_name FROM wallets w JOIN bank_accounts ba ON w.account_id=ba.id JOIN banks b ON ba.bank_id=b.id JOIN companies c ON b.company_id=c.id WHERE w.id=?",
+          [alert.wallet_id]
+        ) as any;
+        const wallet = (wRows as any[])[0];
+        if (!wallet) continue;
+
+        const balance = Number(wallet.balance) || 0;
+        if (balance <= alert.threshold) {
+          // Check cooldown — don't re-fire within 1 hour
+          if (alert.last_fired_at) {
+            const msSinceFired = Date.now() - new Date(alert.last_fired_at).getTime();
+            if (msSinceFired < 60 * 60 * 1000) continue; // 1-hour cooldown
+          }
+
+          const usdVal = wallet.value_usd ?? (rates[wallet.currency] ? balance * rates[wallet.currency] : balance);
+          const payload = {
+            alert_id: alert.id,
+            company: wallet.company_name,
+            bank: wallet.bank_name,
+            wallet_id: alert.wallet_id,
+            currency: wallet.currency,
+            amount: balance,
+            usd_value: usdVal,
+            threshold: alert.threshold,
+            email_address: alert.email,
+          };
+
+          try {
+            const r = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            await conn.execute("UPDATE wallet_alerts SET last_fired_at=NOW() WHERE id=?", [alert.id]);
+            console.log(`[Alert] Fired for wallet ${alert.wallet_id} — balance ${balance} ≤ threshold ${alert.threshold} (HTTP ${r.status})`);
+          } catch (e: any) {
+            console.error(`[Alert] Webhook failed for ${alert.wallet_id}:`, e.message);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn("[Alerts] checkAlerts error:", e.message);
+    } finally {
+      conn.end();
+    }
+  }
+
+  // Run alert check every 5 minutes
+  setInterval(checkAlerts, 5 * 60 * 1000);
+  // Also run once on startup (after a short delay)
+  setTimeout(checkAlerts, 15_000);
+
+  // POST /api/alerts/check — manually trigger a check (called after sync)
+  app.post("/api/alerts/check", corsMiddleware, requireAuth, async (_req, res) => {
+    checkAlerts().catch(e => console.error("[Alerts] manual check error:", e.message));
+    res.json({ ok: true, message: "Alert check triggered" });
+  });
+
   // Alert rule saved → push to Zapier
   app.post("/api/alerts/trigger", corsMiddleware, requireAuth, async (req, res) => {
     const webhookUrl = process.env.ZAPIER_ALERTS_WEBHOOK;

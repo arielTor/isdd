@@ -1437,20 +1437,13 @@ export default function App() {
     if (authUser?.role === 'Admin') loadUsers();
   }, [authUser]);
 
-  const [alerts, setAlerts] = useState<WalletAlert[]>(() => {
-    const saved = localStorage.getItem('smarttool_alerts');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [alerts, setAlerts] = useState<WalletAlert[]>([]);
 
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   const [selectedBankDetails, setSelectedBankDetails] = useState<Bank | null>(null);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
-  const [firedAlertIds, setFiredAlertIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('smarttool_fired_alerts');
-    return saved ? JSON.parse(saved) : [];
-  });
   const [showDebug, setShowDebug] = useState(false);
 
   const handleShowBankDetails = (bank: Bank) => {
@@ -1460,72 +1453,13 @@ export default function App() {
 
   // Users are now stored in DB — no localStorage sync needed
 
+  // Load alerts from DB on mount
   useEffect(() => {
-    localStorage.setItem('smarttool_alerts', JSON.stringify(alerts));
-  }, [alerts]);
-
-  useEffect(() => {
-    localStorage.setItem('smarttool_fired_alerts', JSON.stringify(firedAlertIds));
-  }, [firedAlertIds]);
-
-  // Monitoring Effect: Check for alerts that hit a threshold
-  useEffect(() => {
-    const newFiredIds = [...firedAlertIds];
-    let changed = false;
-
-    alerts.forEach(alert => {
-      if (!alert.isEnabled) return;
-
-      const company = companies.find(c => c.id === alert.companyId);
-      const bank = company?.banks.find(b => b.id === alert.bankId);
-      const wallet = (bank?.bank_accounts || bank?.accounts || []).flatMap(acc => acc.wallets || []).find(w => w.id === alert.walletId);
-
-      if (wallet && wallet.balance <= alert.threshold) {
-        // Threshold triggered
-        if (!newFiredIds.includes(alert.id)) {
-          // Fire for the first time
-          console.log(`THRESHOLD HIT: Alert ${alert.id} triggered for ${wallet.id}`);
-          
-          const payload = {
-            alert_id: alert.id,
-            company: company?.name,
-            bank: bank?.name,
-            wallet_id: wallet.id,
-            currency: wallet.currency,
-            amount: wallet.balance,
-            threshold: alert.threshold,
-            email_address: alert.email,
-            // Context of all wallets in the bank
-            all_bank_wallets: (bank?.bank_accounts || bank?.accounts || []).flatMap(acc => acc.wallets || []).map(w => ({
-              id: w.id,
-              balance: w.balance,
-              currency: w.currency
-            }))
-          };
-
-          fetch('/api/alerts/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).catch(err => console.error('Alert notification failure:', err));
-
-          newFiredIds.push(alert.id);
-          changed = true;
-        }
-      } else if (wallet && wallet.balance > alert.threshold) {
-        // Reset if it's back to normal (allows firing again if it hits threshold later)
-        const idx = newFiredIds.indexOf(alert.id);
-        if (idx !== -1) {
-          newFiredIds.splice(idx, 1);
-          changed = true;
-        }
-      }
-    });
-
-    if (changed) {
-      setFiredAlertIds(newFiredIds);
-    }
-  }, [companies, alerts, firedAlertIds]); // Re-run when data, rules, or state change
+    fetch('/api/alerts')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAlerts(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
 
   const handleAddUser = () => {
     setEditingUser(null);
@@ -1570,50 +1504,29 @@ export default function App() {
   };
 
   const handleAddAlert = async (newAlert: Partial<WalletAlert>) => {
-    // The App is in charge of unique Alert ID creation
     const alertId = `alt-${Math.random().toString(36).substr(2, 9)}-${Date.now()}`;
-    
-    const alert: WalletAlert = {
-      ...newAlert,
-      id: alertId
-    } as WalletAlert;
-    
-    // Call backend to trigger Zapier (Add alert)
+    const alert: WalletAlert = { ...newAlert, id: alertId } as WalletAlert;
     try {
-      fetch('/api/alerts/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(alert)
-      });
-    } catch (e) {
-      console.error('Failed to trigger alert sync:', e);
-    }
-
-    setAlerts([...alerts, alert]);
+      await fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(alert) });
+      setAlerts(prev => [...prev, alert]);
+      // Trigger immediate server-side check
+      fetch('/api/alerts/check', { method: 'POST' }).catch(() => {});
+    } catch (e) { console.error('Failed to save alert:', e); }
   };
 
-  const handleDeleteAlert = (id: string) => {
-    setAlerts(alerts.filter(a => a.id !== id));
+  const handleDeleteAlert = async (id: string) => {
+    try {
+      await fetch(`/api/alerts/${id}`, { method: 'DELETE' });
+      setAlerts(prev => prev.filter(a => a.id !== id));
+    } catch (e) { console.error('Failed to delete alert:', e); }
   };
 
   const handleToggleAlert = async (id: string) => {
-    const updatedAlerts = alerts.map(a => a.id === id ? { ...a, isEnabled: !a.isEnabled } : a);
-    const modifiedAlert = updatedAlerts.find(a => a.id === id);
-    
-    // Call backend to trigger Zapier (Change alert - Toggle)
-    if (modifiedAlert) {
-      try {
-        fetch('/api/alerts/trigger', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(modifiedAlert)
-        });
-      } catch (e) {
-        console.error('Failed to trigger alert toggle sync:', e);
-      }
-    }
-    
-    setAlerts(updatedAlerts);
+    try {
+      const res = await fetch(`/api/alerts/${id}/toggle`, { method: 'PUT' });
+      const data = await res.json();
+      setAlerts(prev => prev.map(a => a.id === id ? { ...a, isEnabled: data.isEnabled } : a));
+    } catch (e) { console.error('Failed to toggle alert:', e); }
   };
 
   const filteredCompanies = useMemo(() => {
@@ -1650,7 +1563,7 @@ export default function App() {
     }
 
     return result;
-  }, [selectedCompanyId, companies, searchQuery]);
+  }, [selectedCompanyId, companies, searchQuery, historyData, isHistoricalMode]);
 
   const filteredBanks = useMemo(() => {
     return filteredCompanies.flatMap(c => c.banks);
