@@ -1047,8 +1047,6 @@ async function startServer() {
 
   // Run alert check every 5 minutes
   setInterval(checkAlerts, 5 * 60 * 1000);
-  // Also run once on startup (after a short delay)
-  setTimeout(checkAlerts, 15_000);
 
   // POST /api/alerts/check — manually trigger a check (called after sync)
   app.post("/api/alerts/check", corsMiddleware, requireAuth, async (_req, res) => {
