@@ -837,6 +837,56 @@ async function startServer() {
     }
   });
 
+  // ── Portfolio history sparklines ─────────────────────────────────────────
+  // GET /api/portfolio-history?days=30&companyId=xxx
+  // Returns daily fiat / crypto / total USD totals for the sparkline charts.
+  app.get("/api/portfolio-history", corsMiddleware, requireAuth, async (req: any, res) => {
+    const days = Math.min(Math.max(parseInt((req.query.days as string) || "30", 10), 7), 365);
+    const companyId = req.query.companyId as string | undefined;
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const CRYPTO = ['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT'];
+      const cryptoList = CRYPTO.map(() => '?').join(',');
+      const params: any[] = [...CRYPTO, ...CRYPTO, days];
+      if (companyId) params.push(companyId);
+
+      const [rows] = await conn.execute(`
+        SELECT
+          ws.snapshot_date,
+          SUM(CASE WHEN w.currency IN (${cryptoList}) THEN COALESCE(ws.value_usd,0) ELSE 0 END) AS crypto_total_usd,
+          SUM(CASE WHEN w.currency NOT IN (${cryptoList}) THEN COALESCE(ws.value_usd,0) ELSE 0 END) AS fiat_total_usd,
+          SUM(COALESCE(ws.value_usd,0)) AS total_usd
+        FROM wallet_snapshots ws
+        JOIN wallets       w  ON w.id  = ws.wallet_id
+        JOIN bank_accounts ba ON ba.id = w.account_id
+        JOIN banks         b  ON b.id  = ba.bank_id
+        JOIN companies     c  ON c.id  = b.company_id
+        WHERE ws.snapshot_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+          AND ws.snapshot_date <= CURDATE()
+          ${companyId ? 'AND c.id = ?' : ''}
+        GROUP BY ws.snapshot_date
+        ORDER BY ws.snapshot_date ASC
+      `, params) as [any[], any];
+
+      const data = (rows as any[]).map(r => ({
+        date:       r.snapshot_date instanceof Date
+                      ? r.snapshot_date.toISOString().slice(0,10)
+                      : String(r.snapshot_date).slice(0,10),
+        fiat:       Number(r.fiat_total_usd)   || 0,
+        crypto:     Number(r.crypto_total_usd) || 0,
+        total:      Number(r.total_usd)        || 0,
+      }));
+
+      res.json({ data, days, companyId: companyId || null });
+    } catch (e: any) {
+      console.error("[portfolio-history] error:", e.message);
+      res.status(500).json({ error: e.message });
+    } finally {
+      conn?.end();
+    }
+  });
+
   // Manual sync trigger
   app.post("/api/sync", corsMiddleware, requireAuth, async (_req, res) => {
     try {
@@ -919,24 +969,28 @@ async function startServer() {
 
   // ── Alerts DB table ───────────────────────────────────────────────────────
   (async () => {
-    const conn = await mysql.createConnection(dbConfig());
     try {
-      await conn.execute(`
-        CREATE TABLE IF NOT EXISTS wallet_alerts (
-          id          VARCHAR(64)  NOT NULL PRIMARY KEY,
-          company_id  VARCHAR(64)  NOT NULL,
-          bank_id     VARCHAR(64)  NOT NULL,
-          wallet_id   VARCHAR(64)  NOT NULL,
-          threshold   DOUBLE       NOT NULL,
-          email       VARCHAR(255) NOT NULL,
-          is_enabled  TINYINT      NOT NULL DEFAULT 1,
-          last_fired_at DATETIME   NULL,
-          created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-      `);
-      console.log("[Alerts] wallet_alerts table ready");
-    } catch (e: any) { console.warn("[Alerts] table init:", e.message); }
-    finally { conn.end(); }
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS wallet_alerts (
+            id          VARCHAR(64)  NOT NULL PRIMARY KEY,
+            company_id  VARCHAR(64)  NOT NULL,
+            bank_id     VARCHAR(64)  NOT NULL,
+            wallet_id   VARCHAR(64)  NOT NULL,
+            threshold   DOUBLE       NOT NULL,
+            email       VARCHAR(255) NOT NULL,
+            is_enabled  TINYINT      NOT NULL DEFAULT 1,
+            last_fired_at DATETIME   NULL,
+            created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[Alerts] wallet_alerts table ready");
+      } catch (e: any) { console.warn("[Alerts] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Alerts] DB not reachable on startup (alerts table skipped):", e.message);
+    }
   })();
 
   // GET /api/alerts — list all alerts

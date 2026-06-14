@@ -26,7 +26,9 @@ import {
   Upload,
   Eye,
   EyeOff,
-  Menu
+  Menu,
+  Bitcoin,
+  Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
@@ -986,16 +988,12 @@ const AlertsPage = ({
 // --- Header Component ---
 
 const Header = ({
-  title, searchTerm, onSearch, onMenuClick, lastSynced, isRefreshing, onRefresh, isHistoricalMode
+  title, searchTerm, onSearch, onMenuClick,
 }: {
   title: string;
   searchTerm: string;
   onSearch: (val: string) => void;
   onMenuClick: () => void;
-  lastSynced: string;
-  isRefreshing: boolean;
-  onRefresh: () => void;
-  isHistoricalMode: boolean;
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-14 md:h-16">
@@ -1015,33 +1013,8 @@ const Header = ({
         </span>
       </div>
 
-      {/* Right — sync info + search + bell */}
+      {/* Right — search + bell */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
-        {/* Last sync time — hidden on mobile */}
-        {!isHistoricalMode && (
-          <div className="hidden sm:flex flex-col items-end leading-tight">
-            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Last Sync</p>
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-xs text-slate-700 font-mono font-bold">{lastSynced}</p>
-            </div>
-          </div>
-        )}
-        {/* Sync All button */}
-        {!isHistoricalMode && (
-          <button
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
-              isRefreshing
-                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/10'
-            }`}
-          >
-            <Globe size={13} className={isRefreshing ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">{isRefreshing ? 'Syncing…' : 'Sync All'}</span>
-          </button>
-        )}
         {/* Search */}
         <div className="relative hidden sm:block">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1438,6 +1411,7 @@ export default function App() {
   }, [authUser]);
 
   const [alerts, setAlerts] = useState<WalletAlert[]>([]);
+  const [portfolioHistory, setPortfolioHistory] = useState<{ date: string; fiat: number; crypto: number; total: number; }[]>([]);
 
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -1460,6 +1434,18 @@ export default function App() {
       .then(data => setAlerts(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
+
+  // Load portfolio history for sparklines (last 30 days)
+  useEffect(() => {
+    if (!authUser) return;
+    const url = selectedCompanyId && selectedCompanyId !== 'all'
+      ? `/api/portfolio-history?days=30&companyId=${selectedCompanyId}`
+      : '/api/portfolio-history?days=30';
+    fetch(url)
+      .then(r => r.ok ? r.json() : { data: [] })
+      .then(res => setPortfolioHistory(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {});
+  }, [authUser, selectedCompanyId]);
 
   const handleAddUser = () => {
     setEditingUser(null);
@@ -1781,10 +1767,6 @@ export default function App() {
           searchTerm={searchQuery}
           onSearch={setSearchQuery}
           onMenuClick={() => setSidebarOpen(true)}
-          lastSynced={lastSynced}
-          isRefreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          isHistoricalMode={isHistoricalMode}
         />
 
         <main ref={mainContentRef} className="flex-1 overflow-y-auto">
@@ -1846,49 +1828,169 @@ export default function App() {
                       return (neg ? '-$' : '$') + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                     };
 
+                    // ── Donut chart helpers ──
+                    const cx = 80, cy = 80, r = 56, sw = 16;
+                    const circ = 2 * Math.PI * r;
+                    const absTotal = Math.abs(cryptoTotal) + Math.abs(fiatTotal) || 1;
+                    const cryptoRatio = Math.abs(cryptoTotal) / absTotal;
+                    const fiatRatio   = Math.abs(fiatTotal)   / absTotal;
+                    const cryptoPct   = Math.round(cryptoRatio * 100);
+                    const fiatPct     = 100 - cryptoPct;
+
+                    // ── Sparkline helpers ──
+                    const mkSparkPath = (pts: number[], w: number, h: number) => {
+                      const mn = Math.min(...pts), mx = Math.max(...pts), rng = mx - mn || 1;
+                      const coords = pts.map((v, i) => ({ x: (i / (pts.length - 1)) * w, y: h - ((v - mn) / rng) * h * 0.75 - h * 0.1 }));
+                      return coords.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+                    };
+                    const mkAreaPath = (linePath: string, w: number, h: number) => `${linePath} L ${w} ${h} L 0 ${h} Z`;
+                    // Use real historical data if available, otherwise decorative fallback
+                    const SPARK_FIAT   = portfolioHistory.length >= 2 ? portfolioHistory.map(d => d.fiat)   : [42,38,50,44,56,48,61,54,66,71];
+                    const SPARK_CRYPTO = portfolioHistory.length >= 2 ? portfolioHistory.map(d => d.crypto) : [30,46,36,54,46,60,50,66,60,76];
+                    const SPARK_TOTAL  = portfolioHistory.length >= 2 ? portfolioHistory.map(d => d.total)  : [20,28,24,38,32,44,39,52,48,58,54,67,62,74,70,82];
+
                     return (
-                  <div className="grid grid-cols-1 md:grid-cols-3 items-center bg-white px-4 md:px-6 py-4 md:py-5 rounded-xl border border-slate-200 shadow-sm gap-4">
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    {/* ── Main body ── */}
+                    <div className="flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
 
-                    {/* ① Left — title */}
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
-                        {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
+                      {/* ① LEFT — icon + donut + legend */}
+                      <div className="flex flex-col items-center lg:items-start gap-4 p-5 lg:p-6 lg:w-[38%]">
+                        {/* Title row */}
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 ${isHistoricalMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}>
+                            {historyLoading ? <RefreshCcw size={18} className="animate-spin" /> : <LayoutDashboard size={18} />}
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
+                            <p className="text-[11px] text-slate-400 font-medium">
+                              {isHistoricalMode ? 'Historical — read only' : 'Aggregated across all accounts'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Donut chart */}
+                        <svg width={160} height={160} viewBox="0 0 160 160" className="mx-auto lg:mx-0">
+                          <g transform={`rotate(-90 ${cx} ${cy})`}>
+                            {/* track */}
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={sw} />
+                            {/* crypto arc — indigo */}
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#6366f1" strokeWidth={sw}
+                              strokeDasharray={`${cryptoRatio * circ} ${circ}`} />
+                            {/* fiat arc — sky blue */}
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#93c5fd" strokeWidth={sw}
+                              strokeDasharray={`${fiatRatio * circ} ${circ}`}
+                              strokeDashoffset={`${-cryptoRatio * circ}`} />
+                          </g>
+                          <text x={cx} y={cy - 13} textAnchor="middle" fontSize="7.5" fontWeight="700" fill="#94a3b8" letterSpacing="0.8">TOTAL PORTFOLIO</text>
+                          <text x={cx} y={cy + 8} textAnchor="middle" fontSize="14" fontWeight="800" fill="#1e293b">{fmtUsdHdr(grandTotalUsd)}</text>
+                        </svg>
+
+                        {/* Legend */}
+                        <div className="flex flex-col gap-2 w-full">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
+                              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Crypto</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-sm font-bold font-mono text-slate-800">{fmtUsdHdr(cryptoTotal)}</span>
+                              <span className="text-[10px] text-indigo-400 font-bold ml-1.5">{cryptoPct}%</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2.5 h-2.5 rounded-full bg-sky-300 shrink-0" />
+                              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Fiat</span>
+                            </div>
+                            <div className="text-right">
+                              <span className={`text-sm font-bold font-mono ${fiatTotal < 0 ? 'text-red-500' : 'text-slate-800'}`}>{fmtUsdHdr(fiatTotal)}</span>
+                              <span className="text-[10px] text-sky-400 font-bold ml-1.5">{fiatPct}%</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
-                        <p className="text-xs text-slate-400 font-medium">
-                          {isHistoricalMode ? 'Historical — read only' : 'Aggregated across all accounts'}
-                        </p>
-                        {historyLoading && <span className="text-[10px] text-amber-600 font-bold animate-pulse uppercase tracking-widest">Loading...</span>}
+
+                      {/* ② RIGHT — mini cards + total card */}
+                      <div className="flex flex-col gap-3 p-5 lg:p-6 flex-1">
+
+                        {/* Top row: Fiat + Crypto mini cards */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Fiat mini card */}
+                          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+                                <WalletIcon size={14} className="text-indigo-600" />
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fiat (USD)</p>
+                            </div>
+                            <p className={`text-xl font-bold font-mono leading-none ${fiatTotal < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                              {fmtUsdHdr(fiatTotal)}
+                            </p>
+                            <svg width="100%" height="36" viewBox="0 0 120 36" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="gradFiat" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#6366f1" stopOpacity="0.25" />
+                                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                                </linearGradient>
+                              </defs>
+                              <path d={mkAreaPath(mkSparkPath(SPARK_FIAT, 120, 36), 120, 36)} fill="url(#gradFiat)" />
+                              <path d={mkSparkPath(SPARK_FIAT, 120, 36)} fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+
+                          {/* Crypto mini card */}
+                          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
+                                <Bitcoin size={14} className="text-sky-500" />
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Crypto (USD)</p>
+                            </div>
+                            <p className={`text-xl font-bold font-mono leading-none ${cryptoTotal < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                              {fmtUsdHdr(cryptoTotal)}
+                            </p>
+                            <svg width="100%" height="36" viewBox="0 0 120 36" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="gradCrypto" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.25" />
+                                  <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+                                </linearGradient>
+                              </defs>
+                              <path d={mkAreaPath(mkSparkPath(SPARK_CRYPTO, 120, 36), 120, 36)} fill="url(#gradCrypto)" />
+                              <path d={mkSparkPath(SPARK_CRYPTO, 120, 36)} fill="none" stroke="#38bdf8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        </div>
+
+                        {/* Total portfolio dark card */}
+                        <div className="relative bg-[#1a1a2e] rounded-xl p-4 overflow-hidden flex-1 min-h-[110px]">
+                          <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
+                          <p className={`text-3xl font-bold font-mono text-white leading-none mb-1 ${grandTotalUsd < 0 ? 'text-red-400' : 'text-white'}`}>
+                            {fmtUsdHdr(grandTotalUsd)}
+                          </p>
+                          {/* Area chart overlay */}
+                          <div className="absolute bottom-0 left-0 right-0 h-16 opacity-60">
+                            <svg width="100%" height="64" viewBox="0 0 320 64" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#a5b4fc" stopOpacity="0.5" />
+                                  <stop offset="100%" stopColor="#a5b4fc" stopOpacity="0" />
+                                </linearGradient>
+                              </defs>
+                              <path d={mkAreaPath(mkSparkPath(SPARK_TOTAL, 320, 64), 320, 64)} fill="url(#gradTotal)" />
+                              <path d={mkSparkPath(SPARK_TOTAL, 320, 64)} fill="none" stroke="#a5b4fc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* ② Center — totals */}
-                    <div className="flex items-center justify-center gap-6">
-                      {/* Fiat + Crypto stacked */}
-                      <div className="flex flex-col gap-2">
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fiat (USD)</p>
-                          <p className={`text-xl font-bold font-mono leading-tight ${fiatTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(fiatTotal)}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Crypto (USD)</p>
-                          <p className={`text-xl font-bold font-mono leading-tight ${cryptoTotal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(cryptoTotal)}</p>
-                        </div>
-                      </div>
-                      {/* Divider */}
-                      <div className="w-px h-14 bg-slate-100 hidden sm:block" />
-                      {/* Total Portfolio */}
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
-                        <p className={`text-3xl font-bold font-mono ${grandTotalUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdHdr(grandTotalUsd)}</p>
-                      </div>
-                    </div>
-
-                    {/* ③ Right — date picker only */}
-                    <div className="flex justify-end">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">View Date</label>
+                    {/* ── Bottom bar — date · sync · button ── */}
+                    <div className="border-t border-slate-100 px-5 py-3 flex flex-wrap items-center gap-4">
+                      {/* Date picker */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</span>
                         <input
                           type="date"
                           max={todayStr}
@@ -1898,11 +2000,35 @@ export default function App() {
                             if (val === todayStr) handleDateChange('');
                             else handleDateChange(val);
                           }}
-                          className="text-xs font-mono border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
+                          className="text-xs font-mono border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
                         />
                       </div>
-                    </div>
 
+                      {/* Last Global Sync */}
+                      {!isHistoricalMode && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last Global Sync</span>
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-xs font-mono font-bold text-slate-700">{lastSynced}</span>
+                        </div>
+                      )}
+
+                      {/* Sync All button */}
+                      {!isHistoricalMode && (
+                        <button
+                          onClick={handleRefresh}
+                          disabled={isRefreshing}
+                          className={`ml-auto flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm ${
+                            isRefreshing
+                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                              : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/20'
+                          }`}
+                        >
+                          <Globe size={13} className={isRefreshing ? 'animate-spin' : ''} />
+                          {isRefreshing ? 'Syncing…' : 'Sync All'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                     ); // end IIFE return
                   })(/* Asset Breakdown card */)}
