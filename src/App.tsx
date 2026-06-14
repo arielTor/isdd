@@ -31,7 +31,7 @@ import {
   Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
+import { useState, useMemo, useEffect, Fragment, useRef, MouseEvent } from 'react';
 import { MOCK_COMPANIES } from './mockData';
 import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate } from './types';
 import UploadScreen from './UploadScreen';
@@ -985,6 +985,99 @@ const AlertsPage = ({
   );
 };
 
+// --- SparklineChart Component (with hover tooltip) ---
+
+interface SparkPoint { date: string; value: number; }
+
+const SparklineChart = ({
+  data, color, gradId, height = 36, dark = false,
+  fmtVal,
+}: {
+  data: SparkPoint[];
+  color: string;
+  gradId: string;
+  height?: number;
+  dark?: boolean;
+  fmtVal: (n: number) => string;
+}) => {
+  const [tip, setTip] = useState<{ px: number; py: number; date: string; val: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const W = 320;
+
+  const fallback: SparkPoint[] = data.length >= 2 ? data : [
+    { date: '', value: 20 }, { date: '', value: 30 }, { date: '', value: 25 },
+    { date: '', value: 40 }, { date: '', value: 35 }, { date: '', value: 50 },
+    { date: '', value: 45 }, { date: '', value: 60 }, { date: '', value: 55 },
+    { date: '', value: 70 },
+  ];
+  const pts_raw = fallback;
+  const vals = pts_raw.map(d => d.value);
+  const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1;
+  const pts = pts_raw.map((d, i) => ({
+    x: (i / (pts_raw.length - 1)) * W,
+    y: height - ((d.value - mn) / rng) * height * 0.75 - height * 0.1,
+    date: d.date,
+    val: d.value,
+  }));
+
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L ${W} ${height} L 0 ${height} Z`;
+
+  const handleEnter = (p: typeof pts[0]) => (e: MouseEvent<SVGCircleElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const scaleX = rect.width / W;
+    const scaleY = rect.height / height;
+    setTip({ px: p.x * scaleX, py: p.y * scaleY, date: p.date, val: p.val });
+  };
+
+  return (
+    <div className="relative" onMouseLeave={() => setTip(null)}>
+      <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={dark ? '0.4' : '0.25'} />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill={`url(#${gradId})`} />
+        <path d={linePath} fill="none" stroke={color} strokeWidth={dark ? '2' : '1.8'} strokeLinecap="round" strokeLinejoin="round" />
+        {/* Dot + invisible hit area for each point */}
+        {pts.map((p, i) => (
+          <g key={i}>
+            {/* visible dot — always show on dark, show on hover for light */}
+            {(dark || tip?.date === p.date) && p.date && (
+              <circle cx={p.x} cy={p.y} r={dark ? 3 : 3} fill={dark ? '#a5b4fc' : color} />
+            )}
+            {/* invisible large hit area */}
+            <circle cx={p.x} cy={p.y} r={10} fill="transparent"
+              onMouseEnter={p.date ? handleEnter(p) : undefined}
+              style={{ cursor: p.date ? 'crosshair' : 'default' }} />
+          </g>
+        ))}
+      </svg>
+
+      {/* Tooltip */}
+      {tip && tip.date && (
+        <div
+          className={`absolute z-20 pointer-events-none rounded-lg px-2.5 py-1.5 shadow-xl text-xs whitespace-nowrap ${
+            dark ? 'bg-white text-slate-800' : 'bg-slate-800 text-white'
+          }`}
+          style={{ left: tip.px, top: tip.py, transform: 'translate(-50%, -120%)' }}
+        >
+          <p className="font-bold mb-0.5">{tip.date}</p>
+          <p className="font-mono">{fmtVal(tip.val)}</p>
+          {/* arrow */}
+          <div className={`absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent ${
+            dark ? 'border-t-white' : 'border-t-slate-800'
+          }`} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- Header Component ---
 
 const Header = ({
@@ -1829,7 +1922,7 @@ export default function App() {
                     };
 
                     // ── Donut chart helpers ──
-                    const cx = 80, cy = 80, r = 56, sw = 16;
+                    const cx = 100, cy = 100, r = 76, sw = 18;
                     const circ = 2 * Math.PI * r;
                     const absTotal = Math.abs(cryptoTotal) + Math.abs(fiatTotal) || 1;
                     const cryptoRatio = Math.abs(cryptoTotal) / absTotal;
@@ -1837,17 +1930,11 @@ export default function App() {
                     const cryptoPct   = Math.round(cryptoRatio * 100);
                     const fiatPct     = 100 - cryptoPct;
 
-                    // ── Sparkline helpers ──
-                    const mkSparkPath = (pts: number[], w: number, h: number) => {
-                      const mn = Math.min(...pts), mx = Math.max(...pts), rng = mx - mn || 1;
-                      const coords = pts.map((v, i) => ({ x: (i / (pts.length - 1)) * w, y: h - ((v - mn) / rng) * h * 0.75 - h * 0.1 }));
-                      return coords.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-                    };
-                    const mkAreaPath = (linePath: string, w: number, h: number) => `${linePath} L ${w} ${h} L 0 ${h} Z`;
-                    // Use real historical data if available, otherwise decorative fallback
-                    const SPARK_FIAT   = portfolioHistory.length >= 2 ? portfolioHistory.map(d => d.fiat)   : [42,38,50,44,56,48,61,54,66,71];
-                    const SPARK_CRYPTO = portfolioHistory.length >= 2 ? portfolioHistory.map(d => d.crypto) : [30,46,36,54,46,60,50,66,60,76];
-                    const SPARK_TOTAL  = portfolioHistory.length >= 2 ? portfolioHistory.map(d => d.total)  : [20,28,24,38,32,44,39,52,48,58,54,67,62,74,70,82];
+                    // ── Sparkline data (real history or fallback) ──
+                    const hasHistory = portfolioHistory.length >= 2;
+                    const SPARK_FIAT:   SparkPoint[] = hasHistory ? portfolioHistory.map(d => ({ date: d.date, value: d.fiat }))   : [];
+                    const SPARK_CRYPTO: SparkPoint[] = hasHistory ? portfolioHistory.map(d => ({ date: d.date, value: d.crypto })) : [];
+                    const SPARK_TOTAL:  SparkPoint[] = hasHistory ? portfolioHistory.map(d => ({ date: d.date, value: d.total }))  : [];
 
                     return (
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1869,8 +1956,8 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Donut chart */}
-                        <svg width={160} height={160} viewBox="0 0 160 160" className="mx-auto lg:mx-0">
+                        {/* Donut chart — bigger */}
+                        <svg width={200} height={200} viewBox="0 0 200 200" className="mx-auto">
                           <g transform={`rotate(-90 ${cx} ${cy})`}>
                             {/* track */}
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={sw} />
@@ -1882,8 +1969,8 @@ export default function App() {
                               strokeDasharray={`${fiatRatio * circ} ${circ}`}
                               strokeDashoffset={`${-cryptoRatio * circ}`} />
                           </g>
-                          <text x={cx} y={cy - 13} textAnchor="middle" fontSize="7.5" fontWeight="700" fill="#94a3b8" letterSpacing="0.8">TOTAL PORTFOLIO</text>
-                          <text x={cx} y={cy + 8} textAnchor="middle" fontSize="14" fontWeight="800" fill="#1e293b">{fmtUsdHdr(grandTotalUsd)}</text>
+                          <text x={cx} y={cy - 14} textAnchor="middle" fontSize="8" fontWeight="700" fill="#94a3b8" letterSpacing="0.8">TOTAL PORTFOLIO</text>
+                          <text x={cx} y={cy + 6} textAnchor="middle" fontSize="16" fontWeight="800" fill="#1e293b">{fmtUsdHdr(grandTotalUsd)}</text>
                         </svg>
 
                         {/* Legend */}
@@ -1927,16 +2014,7 @@ export default function App() {
                             <p className={`text-xl font-bold font-mono leading-none ${fiatTotal < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                               {fmtUsdHdr(fiatTotal)}
                             </p>
-                            <svg width="100%" height="36" viewBox="0 0 120 36" preserveAspectRatio="none">
-                              <defs>
-                                <linearGradient id="gradFiat" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#6366f1" stopOpacity="0.25" />
-                                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                                </linearGradient>
-                              </defs>
-                              <path d={mkAreaPath(mkSparkPath(SPARK_FIAT, 120, 36), 120, 36)} fill="url(#gradFiat)" />
-                              <path d={mkSparkPath(SPARK_FIAT, 120, 36)} fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
+                            <SparklineChart data={SPARK_FIAT} color="#6366f1" gradId="gradFiat" height={36} fmtVal={fmtUsdHdr} />
                           </div>
 
                           {/* Crypto mini card */}
@@ -1950,16 +2028,7 @@ export default function App() {
                             <p className={`text-xl font-bold font-mono leading-none ${cryptoTotal < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                               {fmtUsdHdr(cryptoTotal)}
                             </p>
-                            <svg width="100%" height="36" viewBox="0 0 120 36" preserveAspectRatio="none">
-                              <defs>
-                                <linearGradient id="gradCrypto" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.25" />
-                                  <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-                                </linearGradient>
-                              </defs>
-                              <path d={mkAreaPath(mkSparkPath(SPARK_CRYPTO, 120, 36), 120, 36)} fill="url(#gradCrypto)" />
-                              <path d={mkSparkPath(SPARK_CRYPTO, 120, 36)} fill="none" stroke="#38bdf8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
+                            <SparklineChart data={SPARK_CRYPTO} color="#38bdf8" gradId="gradCrypto" height={36} fmtVal={fmtUsdHdr} />
                           </div>
                         </div>
 
@@ -1970,17 +2039,8 @@ export default function App() {
                             {fmtUsdHdr(grandTotalUsd)}
                           </p>
                           {/* Area chart overlay */}
-                          <div className="absolute bottom-0 left-0 right-0 h-16 opacity-60">
-                            <svg width="100%" height="64" viewBox="0 0 320 64" preserveAspectRatio="none">
-                              <defs>
-                                <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#a5b4fc" stopOpacity="0.5" />
-                                  <stop offset="100%" stopColor="#a5b4fc" stopOpacity="0" />
-                                </linearGradient>
-                              </defs>
-                              <path d={mkAreaPath(mkSparkPath(SPARK_TOTAL, 320, 64), 320, 64)} fill="url(#gradTotal)" />
-                              <path d={mkSparkPath(SPARK_TOTAL, 320, 64)} fill="none" stroke="#a5b4fc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
+                          <div className="absolute bottom-0 left-0 right-0 h-16">
+                            <SparklineChart data={SPARK_TOTAL} color="#a5b4fc" gradId="gradTotal" height={64} dark fmtVal={fmtUsdHdr} />
                           </div>
                         </div>
                       </div>
