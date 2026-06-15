@@ -840,23 +840,31 @@ async function startServer() {
   // ── Portfolio history sparklines ─────────────────────────────────────────
   // GET /api/portfolio-history?days=30&companyId=xxx
   // Returns daily fiat / crypto / total USD totals for the sparkline charts.
+  // Applies the same value_usd → balance×rate fallback as the snapshot API
+  // so that chart totals exactly match what is displayed in the donut/cards.
   app.get("/api/portfolio-history", corsMiddleware, requireAuth, async (req: any, res) => {
     const days = Math.min(Math.max(parseInt((req.query.days as string) || "30", 10), 7), 365);
     const companyId = req.query.companyId as string | undefined;
     let conn: any;
     try {
       conn = await mysql.createConnection(dbConfig());
-      const CRYPTO = ['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT'];
-      const cryptoList = CRYPTO.map(() => '?').join(',');
-      const params: any[] = [...CRYPTO, ...CRYPTO, days];
+
+      // Same crypto set used everywhere in the app
+      const CRYPTO_SET = new Set(['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT']);
+
+      // Fetch live FX rates for the balance×rate fallback (mirrors snapshot API)
+      const rates = await getUsdRates();
+
+      // Pull individual wallet rows so we can apply the rate fallback per wallet
+      const params: any[] = [days];
       if (companyId) params.push(companyId);
 
       const [rows] = await conn.execute(`
         SELECT
           ws.snapshot_date,
-          SUM(CASE WHEN w.currency IN (${cryptoList}) THEN COALESCE(ws.value_usd,0) ELSE 0 END) AS crypto_total_usd,
-          SUM(CASE WHEN w.currency NOT IN (${cryptoList}) THEN COALESCE(ws.value_usd,0) ELSE 0 END) AS fiat_total_usd,
-          SUM(COALESCE(ws.value_usd,0)) AS total_usd
+          w.currency,
+          ws.balance,
+          ws.value_usd
         FROM wallet_snapshots ws
         JOIN wallets       w  ON w.id  = ws.wallet_id
         JOIN bank_accounts ba ON ba.id = w.account_id
@@ -865,18 +873,36 @@ async function startServer() {
         WHERE ws.snapshot_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
           AND ws.snapshot_date <= CURDATE()
           ${companyId ? 'AND c.id = ?' : ''}
-        GROUP BY ws.snapshot_date
         ORDER BY ws.snapshot_date ASC
       `, params) as [any[], any];
 
-      const data = (rows as any[]).map(r => ({
-        date:       r.snapshot_date instanceof Date
-                      ? r.snapshot_date.toISOString().slice(0,10)
-                      : String(r.snapshot_date).slice(0,10),
-        fiat:       Number(r.fiat_total_usd)   || 0,
-        crypto:     Number(r.crypto_total_usd) || 0,
-        total:      Number(r.total_usd)        || 0,
-      }));
+      // Aggregate in JS, using the same fallback logic as /api/liquidity/snapshot
+      const byDate = new Map<string, { fiat: number; crypto: number; total: number }>();
+      for (const row of rows as any[]) {
+        const dateKey = row.snapshot_date instanceof Date
+          ? row.snapshot_date.toISOString().slice(0, 10)
+          : String(row.snapshot_date).slice(0, 10);
+
+        if (!byDate.has(dateKey)) byDate.set(dateKey, { fiat: 0, crypto: 0, total: 0 });
+
+        const balance  = Number(row.balance) || 0;
+        const currency = row.currency as string;
+
+        // value_usd authoritative → fall back to balance × live rate (same as snapshot API)
+        const usdVal = (row.value_usd != null && row.value_usd !== '')
+          ? Number(row.value_usd)
+          : (rates[currency] !== undefined ? balance * rates[currency] : 0);
+
+        const entry = byDate.get(dateKey)!;
+        entry.total += usdVal;
+        if (CRYPTO_SET.has(currency)) entry.crypto += usdVal;
+        else                          entry.fiat   += usdVal;
+      }
+
+      // Sort by date ascending
+      const data = Array.from(byDate.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, v]) => ({ date, fiat: v.fiat, crypto: v.crypto, total: v.total }));
 
       res.json({ data, days, companyId: companyId || null });
     } catch (e: any) {
