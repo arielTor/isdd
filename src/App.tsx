@@ -1003,6 +1003,7 @@ const SparklineChart = ({
   const [tip, setTip] = useState<{ px: number; py: number; date: string; val: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const W = 320;
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const fallback: SparkPoint[] = data.length >= 2 ? data : [
     { date: '', value: 20 }, { date: '', value: 30 }, { date: '', value: 25 },
@@ -1018,6 +1019,7 @@ const SparklineChart = ({
     y: height - ((d.value - mn) / rng) * height * 0.75 - height * 0.1,
     date: d.date,
     val: d.value,
+    isToday: d.date === todayStr,
   }));
 
   const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
@@ -1046,9 +1048,21 @@ const SparklineChart = ({
         {/* Dot + invisible hit area for each point */}
         {pts.map((p, i) => (
           <g key={i}>
-            {/* visible dot — always show on dark, show on hover for light */}
-            {(dark || tip?.date === p.date) && p.date && (
-              <circle cx={p.x} cy={p.y} r={dark ? 3 : 3} fill={dark ? '#a5b4fc' : color} />
+            {/* Always show dot for all real data points */}
+            {p.date && (
+              <>
+                {/* outer glow ring for today */}
+                {p.isToday && (
+                  <circle cx={p.x} cy={p.y} r={dark ? 7 : 6} fill={color} opacity={0.2} />
+                )}
+                {/* main dot — today is bigger and filled white on dark */}
+                <circle
+                  cx={p.x} cy={p.y}
+                  r={p.isToday ? (dark ? 5 : 4) : (dark ? 3 : 2.5)}
+                  fill={p.isToday ? (dark ? '#ffffff' : color) : (dark ? '#a5b4fc' : color)}
+                  opacity={p.isToday ? 1 : 0.7}
+                />
+              </>
             )}
             {/* invisible large hit area */}
             <circle cx={p.x} cy={p.y} r={10} fill="transparent"
@@ -1066,7 +1080,7 @@ const SparklineChart = ({
           }`}
           style={{ left: tip.px, top: tip.py, transform: 'translate(-50%, -120%)' }}
         >
-          <p className="font-bold mb-0.5">{tip.date}</p>
+          <p className="font-bold mb-0.5">{tip.date === todayStr ? `${tip.date} (Today)` : tip.date}</p>
           <p className="font-mono">{fmtVal(tip.val)}</p>
           {/* arrow */}
           <div className={`absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent ${

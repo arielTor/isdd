@@ -899,6 +899,34 @@ async function startServer() {
         else                          entry.fiat   += usdVal;
       }
 
+      // Inject today's live wallet balances if today has no snapshot yet
+      const todayKey = new Date().toISOString().slice(0, 10);
+      if (!byDate.has(todayKey)) {
+        const liveParams: any[] = [];
+        if (companyId) liveParams.push(companyId);
+        const [liveRows] = await conn.execute(`
+          SELECT w.currency, w.balance, w.value_usd
+          FROM wallets w
+          JOIN bank_accounts ba ON ba.id = w.account_id
+          JOIN banks b ON b.id = ba.bank_id
+          JOIN companies c ON c.id = b.company_id
+          ${companyId ? 'WHERE c.id = ?' : ''}
+        `, liveParams) as [any[], any];
+
+        const todayEntry = { fiat: 0, crypto: 0, total: 0 };
+        for (const row of liveRows as any[]) {
+          const balance  = Number(row.balance) || 0;
+          const currency = row.currency as string;
+          const usdVal = (row.value_usd != null && row.value_usd !== '')
+            ? Number(row.value_usd)
+            : (rates[currency] !== undefined ? balance * rates[currency] : 0);
+          todayEntry.total += usdVal;
+          if (CRYPTO_SET.has(currency)) todayEntry.crypto += usdVal;
+          else                          todayEntry.fiat   += usdVal;
+        }
+        if (todayEntry.total > 0) byDate.set(todayKey, todayEntry);
+      }
+
       // Sort by date ascending
       const data = Array.from(byDate.entries())
         .sort(([a], [b]) => a.localeCompare(b))
