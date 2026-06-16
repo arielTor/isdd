@@ -1528,12 +1528,12 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Load portfolio history for sparklines (last 30 days)
+  // Load portfolio history for sparklines (last 7 days)
   useEffect(() => {
     if (!authUser) return;
     const url = selectedCompanyId && selectedCompanyId !== 'all'
-      ? `/api/portfolio-history?days=30&companyId=${selectedCompanyId}`
-      : '/api/portfolio-history?days=30';
+      ? `/api/portfolio-history?days=7&companyId=${selectedCompanyId}`
+      : '/api/portfolio-history?days=7';
     fetch(url)
       .then(r => r.ok ? r.json() : { data: [] })
       .then(res => setPortfolioHistory(Array.isArray(res.data) ? res.data : []))
