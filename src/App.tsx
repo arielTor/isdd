@@ -28,7 +28,8 @@ import {
   EyeOff,
   Menu,
   Bitcoin,
-  Coins
+  Coins,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef, MouseEvent } from 'react';
@@ -1095,12 +1096,13 @@ const SparklineChart = ({
 // --- Header Component ---
 
 const Header = ({
-  title, searchTerm, onSearch, onMenuClick,
+  title, searchTerm, onSearch, onMenuClick, onLogout,
 }: {
   title: string;
   searchTerm: string;
   onSearch: (val: string) => void;
   onMenuClick: () => void;
+  onLogout: () => void;
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-14 md:h-16">
@@ -1135,6 +1137,13 @@ const Header = ({
         </div>
         <button className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
           <Bell size={18} />
+        </button>
+        <button
+          onClick={onLogout}
+          title="Sign out"
+          className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
+        >
+          <LogOut size={18} />
         </button>
       </div>
     </header>
@@ -1676,7 +1685,7 @@ export default function App() {
       try {
         const res = await fetch('/api/liquidity');
         const raw = await res.json();
-        
+
         let data = null;
         let serverUpdate = 0;
         if (raw && raw.data) {
@@ -1874,6 +1883,7 @@ export default function App() {
           searchTerm={searchQuery}
           onSearch={setSearchQuery}
           onMenuClick={() => setSidebarOpen(true)}
+          onLogout={handleLogout}
         />
 
         <main ref={mainContentRef} className="flex-1 overflow-y-auto">
@@ -2192,6 +2202,13 @@ export default function App() {
 
                     return (
                       <div className="space-y-4">
+                        {/* Three mini summary tables */}
+                        <div className="flex gap-4 flex-wrap">
+                          <MiniTable title="By Bank" data={byBank} />
+                          <MiniTable title="By Company" data={byCompany} />
+                          <MiniTable title="By Currency" data={byCurrency} />
+                        </div>
+
                         {/* Main flat table */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                           <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
@@ -2239,13 +2256,6 @@ export default function App() {
                               </tfoot>
                             </table>
                           </div>
-                        </div>
-
-                        {/* Three mini summary tables */}
-                        <div className="flex gap-4 flex-wrap">
-                          <MiniTable title="By Bank" data={byBank} />
-                          <MiniTable title="By Company" data={byCompany} />
-                          <MiniTable title="By Currency" data={byCurrency} />
                         </div>
                       </div>
                     );
