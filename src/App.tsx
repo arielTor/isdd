@@ -29,7 +29,8 @@ import {
   Menu,
   Bitcoin,
   Coins,
-  LogOut
+  LogOut,
+  CreditCard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef, MouseEvent } from 'react';
@@ -37,6 +38,7 @@ import { MOCK_COMPANIES } from './mockData';
 import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate } from './types';
 import UploadScreen from './UploadScreen';
 import LoginScreen from './LoginScreen';
+import PSPPage from './PSPPage';
 
 // ── Logged-in user type ───────────────────────────────────────────────────────
 interface AuthUser {
@@ -69,7 +71,7 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
 };
 
 // --- Types ---
-type Page = 'dashboard' | 'users' | 'alerts' | 'upload';
+type Page = 'dashboard' | 'psp' | 'users' | 'alerts' | 'upload';
 
 // --- Sidebar Component ---
 
@@ -97,6 +99,7 @@ const Sidebar = ({
   // Filter nav items by role
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'psp', icon: CreditCard, label: 'Payment Providers', roles: ['Admin', 'Manager', 'Viewer'] },
     { id: 'users', icon: Users, label: 'User Management', roles: ['Admin'] },
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
@@ -1672,6 +1675,7 @@ export default function App() {
   }, [filteredCompanies]);
 
   const selectedCompanyName = useMemo(() => {
+    if (activePage === 'psp') return 'Payment Providers';
     if (activePage === 'users') return 'User Management';
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
@@ -2580,6 +2584,18 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {activePage === 'psp' && (
+              <motion.div
+                key="psp"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="max-w-7xl mx-auto p-4 md:p-8"
+              >
+                <PSPPage companies={companies} />
               </motion.div>
             )}
 

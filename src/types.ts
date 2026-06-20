@@ -31,6 +31,49 @@ export interface ExchangeRate {
   rate: number;
 }
 
+export interface PspWalletBalance {
+  id: string;
+  currency: string;
+  balance: number;
+  received_balance?: number;
+  on_hold_balance?: number;
+  reserve_balance?: number;
+  value_usd: number;
+  value_usd_estimated?: boolean;
+  updated_at?: string;
+}
+
+export interface PspEwallet {
+  id: string; // external ewallet_id (e.g. Rapyd ewallet_...)
+  reference_id?: string | null;
+  type?: string | null;
+  category?: string | null;
+  status: string;
+  wallets: PspWalletBalance[];
+}
+
+export interface PspProvider {
+  id: string;
+  name: string;
+  slug: string;
+  isActive: boolean;
+  ewallets: PspEwallet[];
+}
+
+export interface PspSettlement {
+  id: string;
+  ewalletId: string;
+  pspProviderName: string;
+  currency: string;
+  amount: number;
+  status: string;
+  paymentDate: string | null;
+  paidAt: string | null;
+  bankAccountName: string | null;
+  bankAccountRef: string | null;
+  notes?: string | null;
+}
+
 export type UserRole = 'Admin' | 'Viewer' | 'Manager';
 
 export interface UserPermission {
@@ -55,6 +98,8 @@ export interface Company {
   industry?: string;
   status?: 'Active' | 'Inactive' | 'Onboarding';
   banks: Bank[];
+  psp_providers?: PspProvider[];
+  psp_settlements?: PspSettlement[];
 }
 
 export interface WalletAlert {

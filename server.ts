@@ -319,6 +319,54 @@ async function startServer() {
     ORDER BY c.id, b.id, ba.id, w.id
   `;
 
+  // ── PSP query — providers / eWallets / live wallet accounts ───────────────
+  const PSP_SQL_QUERY = `
+    SELECT
+      pe.company_id            AS company_id,
+      pp.id                    AS psp_provider_id,
+      pp.name                  AS psp_provider_name,
+      pp.slug                  AS psp_provider_slug,
+      pp.is_active             AS psp_provider_is_active,
+      pe.ewallet_id            AS ewallet_id,
+      pe.ewallet_reference_id  AS ewallet_reference_id,
+      pe.type                  AS ewallet_type,
+      pe.category              AS ewallet_category,
+      pe.status                AS ewallet_status,
+      pwa.id                   AS wallet_account_id,
+      pwa.currency             AS wallet_currency,
+      pwa.balance              AS wallet_balance,
+      pwa.received_balance     AS wallet_received_balance,
+      pwa.on_hold_balance      AS wallet_on_hold_balance,
+      pwa.reserve_balance      AS wallet_reserve_balance,
+      DATE_FORMAT(pwa.updated_at, '%Y-%m-%d %H:%i:%s') AS wallet_updated_at
+    FROM psp_ewallets pe
+    INNER JOIN psp_providers pp       ON pp.id = pe.psp_provider_id
+    LEFT JOIN psp_wallet_accounts pwa ON pwa.ewallet_id = pe.ewallet_id
+    ORDER BY pe.company_id, pp.id, pe.id, pwa.id
+  `;
+
+  // ── PSP query — settlements (next payments + history) ─────────────────────
+  const PSP_SETTLEMENTS_SQL_QUERY = `
+    SELECT
+      pe.company_id        AS company_id,
+      ps.id                 AS settlement_id,
+      ps.ewallet_id         AS ewallet_id,
+      pp.name               AS psp_provider_name,
+      ps.psp_reference_id   AS psp_reference_id,
+      ps.currency           AS currency,
+      ps.amount             AS amount,
+      ps.status             AS status,
+      DATE_FORMAT(ps.payment_date, '%Y-%m-%d') AS payment_date,
+      DATE_FORMAT(ps.paid_at, '%Y-%m-%d %H:%i:%s') AS paid_at,
+      ps.bank_account_name  AS bank_account_name,
+      ps.bank_account_ref   AS bank_account_ref,
+      ps.notes              AS notes
+    FROM psp_settlements ps
+    INNER JOIN psp_ewallets pe  ON pe.ewallet_id = ps.ewallet_id
+    INNER JOIN psp_providers pp ON pp.id = pe.psp_provider_id
+    ORDER BY pe.company_id, ps.payment_date, ps.id
+  `;
+
   async function queryDatabase(): Promise<void> {
     let conn: any;
     try {
@@ -331,19 +379,28 @@ async function startServer() {
       // DB-supplied value_usd will get an estimated value from these rates.
       const rates = await getUsdRates();
 
-      const [rows] = (await conn.execute(SQL_QUERY)) as [any[], any];
+      // Seed every company first so ones with PSP-only data (no verified
+      // banks yet) still show up, not just companies that appear in SQL_QUERY.
+      const [companyRows] = (await conn.execute(
+        "SELECT id, name, industry, status FROM companies"
+      )) as [any[], any];
       const companiesMap = new Map<string, any>();
+      for (const c of companyRows) {
+        companiesMap.set(c.id, {
+          id: c.id,
+          name: c.name,
+          industry: c.industry,
+          status: c.status,
+          banks: new Map(),
+          psp_providers: new Map(),
+          psp_settlements: [],
+        });
+      }
+
+      const [rows] = (await conn.execute(SQL_QUERY)) as [any[], any];
       for (const row of rows) {
-        if (!companiesMap.has(row.company_id)) {
-          companiesMap.set(row.company_id, {
-            id: row.company_id,
-            name: row.company_name,
-            industry: row.company_industry,
-            status: row.company_status,
-            banks: new Map(),
-          });
-        }
         const company = companiesMap.get(row.company_id);
+        if (!company) continue;
         if (!company.banks.has(row.bank_id)) {
           company.banks.set(row.bank_id, {
             id: row.bank_id,
@@ -386,11 +443,86 @@ async function startServer() {
           updated_at: row.wallet_updated_at,
         });
       }
+
+      // ── PSP providers / eWallets / wallet accounts ──────────────────────
+      // psp_wallet_accounts has no value_usd column (unlike bank wallets), so
+      // PSP balances are always converted from the same live rates used above.
+      const [pspRows] = (await conn.execute(PSP_SQL_QUERY)) as [any[], any];
+      for (const row of pspRows) {
+        const company = companiesMap.get(row.company_id);
+        if (!company) continue;
+
+        if (!company.psp_providers.has(row.psp_provider_id)) {
+          company.psp_providers.set(row.psp_provider_id, {
+            id: String(row.psp_provider_id),
+            name: row.psp_provider_name,
+            slug: row.psp_provider_slug,
+            isActive: row.psp_provider_is_active === 1 || row.psp_provider_is_active === true,
+            ewallets: new Map(),
+          });
+        }
+        const provider = company.psp_providers.get(row.psp_provider_id);
+
+        if (row.ewallet_id && !provider.ewallets.has(row.ewallet_id)) {
+          provider.ewallets.set(row.ewallet_id, {
+            id: row.ewallet_id,
+            reference_id: row.ewallet_reference_id,
+            type: row.ewallet_type,
+            category: row.ewallet_category,
+            status: row.ewallet_status,
+            wallets: [],
+          });
+        }
+
+        if (row.ewallet_id && row.wallet_account_id != null) {
+          const balance  = Number(row.wallet_balance ?? 0);
+          const currency = row.wallet_currency as string;
+          const rate     = rates[currency];
+          const valueUsd = rate !== undefined ? balance * rate : 0;
+
+          provider.ewallets.get(row.ewallet_id).wallets.push({
+            id: String(row.wallet_account_id),
+            currency,
+            balance,
+            received_balance: Number(row.wallet_received_balance ?? 0),
+            on_hold_balance:  Number(row.wallet_on_hold_balance ?? 0),
+            reserve_balance:  Number(row.wallet_reserve_balance ?? 0),
+            value_usd: valueUsd,
+            value_usd_estimated: rate !== undefined,
+            updated_at: row.wallet_updated_at,
+          });
+        }
+      }
+
+      // ── PSP settlements (future + history) ──────────────────────────────
+      const [settlementRows] = (await conn.execute(PSP_SETTLEMENTS_SQL_QUERY)) as [any[], any];
+      for (const row of settlementRows) {
+        const company = companiesMap.get(row.company_id);
+        if (!company) continue;
+        company.psp_settlements.push({
+          id: String(row.settlement_id),
+          ewalletId: row.ewallet_id,
+          pspProviderName: row.psp_provider_name,
+          currency: row.currency,
+          amount: Number(row.amount ?? 0),
+          status: row.status,
+          paymentDate: row.payment_date ?? null,
+          paidAt: row.paid_at ?? null,
+          bankAccountName: row.bank_account_name,
+          bankAccountRef: row.bank_account_ref,
+          notes: row.notes,
+        });
+      }
+
       const data = Array.from(companiesMap.values()).map((c: any) => ({
         ...c,
         banks: Array.from(c.banks.values()).map((b: any) => ({
           ...b,
           bank_accounts: Array.from(b.bank_accounts.values()),
+        })),
+        psp_providers: Array.from(c.psp_providers.values()).map((p: any) => ({
+          ...p,
+          ewallets: Array.from(p.ewallets.values()),
         })),
       }));
       latestData = data;
@@ -1156,7 +1288,7 @@ async function startServer() {
   }
 
   // Run alert check every 5 minutes
-  setInterval(checkAlerts, 5 * 60 * 1000);
+  setInterval(() => { checkAlerts().catch(e => console.error("[Alerts] checkAlerts error:", e.message)); }, 5 * 60 * 1000);
 
   // POST /api/alerts/check — manually trigger a check (called after sync)
   app.post("/api/alerts/check", corsMiddleware, requireAuth, async (_req, res) => {
