@@ -35,6 +35,7 @@ async function startServer() {
   const allowedOrigins = [
     process.env.APP_URL,
     "https://finboard.corp-domain.com",
+    "https://stage-finboard.corp-domain.com",
     "http://localhost:3000",
     "http://localhost:5173",
   ].filter(Boolean) as string[];
