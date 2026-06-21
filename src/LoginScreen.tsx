@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -161,8 +161,9 @@ function LoginForm({ onLogin }: { onLogin: (user: any) => void }) {
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Login failed'); return; }
       onLogin(data.user);
-    } catch {
-      setError('Network error — is the server running?');
+    } catch (err: any) {
+      console.error('Login network error:', err);
+      setError(`Network error — is the server running? ${err?.message || ''}`.trim());
     } finally {
       setLoading(false);
     }
@@ -240,12 +241,15 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [mode, setMode] = useState<'checking' | 'setup' | 'login'>('checking');
 
   // On mount, check whether initial setup is needed
-  useState(() => {
+  useEffect(() => {
     fetch('/api/auth/setup-status')
       .then(r => r.json())
       .then(data => setMode(data.needsSetup ? 'setup' : 'login'))
-      .catch(() => setMode('login'));
-  });
+      .catch((err) => {
+        console.error('Setup status fetch failed:', err);
+        setMode('login');
+      });
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
