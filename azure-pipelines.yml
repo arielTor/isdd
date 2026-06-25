@@ -2,20 +2,34 @@ trigger:
   branches:
     include:
       - main
+      - Stage
 
 resources:
 - repo: self
 
 variables:
-  dockerRegistryServiceConnection: 'corpcompanyreg'
-  imageRepository: 'financeboard'
-  ACR_NAME: 'corpcompanyreg'
-  SERVICE_CONNECTION: 'b8d9b6ee-f3a9-48de-95bb-5d712120a97f'
-  WEB_APP_NAME: 'COMP-FINDASH-PROD'
-  RG: 'corp-company'
-  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
-  vmImageName: 'ubuntu-latest'
-  KEEP_TAGS: '5'
+  - name: dockerRegistryServiceConnection
+    value: 'corpcompanyreg'
+  - name: imageRepository
+    value: 'financeboard'
+  - name: ACR_NAME
+    value: 'corpcompanyreg'
+  - name: SERVICE_CONNECTION
+    value: 'b8d9b6ee-f3a9-48de-95bb-5d712120a97f'
+  # WEB_APP_NAME is branch-aware: Stage -> staging app, everything else (main) -> prod
+  - name: WEB_APP_NAME
+    ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/Stage') }}:
+      value: 'COMP-FINDASH-STAGE'
+    ${{ else }}:
+      value: 'COMP-FINDASH-PROD'
+  - name: RG
+    value: 'corp-company'
+  - name: dockerfilePath
+    value: '$(Build.SourcesDirectory)/Dockerfile'
+  - name: vmImageName
+    value: 'ubuntu-latest'
+  - name: KEEP_TAGS
+    value: '3'
 
 stages:
 
@@ -52,38 +66,48 @@ stages:
 
                 ACR_NAME="$(ACR_NAME)"
                 REPO="$(imageRepository)"
-                KEEP_TAGS=${KEEP_TAGS:-5}
+                KEEP_TAGS=${KEEP_TAGS:-3}
+                # Each branch is pruned independently — newest $KEEP_TAGS build tags per branch.
+                BRANCHES="main Stage"
 
-                echo "ACR: $ACR_NAME  Repo: $REPO  Keep: $KEEP_TAGS"
+                echo "ACR: $ACR_NAME  Repo: $REPO  Keep per branch: $KEEP_TAGS"
 
-                TAGS=$(az acr repository show-tags \
+                ALL_TAGS=$(az acr repository show-tags \
                   --name "$ACR_NAME" \
                   --repository "$REPO" \
                   --orderby time_desc \
                   --output tsv)
 
-                if [[ -z "$TAGS" ]]; then
+                if [[ -z "$ALL_TAGS" ]]; then
                   echo "No tags found for $REPO"
                   exit 0
                 fi
 
-                COUNT=0
-                while IFS= read -r tag; do
-                  if [[ "$tag" == "main" ]]; then
-                    echo "Skipping protected tag: $tag"
-                    continue
-                  fi
-                  COUNT=$((COUNT+1))
-                  if (( COUNT > KEEP_TAGS )); then
-                    echo "Deleting tag: $tag"
-                    az acr repository untag \
-                      --name "$ACR_NAME" \
-                      --image "$REPO:$tag"
-                  else
-                    echo "Keeping tag: $tag"
-                  fi
-                done <<<"$TAGS"
+                for BR in $BRANCHES; do
+                  echo ""
+                  echo "=== Branch '$BR': keeping newest $KEEP_TAGS build tags (suffix -$BR) ==="
+                  COUNT=0
+                  # Build tags look like <buildId>-<branch>; the moving '$BR' tag has no
+                  # dash prefix so it never matches and is always preserved.
+                  while IFS= read -r tag; do
+                    [[ -z "$tag" ]] && continue
+                    case "$tag" in
+                      *-"$BR")
+                        COUNT=$((COUNT+1))
+                        if (( COUNT > KEEP_TAGS )); then
+                          echo "  Deleting tag: $tag"
+                          az acr repository untag \
+                            --name "$ACR_NAME" \
+                            --image "$REPO:$tag"
+                        else
+                          echo "  Keeping tag: $tag"
+                        fi
+                        ;;
+                    esac
+                  done <<<"$ALL_TAGS"
+                done
 
+                echo ""
                 echo "Cleanup complete."
 
   # -------------------------

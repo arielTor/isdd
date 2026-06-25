@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CreditCard, ChevronDown, Clock, Building2, CheckCircle2 } from 'lucide-react';
-import { Company, PspProvider, PspSettlement, PspWalletBalance, CURRENCY_SYMBOLS } from './types';
+import { Company, PspProvider, PspSettlement, PspWalletBalance } from './types';
 
 export const fmtUsd = (n: number) => {
   const neg = n < 0;
@@ -13,20 +13,51 @@ const fmtAmount = (n: number, currency: string) => {
   return `${neg ? '-' : ''}${s} ${currency}`;
 };
 
+const fmt2 = (n: number) => {
+  const neg = n < 0;
+  const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return neg ? `(${s})` : s;
+};
+
 const currencyBadgeClass = (c: string) =>
   c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
   c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
 
-// Headline balance = Available + Reserved + Received + Pending (matches the PSP's own UI).
-// value_usd is the USD value of `balance` (Available) only, so the per-unit rate is
-// derived from it and applied to the full headline for a USD total.
-export const walletHeadline = (w: PspWalletBalance) =>
+// Balance = balance + received_balance + on_hold_balance + reserve_balance (all 4 fields).
+// Transactions = balance + received_balance + on_hold_balance (everything not held in reserve).
+// Rolling Reserve = reserve_balance alone. Balance = Transactions + Rolling Reserve always holds.
+export const walletBalance = (w: PspWalletBalance) =>
   (w.balance || 0) + (w.reserve_balance || 0) + (w.received_balance || 0) + (w.on_hold_balance || 0);
 
-export const walletTotalUsd = (w: PspWalletBalance) => {
-  const rate = w.balance !== 0 ? (w.value_usd || 0) / w.balance : 1;
-  return walletHeadline(w) * rate;
-};
+export const walletTransactions = (w: PspWalletBalance) =>
+  (w.balance || 0) + (w.received_balance || 0) + (w.on_hold_balance || 0);
+
+export const walletRollingReserve = (w: PspWalletBalance) => w.reserve_balance || 0;
+
+// value_usd is the USD value of `balance` only, so the per-unit FX rate is derived
+// from it and applied to the other fields (psp_wallet_accounts has no value_usd of its own).
+export const walletRate = (w: PspWalletBalance) => (w.balance !== 0 ? (w.value_usd || 0) / w.balance : 1);
+
+export const walletTotalUsd = (w: PspWalletBalance) => walletBalance(w) * walletRate(w);
+
+// Settlements have no stored FX rate, so approximate one from a same-currency wallet.
+export function buildCurrencyRateMap(companies: Company[]): Record<string, number> {
+  const rates: Record<string, number> = {};
+  companies.forEach(c => (c.psp_providers || []).forEach(p => p.ewallets.forEach(ew => ew.wallets.forEach(w => {
+    if (w.balance !== 0 && rates[w.currency] === undefined) rates[w.currency] = walletRate(w);
+  }))));
+  return rates;
+}
+
+export const settlementUsd = (amount: number, currency: string, rates: Record<string, number>) =>
+  amount * (rates[currency] ?? 1);
+
+// Sum of PENDING settlement amounts for one ewallet, in its native currency.
+export function pendingSettlementSum(settlements: PspSettlement[], ewalletId: string, currency: string) {
+  return settlements
+    .filter(s => s.ewalletId === ewalletId && s.currency === currency && s.status === 'PENDING')
+    .reduce((sum, s) => sum + s.amount, 0);
+}
 
 type GroupBy = 'date' | 'account';
 type Tab = 'next' | 'history';
@@ -136,49 +167,15 @@ const SettlementsPanel = ({ settlements }: { settlements: PspSettlement[] }) => 
   );
 };
 
-const CurrencyBalanceCard = ({ wallet, ewalletLabel }: { wallet: PspWalletBalance; ewalletLabel: string }) => {
-  const available = wallet.balance || 0;
-  const reserved = wallet.reserve_balance || 0;
-  const received = wallet.received_balance || 0;
-  const pending = wallet.on_hold_balance || 0;
-  const headline = walletHeadline(wallet);
-  const fmt2 = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  return (
-    <div className="border border-slate-200 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-1">
-        <span className={`font-mono font-bold text-lg ${headline < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-          {fmt2(headline)} {wallet.currency}
-        </span>
-        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 ${currencyBadgeClass(wallet.currency)}`}>{wallet.currency}</span>
-      </div>
-      <div className="text-[10px] text-slate-400 font-mono mb-3">{ewalletLabel}</div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 border-t border-slate-100">
-        <div>
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Available</div>
-          <div className={`font-mono text-sm font-bold ${available < 0 ? 'text-red-600' : 'text-slate-800'}`}>{fmt2(available)} {wallet.currency}</div>
-        </div>
-        <div>
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Reserved</div>
-          <div className={`font-mono text-sm font-bold ${reserved === 0 ? 'text-slate-400' : 'text-slate-800'}`}>{fmt2(reserved)} {wallet.currency}</div>
-        </div>
-        <div>
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Received</div>
-          <div className={`font-mono text-sm font-bold ${received === 0 ? 'text-slate-400' : 'text-slate-800'}`}>{fmt2(received)} {wallet.currency}</div>
-        </div>
-        <div>
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Pending</div>
-          <div className={`font-mono text-sm font-bold ${pending === 0 ? 'text-slate-400' : 'text-slate-800'}`}>{fmt2(pending)} {wallet.currency}</div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const ProviderRow = ({ provider, settlements }: { provider: PspProvider; settlements: PspSettlement[] }) => {
   const [expanded, setExpanded] = useState(true);
 
-  const allWallets = provider.ewallets.flatMap(ew => ew.wallets.map(w => ({ ...w, ewalletLabel: ew.reference_id || ew.id })));
+  const allWallets = provider.ewallets.flatMap(ew => ew.wallets.map(w => ({
+    ...w,
+    ewalletId: ew.id,
+    ewalletLabel: ew.reference_id || ew.id,
+    ewalletMeta: [ew.category, ew.status].filter(Boolean).join(' · '),
+  })));
   const totalUsd = allWallets.reduce((sum, w) => sum + walletTotalUsd(w), 0);
   const providerSettlements = settlements.filter(s => provider.ewallets.some(ew => ew.id === s.ewalletId));
 
@@ -204,6 +201,7 @@ const ProviderRow = ({ provider, settlements }: { provider: PspProvider; settlem
           <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${provider.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
             {provider.isActive ? 'Active' : 'Inactive'}
           </span>
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Balance (USD)</span>
           <span className="font-mono font-bold text-slate-900">{fmtUsd(totalUsd)}</span>
           <ChevronDown size={16} className={`text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </div>
@@ -212,10 +210,49 @@ const ProviderRow = ({ provider, settlements }: { provider: PspProvider; settlem
       {expanded && (
         <div className="px-6 pb-6 space-y-4">
           {allWallets.length > 0 && (
-            <div className="space-y-3">
-              {allWallets.map(w => (
-                <CurrencyBalanceCard key={w.id} wallet={w} ewalletLabel={w.ewalletLabel} />
-              ))}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left border-collapse text-sm min-w-[680px]">
+                <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <tr>
+                    <th className="px-5 py-3 border-b border-slate-100">Account</th>
+                    <th className="px-3 py-3 border-b border-slate-100 text-right">Balance</th>
+                    <th className="px-3 py-3 border-b border-slate-100 text-right">Currency</th>
+                    <th className="px-3 py-3 border-b border-slate-100 text-right">Transactions</th>
+                    <th className="px-3 py-3 border-b border-slate-100 text-right">Rolling Reserves</th>
+                    <th className="px-3 py-3 border-b border-slate-100 text-right">Settlement</th>
+                    <th className="px-5 py-3 border-b border-slate-100 text-right">Valuation (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allWallets.map(w => {
+                    const balance = walletBalance(w);
+                    const transactions = walletTransactions(w);
+                    const reserve = walletRollingReserve(w);
+                    const settlement = pendingSettlementSum(settlements, w.ewalletId, w.currency);
+                    const valuationUsd = walletTotalUsd(w);
+                    return (
+                      <tr key={w.id} className="hover:bg-slate-50/50 border-b border-slate-50 last:border-b-0">
+                        <td className="px-5 py-3">
+                          <div className="font-bold text-slate-900">{w.ewalletLabel}</div>
+                          {w.ewalletMeta && <div className="text-[10px] text-slate-400 font-mono">{w.ewalletMeta}</div>}
+                        </td>
+                        <td className={`px-3 py-3 text-right font-mono font-bold ${balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmt2(balance)}</td>
+                        <td className="px-3 py-3 text-right"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadgeClass(w.currency)}`}>{w.currency}</span></td>
+                        <td className={`px-3 py-3 text-right font-mono ${transactions < 0 ? 'text-red-600' : 'text-slate-600'}`}>{fmt2(transactions)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-600">{fmt2(reserve)}</td>
+                        <td className={`px-3 py-3 text-right font-mono ${settlement === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmt2(settlement)}</td>
+                        <td className={`px-5 py-3 text-right font-mono font-bold ${valuationUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsd(valuationUsd)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-indigo-50 border-t-2 border-indigo-100">
+                    <td colSpan={6} className="px-5 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total ({provider.name})</td>
+                    <td className="px-5 py-3 text-right font-mono font-bold text-sm text-indigo-700">{fmtUsd(totalUsd)}</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           )}
 
