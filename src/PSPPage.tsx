@@ -105,7 +105,7 @@ const BreakdownTable = ({ title, data }: { title: string; data: Record<string, {
         <tbody className="text-slate-700">
           {entries.map(([name, v]) => (
             <tr key={name} className="border-t border-slate-50">
-              <td className="px-4 py-2 font-medium">{name}</td>
+              <td className="px-4 py-2 font-medium whitespace-nowrap">{name}</td>
               <td className={`text-right px-2 py-2 font-mono ${v.transactionsUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.transactionsUsd)}</td>
               <td className="text-right px-2 py-2 font-mono">{fmtUsd(v.reserveUsd)}</td>
               <td className={`text-right px-2 py-2 font-mono ${v.balanceUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd)}</td>
@@ -291,8 +291,8 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
             <tbody className="text-slate-700">
               {rows.map((r, i) => (
                 <tr key={i} className="border-t border-slate-50 hover:bg-slate-50/50">
-                  <td className="px-5 py-2.5 font-medium">{r.companyName}</td>
-                  <td className="px-2 py-2.5">{r.providerName}</td>
+                  <td className="px-5 py-2.5 font-medium whitespace-nowrap">{r.companyName}</td>
+                  <td className="px-2 py-2.5 whitespace-nowrap">{r.providerName}</td>
                   <td className="px-2 py-2.5"><span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">{r.currency}</span></td>
                   <td className="text-right px-2 py-2.5 font-mono">{fmtUsd(r.reserveUsd)}</td>
                   <td className={`text-right px-2 py-2.5 font-mono ${r.transactionsUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(r.transactionsUsd)}</td>
