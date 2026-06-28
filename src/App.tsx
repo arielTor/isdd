@@ -663,18 +663,52 @@ const UserManagementPage = ({
     viewer: users.filter(u => u.role === 'Viewer').length,
   };
 
-  const hasCompany = (user: User, companyId: string) => user.permissions.some(p => p.companyId === companyId);
-  const initials = (name: string) => name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  const [tab, setTab] = useState<'users' | 'roles'>('users');
+  const [openCell, setOpenCell] = useState<{ userId: string; companyId: string } | null>(null);
 
-  const toggleCompany = async (user: User, companyId: string) => {
-    if (user.role === 'Admin') return; // admins always have full access
-    const permissions = hasCompany(user, companyId)
-      ? user.permissions.filter(p => p.companyId !== companyId)
-      : [...user.permissions, { companyId, bankIds: [] }];
+  const initials = (name: string) => name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  const permFor = (user: User, companyId: string) => user.permissions.find(p => p.companyId === companyId);
+  const companyById = (id: string) => companies.find(c => c.id === id);
+  const banksOf = (c?: Company) => (c?.banks || []);
+
+  const save = async (user: User, permissions: User['permissions']) => {
     setSavingId(user.id);
     try { await onUpdateUser({ ...user, permissions }); }
     catch (e) { console.error('Permission update failed', e); }
     finally { setSavingId(null); }
+  };
+
+  // Grant all banks (bankIds: []) or revoke the company entirely.
+  const setCompanyAll = (user: User, companyId: string, all: boolean) =>
+    save(user, all
+      ? [...user.permissions.filter(p => p.companyId !== companyId), { companyId, bankIds: [] }]
+      : user.permissions.filter(p => p.companyId !== companyId));
+
+  const isBankOn = (user: User, companyId: string, bankId: string) => {
+    const p = permFor(user, companyId);
+    if (!p) return false;
+    return p.bankIds.length === 0 || p.bankIds.includes(bankId); // empty bankIds = all banks
+  };
+
+  const toggleBank = (user: User, companyId: string, bankId: string) => {
+    const allIds = banksOf(companyById(companyId)).map(b => b.id);
+    const p = permFor(user, companyId);
+    let bankIds: string[];
+    if (!p) bankIds = [bankId];
+    else if (p.bankIds.length === 0) bankIds = allIds.filter(id => id !== bankId); // was "all" → all except this
+    else bankIds = p.bankIds.includes(bankId) ? p.bankIds.filter(id => id !== bankId) : [...p.bankIds, bankId];
+    let permissions;
+    if (bankIds.length === 0) permissions = user.permissions.filter(p => p.companyId !== companyId);
+    else if (allIds.length > 0 && bankIds.length === allIds.length) permissions = [...user.permissions.filter(p => p.companyId !== companyId), { companyId, bankIds: [] }];
+    else permissions = [...user.permissions.filter(p => p.companyId !== companyId), { companyId, bankIds }];
+    save(user, permissions);
+  };
+
+  const cellState = (user: User, companyId: string): 'all' | 'partial' | 'none' => {
+    if (user.role === 'Admin') return 'all';
+    const p = permFor(user, companyId);
+    if (!p) return 'none';
+    return p.bankIds.length === 0 ? 'all' : 'partial';
   };
 
   return (
@@ -685,154 +719,213 @@ const UserManagementPage = ({
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">User Management</h2>
           <p className="text-sm text-slate-500 mt-1">Manage users, roles and company access.</p>
         </div>
-        <button
-          onClick={onAddUser}
-          className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2"
-        >
-          <Plus size={16} /> Add User
-        </button>
+        {tab === 'users' && (
+          <button onClick={onAddUser} className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+            <Plus size={16} /> Add User
+          </button>
+        )}
       </div>
 
-      {/* Role stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Users', value: counts.total },
-          { label: 'Admins', value: counts.admin },
-          { label: 'Managers', value: counts.manager },
-          { label: 'Viewers', value: counts.viewer },
-        ].map(s => (
-          <div key={s.label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{s.label}</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{s.value}</p>
-          </div>
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        {(['users', 'roles'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px capitalize transition-colors ${tab === t ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{t}</button>
         ))}
       </div>
 
-      {/* Users table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Users size={16} className="text-slate-400" />
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Users</h3>
+      {tab === 'users' ? (
+        <>
+          {/* Role stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Users', value: counts.total },
+              { label: 'Admins', value: counts.admin },
+              { label: 'Managers', value: counts.manager },
+              { label: 'Viewers', value: counts.viewer },
+            ].map(s => (
+              <div key={s.label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{s.label}</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{s.value}</p>
+              </div>
+            ))}
           </div>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search users…"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 w-56 transition-all"
-            />
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[680px]">
-            <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              <tr>
-                <th className="px-6 py-3 border-b border-slate-100">User</th>
-                <th className="px-6 py-3 border-b border-slate-100">Role</th>
-                <th className="px-6 py-3 border-b border-slate-100">Status</th>
-                <th className="px-6 py-3 border-b border-slate-100">Access</th>
-                <th className="px-6 py-3 border-b border-slate-100 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-sm divide-y divide-slate-50">
-              {filteredUsers.map(user => (
-                <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 border border-slate-200 text-xs shrink-0">{initials(user.name)}</div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-900 leading-none truncate">{user.name}</p>
-                        <p className="text-[11px] text-slate-400 mt-1 truncate">{user.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4"><span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span></td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    {user.role === 'Admin' ? (
-                      <span className="text-[11px] font-semibold text-indigo-600">All companies</span>
-                    ) : user.permissions.length === 0 ? (
-                      <span className="text-[11px] text-slate-400">No access</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {user.permissions.map(p => {
-                          const c = companies.find(c => c.id === p.companyId);
-                          return <span key={p.companyId} className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-medium text-slate-600">{c?.name || p.companyId}{p.bankIds.length ? ` (${p.bankIds.length})` : ''}</span>;
-                        })}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => onEditUser(user)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>
-                      <button onClick={() => onDeleteUser(user.id)} disabled={user.id === currentUserId} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors" title={user.id === currentUserId ? 'You cannot remove yourself' : 'Remove user'}><XCircle size={16} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredUsers.length === 0 && (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-sm">No users found.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      {/* Company access matrix */}
-      {companies.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-            <div className="flex items-center gap-2">
-              <ShieldCheck size={16} className="text-slate-400" />
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Company Access</h3>
+          {/* Users table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Users size={16} className="text-slate-400" />
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Users</h3>
+              </div>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input type="text" placeholder="Search users…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 w-56 transition-all" />
+              </div>
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">Click a cell to grant or revoke a user's access to a company. Use Edit for bank-level control. Admins always have full access.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[640px]">
-              <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                <tr>
-                  <th className="px-6 py-3 border-b border-slate-100">User</th>
-                  {companies.map(c => <th key={c.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{c.name}</th>)}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {users.map(user => (
-                  <tr key={user.id} className="hover:bg-slate-50/40">
-                    <td className="px-6 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-800 text-sm">{user.name}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span>
-                        {savingId === user.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
-                      </div>
-                    </td>
-                    {companies.map(c => {
-                      const locked = user.role === 'Admin';
-                      const on = locked || hasCompany(user, c.id);
-                      return (
-                        <td key={c.id} className="px-3 py-3 text-center">
-                          <button
-                            onClick={() => toggleCompany(user, c.id)}
-                            disabled={locked || savingId === user.id}
-                            title={locked ? 'Admins have full access' : on ? 'Revoke access' : 'Grant access'}
-                            className={`w-6 h-6 rounded-md inline-flex items-center justify-center transition-colors ${on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          >
-                            {on && <Check size={14} />}
-                          </button>
-                        </td>
-                      );
-                    })}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[680px]">
+                <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <tr>
+                    <th className="px-6 py-3 border-b border-slate-100">User</th>
+                    <th className="px-6 py-3 border-b border-slate-100">Role</th>
+                    <th className="px-6 py-3 border-b border-slate-100">Status</th>
+                    <th className="px-6 py-3 border-b border-slate-100">Access</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="text-sm divide-y divide-slate-50">
+                  {filteredUsers.map(user => (
+                    <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 border border-slate-200 text-xs shrink-0">{initials(user.name)}</div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900 leading-none truncate">{user.name}</p>
+                            <p className="text-[11px] text-slate-400 mt-1 truncate">{user.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4"><span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span></td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {user.role === 'Admin' ? (
+                          <span className="text-[11px] font-semibold text-indigo-600">All companies</span>
+                        ) : user.permissions.length === 0 ? (
+                          <span className="text-[11px] text-slate-400">No access</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {user.permissions.map(p => {
+                              const c = companies.find(c => c.id === p.companyId);
+                              return <span key={p.companyId} className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-medium text-slate-600">{c?.name || p.companyId}{p.bankIds.length ? ` (${p.bankIds.length})` : ''}</span>;
+                            })}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => onEditUser(user)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>
+                          <button onClick={() => onDeleteUser(user.id)} disabled={user.id === currentUserId} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors" title={user.id === currentUserId ? 'You cannot remove yourself' : 'Remove user'}><XCircle size={16} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredUsers.length === 0 && (
+                    <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-sm">No users found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Company + bank access matrix */}
+          {companies.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-slate-400" />
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Company &amp; Bank Access</h3>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Click a cell to choose which banks a user can see within that company (all, some, or none). A number means partial access. Admins always have full access.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[640px]">
+                  <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    <tr>
+                      <th className="px-6 py-3 border-b border-slate-100">User</th>
+                      {companies.map(c => <th key={c.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{c.name}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {users.map(user => (
+                      <Fragment key={user.id}>
+                        <tr className="hover:bg-slate-50/40">
+                          <td className="px-6 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-800 text-sm">{user.name}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span>
+                              {savingId === user.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
+                            </div>
+                          </td>
+                          {companies.map(c => {
+                            const locked = user.role === 'Admin';
+                            const state = cellState(user, c.id);
+                            const isOpen = openCell?.userId === user.id && openCell?.companyId === c.id;
+                            return (
+                              <td key={c.id} className="px-3 py-3 text-center">
+                                <button
+                                  onClick={() => !locked && setOpenCell(isOpen ? null : { userId: user.id, companyId: c.id })}
+                                  disabled={locked || savingId === user.id}
+                                  title={locked ? 'Admins have full access' : 'Set bank access'}
+                                  className={`w-7 h-7 rounded-md inline-flex items-center justify-center text-[10px] font-bold transition-colors ${state === 'all' ? 'bg-indigo-600 text-white' : state === 'partial' ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''} ${isOpen ? 'ring-2 ring-indigo-400' : ''}`}
+                                >
+                                  {state === 'all' ? <Check size={14} /> : state === 'partial' ? permFor(user, c.id)!.bankIds.length : ''}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        {openCell?.userId === user.id && user.role !== 'Admin' && (() => {
+                          const c = companyById(openCell.companyId);
+                          if (!c) return null;
+                          return (
+                            <tr>
+                              <td colSpan={1 + companies.length} className="bg-slate-50/60 px-6 py-4">
+                                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                                  <p className="text-xs font-bold text-slate-700">{c.name} — bank access for {user.name}</p>
+                                  <div className="flex items-center gap-2">
+                                    <button onClick={() => setCompanyAll(user, c.id, true)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700">All banks</button>
+                                    <button onClick={() => setCompanyAll(user, c.id, false)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-200">No access</button>
+                                    <button onClick={() => setOpenCell(null)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-slate-600">Close</button>
+                                  </div>
+                                </div>
+                                {banksOf(c).length === 0 ? (
+                                  <p className="text-xs text-slate-400 italic">No banks for this company.</p>
+                                ) : (
+                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                    {banksOf(c).map(bank => {
+                                      const on = isBankOn(user, c.id, bank.id);
+                                      return (
+                                        <button key={bank.id} onClick={() => toggleBank(user, c.id, bank.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-xs transition-colors ${on ? 'bg-white border-indigo-200 text-slate-700' : 'bg-slate-100/60 border-transparent text-slate-400'}`}>
+                                          <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
+                                          <span className="truncate font-medium">{bank.name}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">System roles set what a user can do. Company &amp; bank access is assigned per user in the Users tab.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(['Admin', 'Manager', 'Viewer'] as const).map(role => (
+              <div key={role} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(role)}`}>{role}</span>
+                  <span className="text-xs text-slate-400">{users.filter(u => u.role === role).length} users</span>
+                </div>
+                <p className="text-sm text-slate-600">{ROLE_DESC[role]}</p>
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Permissions</p>
+                  <p className="text-xs text-slate-400 mt-1 italic">Per-role permissions coming soon.</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -1977,7 +2070,6 @@ export default function App() {
 
   const [selectedBankDetails, setSelectedBankDetails] = useState<Bank | null>(null);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
 
   // Org branding (logo + site name + theme) — configured in Settings → Appearance.
   const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark', logoBg: 'light', companyLogos: {} });
@@ -2874,84 +2966,47 @@ export default function App() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="max-w-3xl mx-auto p-4 md:p-8"
+                className="w-full max-w-[1100px] mx-auto p-4 md:p-8 space-y-5"
               >
-                <div className="flex flex-col items-center gap-4 py-8">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-                    System Maintenance &amp; Troubleshooting
-                  </p>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center text-emerald-400"><Terminal size={18} /></div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900">Technical Diagnostics</h2>
+                      <p className="text-xs text-slate-400">Live view of data payload, state and cache.</p>
+                    </div>
+                  </div>
                   <button
-                    onClick={() => setShowDebug(!showDebug)}
-                    className="px-6 py-3 bg-white text-slate-800 rounded-2xl text-xs font-bold hover:shadow-lg hover:bg-slate-50 transition-all shadow-sm flex items-center gap-3 border border-slate-200 group"
+                    onClick={() => { localStorage.removeItem('smarttool_data'); window.location.reload(); }}
+                    className="px-3 py-2 bg-red-500/10 text-red-600 text-xs font-bold uppercase rounded-lg border border-red-200 hover:bg-red-500/20 transition-all"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white group-hover:scale-110 transition-transform">
-                      <Terminal size={14} />
-                    </div>
-                    <div className="text-left">
-                      <p className="leading-none">Open Technical Diagnostics</p>
-                      <p className="text-[9px] text-slate-400 mt-1 font-medium">Verify live data payload and server endpoints</p>
-                    </div>
+                    Hard Reset state
                   </button>
                 </div>
 
-                {showDebug && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-slate-950 w-full max-w-4xl max-h-[80vh] rounded-2xl shadow-2xl border border-slate-800 flex flex-col overflow-hidden">
-                      <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
-                            <Terminal size={18} />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-white uppercase tracking-widest">Live Data Diagnostics</h3>
-                            <p className="text-[10px] text-slate-500 font-medium">Real-time view of state and cache</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              localStorage.removeItem('smarttool_data');
-                              window.location.reload();
-                            }}
-                            className="px-3 py-1.5 bg-red-500/10 text-red-500 text-[10px] font-bold uppercase rounded-lg border border-red-500/20 hover:bg-red-500/20 transition-all"
-                          >
-                            Hard Reset state
-                          </button>
-                          <button
-                            onClick={() => setShowDebug(false)}
-                            className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-all"
-                          >
-                            <X size={18} />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex-1 overflow-auto p-6 font-mono text-[11px]">
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                            <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Active State</p>
-                            <div className="space-y-1">
-                              <p className="text-emerald-400">• Total Companies: {companies.length}</p>
-                              <p className="text-emerald-400">• Current View: {selectedCompanyId || 'ALL'}</p>
-                              <p className="text-emerald-400">• Last Global Sync: {lastSynced}</p>
-                            </div>
-                          </div>
-                          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                            <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Persistence</p>
-                            <div className="space-y-1">
-                              <p className="text-indigo-400">• LocalCache: {localStorage.getItem('smarttool_data') ? 'PRESENT' : 'EMPTY'}</p>
-                              <p className="text-indigo-400">• Cache Size: {(localStorage.getItem('smarttool_data')?.length || 0).toLocaleString()} bytes</p>
-                              <p className="text-indigo-400 mt-2">• API Endpoint: {window.location.origin}/api/update-data</p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                          <p className="text-slate-500 uppercase font-bold text-[9px] mb-4 tracking-widest">Raw Company JSON</p>
-                          <pre className="text-emerald-500 leading-relaxed whitespace-pre-wrap">{JSON.stringify(companies, null, 2)}</pre>
-                        </div>
-                      </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-[11px]">
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+                    <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Active State</p>
+                    <div className="space-y-1">
+                      <p className="text-emerald-400">• Total Companies: {companies.length}</p>
+                      <p className="text-emerald-400">• Current View: {selectedCompanyId || 'ALL'}</p>
+                      <p className="text-emerald-400">• Last Global Sync: {lastSynced}</p>
                     </div>
                   </div>
-                )}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+                    <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Persistence</p>
+                    <div className="space-y-1">
+                      <p className="text-indigo-400">• LocalCache: {localStorage.getItem('smarttool_data') ? 'PRESENT' : 'EMPTY'}</p>
+                      <p className="text-indigo-400">• Cache Size: {(localStorage.getItem('smarttool_data')?.length || 0).toLocaleString()} bytes</p>
+                      <p className="text-indigo-400 mt-2 break-all">• API Endpoint: {window.location.origin}/api/update-data</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px]">
+                  <p className="text-slate-500 uppercase font-bold text-[9px] mb-4 tracking-widest">Raw Company JSON</p>
+                  <pre className="text-emerald-500 leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-auto">{JSON.stringify(companies, null, 2)}</pre>
+                </div>
               </motion.div>
             )}
 
