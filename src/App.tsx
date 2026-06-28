@@ -476,6 +476,11 @@ const UserModal = ({
             </div>
           </div>
 
+          <p className="-mt-3 text-[11px] text-slate-400 flex items-start gap-1.5">
+            <ShieldCheck size={13} className="text-slate-400 shrink-0 mt-0.5" />
+            {ROLE_DESC[formData.role || 'Viewer']}
+          </p>
+
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
               {user ? 'Change Password' : 'Password'}
@@ -613,215 +618,231 @@ const UserModal = ({
   );
 };
 
-const UserManagementPage = ({ 
-  users, 
-  onAddUser, 
-  onEditUser, 
+
+// --- User Management Page ---
+
+const ROLE_DESC: Record<string, string> = {
+  Admin: 'Full access to all companies, settings and user management.',
+  Manager: 'Manage data and alerts for assigned companies.',
+  Viewer: 'Read-only access to assigned companies.',
+};
+
+const UserManagementPage = ({
+  users,
+  onAddUser,
+  onEditUser,
   onDeleteUser,
-  companies
-}: { 
+  onUpdateUser,
+  companies,
+  currentUserId,
+}: {
   users: User[],
   onAddUser: () => void,
   onEditUser: (user: User) => void,
   onDeleteUser: (id: string) => void,
-  companies: Company[]
+  onUpdateUser: (user: User) => Promise<void>,
+  companies: Company[],
+  currentUserId?: string,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filteredUsers = users.filter(u =>
+    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const roleBadge = (role: string) =>
+    role === 'Admin' ? 'bg-indigo-100 text-indigo-700' :
+    role === 'Manager' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
+
+  const counts = {
+    total: users.length,
+    admin: users.filter(u => u.role === 'Admin').length,
+    manager: users.filter(u => u.role === 'Manager').length,
+    viewer: users.filter(u => u.role === 'Viewer').length,
+  };
+
+  const hasCompany = (user: User, companyId: string) => user.permissions.some(p => p.companyId === companyId);
+  const initials = (name: string) => name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+  const toggleCompany = async (user: User, companyId: string) => {
+    if (user.role === 'Admin') return; // admins always have full access
+    const permissions = hasCompany(user, companyId)
+      ? user.permissions.filter(p => p.companyId !== companyId)
+      : [...user.permissions, { companyId, bankIds: [] }];
+    setSavingId(user.id);
+    try { await onUpdateUser({ ...user, permissions }); }
+    catch (e) { console.error('Permission update failed', e); }
+    finally { setSavingId(null); }
+  };
+
   return (
-    <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between">
+    <div className="w-full max-w-[2000px] mx-auto p-4 md:p-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Access Control Center</h2>
-          <p className="text-sm text-slate-500 mt-1">Orchestrate granular identity and resource permissions</p>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">User Management</h2>
+          <p className="text-sm text-slate-500 mt-1">Manage users, roles and company access.</p>
         </div>
-        <button 
+        <button
           onClick={onAddUser}
-          className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all flex items-center gap-2"
+          className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2"
         >
-          <Plus size={18} />
-          Add New User
+          <Plus size={16} /> Add User
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* User List */}
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-800">
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+      {/* Role stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Users', value: counts.total },
+          { label: 'Admins', value: counts.admin },
+          { label: 'Managers', value: counts.manager },
+          { label: 'Viewers', value: counts.viewer },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{s.label}</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1">{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Users table */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-slate-400" />
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Users</h3>
+          </div>
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search users…"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 w-56 transition-all"
+            />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[680px]">
+            <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <tr>
+                <th className="px-6 py-3 border-b border-slate-100">User</th>
+                <th className="px-6 py-3 border-b border-slate-100">Role</th>
+                <th className="px-6 py-3 border-b border-slate-100">Status</th>
+                <th className="px-6 py-3 border-b border-slate-100">Access</th>
+                <th className="px-6 py-3 border-b border-slate-100 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm divide-y divide-slate-50">
+              {filteredUsers.map(user => (
+                <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 border border-slate-200 text-xs shrink-0">{initials(user.name)}</div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 leading-none truncate">{user.name}</p>
+                        <p className="text-[11px] text-slate-400 mt-1 truncate">{user.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4"><span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span></td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    {user.role === 'Admin' ? (
+                      <span className="text-[11px] font-semibold text-indigo-600">All companies</span>
+                    ) : user.permissions.length === 0 ? (
+                      <span className="text-[11px] text-slate-400">No access</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {user.permissions.map(p => {
+                          const c = companies.find(c => c.id === p.companyId);
+                          return <span key={p.companyId} className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-medium text-slate-600">{c?.name || p.companyId}{p.bankIds.length ? ` (${p.bankIds.length})` : ''}</span>;
+                        })}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => onEditUser(user)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>
+                      <button onClick={() => onDeleteUser(user.id)} disabled={user.id === currentUserId} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors" title={user.id === currentUserId ? 'You cannot remove yourself' : 'Remove user'}><XCircle size={16} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredUsers.length === 0 && (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-sm">No users found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Company access matrix */}
+      {companies.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
             <div className="flex items-center gap-2">
-              <Users size={16} className="text-slate-400" />
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-none">Security Subjects</h3>
+              <ShieldCheck size={16} className="text-slate-400" />
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Company Access</h3>
             </div>
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Lookup identity..." 
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 w-64 transition-all" 
-              />
-            </div>
+            <p className="text-[11px] text-slate-400 mt-1">Click a cell to grant or revoke a user's access to a company. Use Edit for bank-level control. Admins always have full access.</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full text-left min-w-[640px]">
               <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 <tr>
-                  <th className="px-6 py-4 border-b border-slate-100">User Identity</th>
-                  <th className="px-6 py-4 border-b border-slate-100">Auth Role</th>
-                  <th className="px-6 py-4 border-b border-slate-100">Resource Footprint</th>
-                  <th className="px-6 py-4 border-b border-slate-100 text-right">Operations</th>
+                  <th className="px-6 py-3 border-b border-slate-100">User</th>
+                  {companies.map(c => <th key={c.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{c.name}</th>)}
                 </tr>
               </thead>
-              <tbody className="text-sm divide-y divide-slate-50">
-                {filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td 
-                      className="px-6 py-5 cursor-pointer"
-                      onClick={() => onEditUser(user)}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-500 border border-slate-200 group-hover:scale-105 group-hover:border-indigo-200 transition-all">
-                          {user.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 leading-none group-hover:text-indigo-600 transition-colors">{user.name}</p>
-                          <p className="text-[10px] text-slate-400 mt-1 font-medium italic">{user.email}</p>
-                        </div>
+              <tbody className="divide-y divide-slate-50">
+                {users.map(user => (
+                  <tr key={user.id} className="hover:bg-slate-50/40">
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-800 text-sm">{user.name}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span>
+                        {savingId === user.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
                       </div>
                     </td>
-                    <td className="px-6 py-5">
-                      <div className="space-y-1">
-                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tight ${
-                          user.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' : 
-                          user.role === 'Manager' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {user.role}
-                        </span>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase block mt-1 tracking-tighter">Status: {user.status}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex flex-wrap gap-1.5">
-                        {user.permissions.map(p => {
-                          const company = companies.find(c => c.id === p.companyId);
-                          return (
-                            <div key={p.companyId} className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 shadow-sm">
-                              <Building2 size={10} className="text-slate-400" />
-                              {company?.name || p.companyId}
-                              <span className="bg-slate-100 text-[9px] px-1 rounded ml-1 text-slate-400">
-                                {p.bankIds.length === 0 ? 'ALL' : p.bankIds.length}
-                              </span>
-                            </div>
-                          );
-                        })}
-                        {user.permissions.length === 0 && <span className="text-slate-400 italic text-xs">No active permissions</span>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-5 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => onEditUser(user)}
-                          className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
-                          title="Edit User"
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                        <button 
-                          onClick={() => onDeleteUser(user.id)}
-                          className="p-2 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-600 transition-colors"
-                          title="Revoke Access"
-                        >
-                          <XCircle size={18} />
-                        </button>
-                      </div>
-                    </td>
+                    {companies.map(c => {
+                      const locked = user.role === 'Admin';
+                      const on = locked || hasCompany(user, c.id);
+                      return (
+                        <td key={c.id} className="px-3 py-3 text-center">
+                          <button
+                            onClick={() => toggleCompany(user, c.id)}
+                            disabled={locked || savingId === user.id}
+                            title={locked ? 'Admins have full access' : on ? 'Revoke access' : 'Grant access'}
+                            className={`w-6 h-6 rounded-md inline-flex items-center justify-center transition-colors ${on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          >
+                            {on && <Check size={14} />}
+                          </button>
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
-                {filteredUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic text-sm">
-                      No matching identities found in current scope.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         </div>
-
-        {/* Global Security Summary */}
-        <div className="space-y-6">
-          <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl shadow-slate-900/20 relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-700" />
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
-                <Lock size={20} className="text-indigo-400" />
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-sm leading-none">Security Policy</h3>
-                <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">Active Enforcement</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="p-3 bg-white/5 rounded-xl border border-white/10">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Total Identities</p>
-                  <Users size={12} className="text-white/40" />
-                </div>
-                <p className="text-2xl font-bold font-mono tracking-tighter">{users.length}</p>
-              </div>
-
-              <div className="p-3 bg-white/5 rounded-xl border border-white/10">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Resource Coverage</p>
-                  <Globe size={12} className="text-white/40" />
-                </div>
-                <p className="text-2xl font-bold font-mono tracking-tighter">100%</p>
-              </div>
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-white/10">
-              <button className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all">
-                Export Audit Log
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-             <div className="flex items-center justify-between mb-4">
-                <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">System Health</h4>
-                <Activity size={14} className="text-emerald-500" />
-             </div>
-             <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                   <span className="text-xs text-slate-500">MFA Adoption</span>
-                   <span className="text-xs font-bold text-slate-900">84%</span>
-                </div>
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                   <div className="h-full bg-emerald-500 rounded-full" style={{ width: '84%' }} />
-                </div>
-                <div className="flex items-center justify-between mt-4">
-                   <span className="text-xs text-slate-500">Failed Attempts</span>
-                   <span className="text-xs font-bold text-red-500">0 (24h)</span>
-                </div>
-             </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
 
 // --- Alerts Page Component ---
 
-const AlertsPage = ({ 
+const AlertsPage = ({
   companies, 
   alerts, 
   onAddAlert, 
@@ -2094,6 +2115,20 @@ export default function App() {
     setIsUserModalOpen(false);
   };
 
+  // Direct update (used by the inline permissions matrix) — PUT without touching the modal.
+  const handleUpdateUser = async (user: User): Promise<void> => {
+    const res = await fetch(`/api/users/${user.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error (${res.status})`);
+    }
+    await loadUsers();
+  };
+
   const handleAddAlert = async (newAlert: Partial<WalletAlert>) => {
     const alertId = `alt-${Math.random().toString(36).substr(2, 9)}-${Date.now()}`;
     const alert: WalletAlert = { ...newAlert, id: alertId } as WalletAlert;
@@ -2827,7 +2862,7 @@ export default function App() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="max-w-7xl mx-auto p-4 md:p-8"
+                className="w-full max-w-[2000px] mx-auto p-4 md:p-8"
               >
                 <PSPPage companies={companies} onSync={handleRefresh} isSyncing={isRefreshing} />
               </motion.div>
@@ -2927,12 +2962,14 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <UserManagementPage 
+                <UserManagementPage
                   users={users}
                   onAddUser={handleAddUser}
                   onEditUser={handleEditUser}
                   onDeleteUser={handleDeleteUser}
+                  onUpdateUser={handleUpdateUser}
                   companies={companies}
+                  currentUserId={authUser?.id}
                 />
               </motion.div>
             )}
