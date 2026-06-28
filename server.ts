@@ -1180,6 +1180,137 @@ async function startServer() {
     }
   })();
 
+  // ── Per-user dashboard layout table ───────────────────────────────────────
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS user_dashboard_layout (
+            user_id     VARCHAR(64) NOT NULL PRIMARY KEY,
+            layout_json LONGTEXT    NOT NULL,
+            updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[Dashboard] user_dashboard_layout table ready");
+      } catch (e: any) { console.warn("[Dashboard] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Dashboard] DB not reachable on startup (layout table skipped):", e.message);
+    }
+  })();
+
+  // GET /api/dashboard-layout — the current user's saved widget layout (null if none)
+  app.get("/api/dashboard-layout", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT layout_json FROM user_dashboard_layout WHERE user_id = ?",
+        [req.session.user.id]
+      )) as any;
+      if (!rows.length) return res.json({ layout: null });
+      let layout = null;
+      try { layout = JSON.parse(rows[0].layout_json); } catch { layout = null; }
+      res.json({ layout });
+    } catch (err: any) {
+      console.error("Dashboard layout load error:", err.message);
+      res.status(500).json({ error: "Failed to load layout" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/dashboard-layout — upsert the current user's widget layout
+  app.post("/api/dashboard-layout", corsMiddleware, requireAuth, async (req: any, res) => {
+    const layout = req.body?.layout;
+    if (!Array.isArray(layout)) {
+      return res.status(400).json({ error: "layout must be an array" });
+    }
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute(
+        `INSERT INTO user_dashboard_layout (user_id, layout_json) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE layout_json = VALUES(layout_json)`,
+        [req.session.user.id, JSON.stringify(layout)]
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Dashboard layout save error:", err.message);
+      res.status(500).json({ error: "Failed to save layout" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // ── App settings (branding) table ─────────────────────────────────────────
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS app_settings (
+            k          VARCHAR(64) NOT NULL PRIMARY KEY,
+            v          LONGTEXT    NOT NULL,
+            updated_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[Branding] app_settings table ready");
+      } catch (e: any) { console.warn("[Branding] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Branding] DB not reachable on startup (settings table skipped):", e.message);
+    }
+  })();
+
+  // GET /api/branding — org logo + site name (auth required, any role)
+  app.get("/api/branding", corsMiddleware, requireAuth, async (_req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo')"
+      )) as any;
+      const map: Record<string, string> = {};
+      for (const r of rows as any[]) map[r.k] = r.v;
+      res.json({
+        siteName: map.brand_site_name || "Liquidity Reports",
+        logo: map.brand_logo || null,
+      });
+    } catch (err: any) {
+      console.error("Branding load error:", err.message);
+      res.json({ siteName: "Liquidity Reports", logo: null });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/branding — update logo and/or site name (Admin only)
+  app.post("/api/branding", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const { siteName, logo } = req.body || {};
+    // Logo is stored as a data URL; cap size to keep the payload sane (~1MB base64).
+    if (logo != null && (typeof logo !== "string" || logo.length > 1_400_000)) {
+      return res.status(400).json({ error: "Logo too large or invalid (max ~1MB image)" });
+    }
+    if (siteName != null && (typeof siteName !== "string" || siteName.length > 120)) {
+      return res.status(400).json({ error: "Site name invalid" });
+    }
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const upsert = (k: string, v: string) => conn.execute(
+        `INSERT INTO app_settings (k, v) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE v = VALUES(v)`,
+        [k, v]
+      );
+      if (typeof siteName === "string") await upsert("brand_site_name", siteName);
+      if (typeof logo === "string") await upsert("brand_logo", logo);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Branding save error:", err.message);
+      res.status(500).json({ error: "Failed to save branding" });
+    } finally {
+      await conn.end();
+    }
+  });
+
   // GET /api/alerts — list all alerts
   app.get("/api/alerts", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());

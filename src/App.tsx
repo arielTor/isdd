@@ -30,12 +30,17 @@ import {
   Bitcoin,
   Coins,
   LogOut,
-  CreditCard
+  CreditCard,
+  Image as ImageIcon,
+  UploadCloud
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState, useMemo, useEffect, Fragment, useRef, MouseEvent } from 'react';
+import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
 import { MOCK_COMPANIES } from './mockData';
 import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate } from './types';
+import WidgetCanvas from './dashboard/WidgetCanvas';
+import { SparklineChart } from './dashboard/widgets';
+import type { SparkPoint } from './dashboard/widgets';
 import UploadScreen from './UploadScreen';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
@@ -71,7 +76,7 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
 };
 
 // --- Types ---
-type Page = 'dashboard' | 'psp' | 'users' | 'alerts' | 'upload';
+type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding';
 
 // --- Sidebar Component ---
 
@@ -85,6 +90,8 @@ const Sidebar = ({
   onLogout,
   isOpen,
   onClose,
+  brandName,
+  brandLogo,
 }: {
   companies: Company[],
   selectedCompanyId: string | null,
@@ -95,6 +102,8 @@ const Sidebar = ({
   onLogout: () => void,
   isOpen: boolean,
   onClose: () => void,
+  brandName: string,
+  brandLogo: string | null,
 }) => {
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
@@ -106,6 +115,7 @@ const Sidebar = ({
     { id: 'users', icon: Users, label: 'User Management', roles: ['Admin'] },
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
+    { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
 
   // Deterministic company avatar (initials + colour) — gives each company a consistent "logo"
@@ -146,12 +156,16 @@ const Sidebar = ({
     <div className="w-64 h-full bg-sidebar-bg text-white flex flex-col">
       {/* Brand */}
       <div className="px-5 py-5 flex items-center justify-between border-b border-sidebar-border/70">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-900/40">
-            L
-          </div>
-          <div className="leading-tight">
-            <div className="text-base font-bold tracking-tight">Liquidity</div>
+        <div className="flex items-center gap-3 min-w-0">
+          {brandLogo ? (
+            <img src={brandLogo} alt={brandName} className="w-9 h-9 rounded-xl object-contain shrink-0" />
+          ) : (
+            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-900/40 shrink-0">
+              {(brandName?.[0] || 'L').toUpperCase()}
+            </div>
+          )}
+          <div className="leading-tight min-w-0">
+            <div className="text-base font-bold tracking-tight truncate">{brandName}</div>
             <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Treasury</div>
           </div>
         </div>
@@ -174,9 +188,9 @@ const Sidebar = ({
         <div className="space-y-1">
           {sectionLabel('Companies')}
           <button
-            onClick={() => { onSelectCompany(null); onNavigate('dashboard'); onClose(); }}
+            onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer ${
-              selectedCompanyId === null && activePage === 'dashboard'
+              selectedCompanyId === null && activePage === 'companies'
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
                 : 'text-slate-300 hover:bg-slate-700/40'
             }`}
@@ -185,15 +199,15 @@ const Sidebar = ({
               <Building2 size={15} />
             </span>
             <span className="text-sm font-medium flex-1 text-left truncate">View All Companies</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded ${selectedCompanyId === null && activePage === 'dashboard' ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded ${selectedCompanyId === null && activePage === 'companies' ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
           </button>
 
           {companies.map((company) => {
-            const active = selectedCompanyId === company.id && activePage === 'dashboard';
+            const active = selectedCompanyId === company.id && activePage === 'companies';
             return (
               <button
                 key={company.id}
-                onClick={() => { onSelectCompany(company.id); onNavigate('dashboard'); onClose(); }}
+                onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer ${
                   active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
                 }`}
@@ -1030,110 +1044,7 @@ const AlertsPage = ({
 
 // --- SparklineChart Component (with hover tooltip) ---
 
-interface SparkPoint { date: string; value: number; }
-
-const SparklineChart = ({
-  data, color, gradId, height = 36, dark = false,
-  fmtVal,
-}: {
-  data: SparkPoint[];
-  color: string;
-  gradId: string;
-  height?: number;
-  dark?: boolean;
-  fmtVal: (n: number) => string;
-}) => {
-  const [tip, setTip] = useState<{ px: number; py: number; date: string; val: number } | null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const W = 320;
-  const todayStr = new Date().toISOString().slice(0, 10);
-
-  const fallback: SparkPoint[] = data.length >= 2 ? data : [
-    { date: '', value: 20 }, { date: '', value: 30 }, { date: '', value: 25 },
-    { date: '', value: 40 }, { date: '', value: 35 }, { date: '', value: 50 },
-    { date: '', value: 45 }, { date: '', value: 60 }, { date: '', value: 55 },
-    { date: '', value: 70 },
-  ];
-  const pts_raw = fallback;
-  const vals = pts_raw.map(d => d.value);
-  const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1;
-  const pts = pts_raw.map((d, i) => ({
-    x: (i / (pts_raw.length - 1)) * W,
-    y: height - ((d.value - mn) / rng) * height * 0.75 - height * 0.1,
-    date: d.date,
-    val: d.value,
-    isToday: d.date === todayStr,
-  }));
-
-  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const areaPath = `${linePath} L ${W} ${height} L 0 ${height} Z`;
-
-  const handleEnter = (p: typeof pts[0]) => (e: MouseEvent<SVGCircleElement>) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const scaleX = rect.width / W;
-    const scaleY = rect.height / height;
-    setTip({ px: p.x * scaleX, py: p.y * scaleY, date: p.date, val: p.val });
-  };
-
-  return (
-    <div className="relative" onMouseLeave={() => setTip(null)}>
-      <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none">
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={dark ? '0.4' : '0.25'} />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={areaPath} fill={`url(#${gradId})`} />
-        <path d={linePath} fill="none" stroke={color} strokeWidth={dark ? '2' : '1.8'} strokeLinecap="round" strokeLinejoin="round" />
-        {/* Dot + invisible hit area for each point */}
-        {pts.map((p, i) => (
-          <g key={i}>
-            {/* Always show dot for all real data points */}
-            {p.date && (
-              <>
-                {/* outer glow ring for today */}
-                {p.isToday && (
-                  <circle cx={p.x} cy={p.y} r={dark ? 7 : 6} fill={color} opacity={0.2} />
-                )}
-                {/* main dot — today is bigger and filled white on dark */}
-                <circle
-                  cx={p.x} cy={p.y}
-                  r={p.isToday ? (dark ? 5 : 4) : (dark ? 3 : 2.5)}
-                  fill={p.isToday ? (dark ? '#ffffff' : color) : (dark ? '#a5b4fc' : color)}
-                  opacity={p.isToday ? 1 : 0.7}
-                />
-              </>
-            )}
-            {/* invisible large hit area */}
-            <circle cx={p.x} cy={p.y} r={10} fill="transparent"
-              onMouseEnter={p.date ? handleEnter(p) : undefined}
-              style={{ cursor: p.date ? 'crosshair' : 'default' }} />
-          </g>
-        ))}
-      </svg>
-
-      {/* Tooltip */}
-      {tip && tip.date && (
-        <div
-          className={`absolute z-20 pointer-events-none rounded-lg px-2.5 py-1.5 shadow-xl text-xs whitespace-nowrap ${
-            dark ? 'bg-white text-slate-800' : 'bg-slate-800 text-white'
-          }`}
-          style={{ left: tip.px, top: tip.py, transform: 'translate(-50%, -120%)' }}
-        >
-          <p className="font-bold mb-0.5">{tip.date === todayStr ? `${tip.date} (Today)` : tip.date}</p>
-          <p className="font-mono">{fmtVal(tip.val)}</p>
-          {/* arrow */}
-          <div className={`absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent ${
-            dark ? 'border-t-white' : 'border-t-slate-800'
-          }`} />
-        </div>
-      )}
-    </div>
-  );
-};
+// SparklineChart + SparkPoint now live in ./dashboard/widgets and are imported above.
 
 // --- Header Component ---
 
@@ -1451,6 +1362,128 @@ const BankCard = ({ bank, onShowDetails, alerts }: { bank: Bank, onShowDetails: 
   );
 };
 
+// --- Appearance / Branding settings ---
+
+const BrandingPage = ({
+  branding,
+  onSaved,
+}: {
+  branding: { siteName: string; logo: string | null };
+  onSaved: (b: { siteName: string; logo: string | null }) => void;
+}) => {
+  const [siteName, setSiteName] = useState(branding.siteName);
+  const [logo, setLogo] = useState<string | null>(branding.logo);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (file?: File) => {
+    setError('');
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setError('Please choose an image file.'); return; }
+    if (file.size > 1_000_000) { setError('Image is too large (max 1MB). Try a smaller PNG/SVG.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { setLogo(reader.result as string); setSaved(false); };
+    reader.onerror = () => setError('Could not read that file.');
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setSaving(true); setError(''); setSaved(false);
+    try {
+      const res = await fetch('/api/branding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || 'Save failed');
+      }
+      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo };
+      onSaved(next);
+      setSaved(true);
+    } catch (e: any) {
+      setError(e.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-slate-900">Appearance</h2>
+        <p className="text-sm text-slate-400">Set the logo and name shown across the portal. Visible to everyone in your organization.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+        {/* Logo */}
+        <div>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Portal logo</label>
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 rounded-xl bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
+              {logo
+                ? <img src={logo} alt="Logo preview" className="w-full h-full object-contain" />
+                : <span className="text-white font-bold text-xl">{(siteName?.[0] || 'L').toUpperCase()}</span>}
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+                >
+                  <UploadCloud size={15} /> Upload image
+                </button>
+                {logo && (
+                  <button onClick={() => { setLogo(null); setSaved(false); }} className="px-3 py-2 rounded-lg text-sm font-semibold text-slate-500 hover:bg-slate-50">
+                    Remove
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">PNG, SVG or JPG · transparent background recommended · max 1MB.</p>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => handleFile(e.target.files?.[0])}
+            />
+          </div>
+        </div>
+
+        {/* Site name */}
+        <div>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Site name</label>
+          <input
+            type="text"
+            value={siteName}
+            onChange={e => { setSiteName(e.target.value); setSaved(false); }}
+            placeholder="Liquidity Reports"
+            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+          />
+        </div>
+
+        {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
+
+        <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors ${saving ? 'bg-slate-100 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+          >
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+          {saved && <span className="text-sm text-emerald-600 font-medium">Saved</span>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- App Component ---
 
 export default function App() {
@@ -1577,6 +1610,16 @@ export default function App() {
   const [selectedBankDetails, setSelectedBankDetails] = useState<Bank | null>(null);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+
+  // Org branding (logo + site name) — configured in Settings → Appearance.
+  const [branding, setBranding] = useState<{ siteName: string; logo: string | null }>({ siteName: 'Liquidity Reports', logo: null });
+  useEffect(() => {
+    fetch('/api/branding', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null }); })
+      .catch(() => {});
+  }, []);
+  useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
 
   const handleShowBankDetails = (bank: Bank) => {
     setSelectedBankDetails(bank);
@@ -1714,12 +1757,14 @@ export default function App() {
   }, [filteredCompanies]);
 
   const selectedCompanyName = useMemo(() => {
+    if (activePage === 'dashboard') return 'My Dashboard';
     if (activePage === 'psp') return 'Payment Providers';
     if (activePage === 'users') return 'User Management';
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
+    if (activePage === 'branding') return 'Appearance';
     if (!selectedCompanyId) return 'Liquidity Overview';
-    return companies.find(c => c.id === selectedCompanyId)?.name || 'Dashboard';
+    return companies.find(c => c.id === selectedCompanyId)?.name || 'Companies';
   }, [selectedCompanyId, activePage, companies]);
 
   useEffect(() => {
@@ -1918,6 +1963,8 @@ export default function App() {
         onLogout={handleLogout}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        brandName={branding.siteName}
+        brandLogo={branding.logo}
       />
 
       <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
@@ -1932,8 +1979,19 @@ export default function App() {
         <main ref={mainContentRef} className="flex-1 overflow-y-auto">
           <AnimatePresence mode="wait">
             {activePage === 'dashboard' && (
-              <motion.div 
+              <motion.div
                 key="dashboard"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <WidgetCanvas companies={companies} history={portfolioHistory} />
+              </motion.div>
+            )}
+
+            {activePage === 'companies' && (
+              <motion.div
+                key="companies"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -2257,7 +2315,7 @@ export default function App() {
                           <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
                             <WalletIcon size={16} className="text-indigo-500" />
                             <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
-                            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">All Companies</span>
+                            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">{selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'Company') : 'All Companies'}</span>
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs min-w-[640px]">
@@ -2304,7 +2362,7 @@ export default function App() {
                     );
                   })()}
 
-                  <div className="space-y-12">
+                  <div className="space-y-8">
                     {historyEmpty ? (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-12 text-center">
                         <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200">
@@ -2340,7 +2398,10 @@ export default function App() {
                         </button>
                       </div>
                     ) : (
-                      filteredCompanies.map(company => (
+                      /* Per-company detail only when one company is selected; in "View All"
+                         the overview above (breakdown + summaries + portfolio table) already
+                         covers every company, so we skip the long redundant stack. */
+                      (selectedCompanyId ? filteredCompanies : []).map(company => (
                         <div key={company.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                           <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -2680,6 +2741,17 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
               >
                 <UploadScreen />
+              </motion.div>
+            )}
+
+            {activePage === 'branding' && authUser?.role === 'Admin' && (
+              <motion.div
+                key="branding"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <BrandingPage branding={branding} onSaved={setBranding} />
               </motion.div>
             )}
           </AnimatePresence>

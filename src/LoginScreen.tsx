@@ -176,7 +176,7 @@ function LoginForm({ onLogin }: { onLogin: (user: any) => void }) {
           L
         </div>
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Liquidity Dashboard</h1>
+          <h1 className="text-xl font-bold text-slate-900">Liquidity Reports</h1>
           <p className="text-xs text-slate-500">Sign in to your account</p>
         </div>
       </div>
@@ -269,7 +269,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           )}
         </div>
         <p className="text-center text-xs text-slate-400 mt-4">
-          Liquidity Dashboard · Secure Connection
+          Liquidity Reports · Secure Connection
         </p>
       </div>
     </div>

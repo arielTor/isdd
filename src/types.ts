@@ -125,3 +125,36 @@ export const CURRENCY_SYMBOLS: CurrencySymbol = {
   ETH: "Ξ",
   ILS: "₪",
 };
+
+// ── Customizable dashboard ──────────────────────────────────────────────────
+// A single point of the global portfolio history series (used by sparklines).
+export interface PortfolioPoint {
+  date: string;
+  fiat: number;
+  crypto: number;
+  total: number;
+}
+
+// The kinds of widget a user can place on their personal dashboard.
+export type WidgetType =
+  | 'asset-breakdown'
+  | 'total-portfolio'
+  | 'summary-by-bank'
+  | 'summary-by-company'
+  | 'summary-by-currency'
+  | 'portfolio-table'
+  | 'company-detail';
+
+// One placed widget instance. Position/size are in 12-column grid units;
+// `h` is measured in row units (see GRID_ROW_PX in the canvas).
+export interface DashboardWidget {
+  i: string;                 // unique instance id
+  type: WidgetType;
+  companyIds: string[];      // [] = every company the user can see
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type DashboardLayout = DashboardWidget[];
