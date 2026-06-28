@@ -345,9 +345,9 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
         </p>
       </div>
 
-      {/* Per-company account-level detail */}
+      {/* Per-company account-level detail — every company under View All, one when a tab is picked */}
       <div className="space-y-6">
-        {companiesWithPsp.map(company => (
+        {scoped.map(company => (
           <PSPSection key={company.id} company={company} />
         ))}
       </div>

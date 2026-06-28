@@ -1632,12 +1632,12 @@ const BrandingPage = ({
   branding,
   onSaved,
 }: {
-  branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' };
-  onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' }) => void;
+  branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light' };
+  onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light' }) => void;
 }) => {
   const [siteName, setSiteName] = useState(branding.siteName);
   const [logo, setLogo] = useState<string | null>(branding.logo);
-  const [theme, setTheme] = useState<'dark' | 'gray'>(branding.theme);
+  const [theme, setTheme] = useState<'dark' | 'gray' | 'light'>(branding.theme);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -1735,10 +1735,11 @@ const BrandingPage = ({
         {/* Theme */}
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Sidebar theme</label>
-          <div className="grid grid-cols-2 gap-3 max-w-sm">
+          <div className="grid grid-cols-3 gap-3 max-w-lg">
             {([
-              { id: 'dark', label: 'Dark', swatch: '#1e293b' },
+              { id: 'light', label: 'White', swatch: '#ffffff' },
               { id: 'gray', label: 'Gray', swatch: '#3f4654' },
+              { id: 'dark', label: 'Dark', swatch: '#0b1220' },
             ] as const).map(opt => (
               <button
                 key={opt.id}
@@ -1898,11 +1899,11 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
 
   // Org branding (logo + site name + theme) — configured in Settings → Appearance.
-  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark' });
+  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light' }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark' });
   useEffect(() => {
     fetch('/api/branding', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null, theme: b.theme === 'gray' ? 'gray' : 'dark' }); })
+      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null, theme: ['gray', 'light', 'dark'].includes(b.theme) ? b.theme : 'dark' }); })
       .catch(() => {});
   }, []);
   useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
@@ -1914,6 +1915,7 @@ export default function App() {
     const palettes = {
       dark: { bg: '#0f172a', border: '#1e293b' },
       gray: { bg: '#2b333f', border: '#3c4655' },
+      light: { bg: '#1e293b', border: '#334155' }, // original dark sidebar over a bright portal
     };
     const p = palettes[branding.theme] || palettes.dark;
     root.style.setProperty('--color-sidebar-bg', p.bg);

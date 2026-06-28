@@ -1294,7 +1294,7 @@ async function startServer() {
     if (siteName != null && (typeof siteName !== "string" || siteName.length > 120)) {
       return res.status(400).json({ error: "Site name invalid" });
     }
-    if (theme != null && !["dark", "gray"].includes(theme)) {
+    if (theme != null && !["dark", "gray", "light"].includes(theme)) {
       return res.status(400).json({ error: "Theme invalid" });
     }
     const conn = await mysql.createConnection(dbConfig());
