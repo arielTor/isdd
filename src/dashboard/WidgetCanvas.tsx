@@ -276,9 +276,9 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   const gridHeight = layout.reduce((m, it) => Math.max(m, it.y + it.h), 0);
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8">
+    <div className="w-full px-4 md:px-6 py-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-6 gap-3">
+      <div className="flex items-center justify-between mb-4 gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-bold text-slate-900">My Dashboard</h2>
           <p className="text-xs text-slate-400">{editing ? 'Drag to move, pull the corner to resize, set each widget’s source companies.' : 'Your personal view across companies.'}</p>
@@ -313,6 +313,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
           <p className="text-sm mt-1">Click <span className="font-semibold">Edit layout</span> then <span className="font-semibold">Add widget</span> to build your view.</p>
         </div>
       ) : (
+        <div className={`rounded-2xl p-3 md:p-4 transition-colors ${editing ? 'border-2 border-dashed border-indigo-300 bg-indigo-50/20' : 'border border-slate-200 bg-white/40'}`}>
         <div
           ref={containerRef}
           className="relative w-full"
@@ -377,6 +378,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
               </div>
             );
           })}
+        </div>
         </div>
       )}
     </div>

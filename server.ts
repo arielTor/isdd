@@ -1267,17 +1267,18 @@ async function startServer() {
     const conn = await mysql.createConnection(dbConfig());
     try {
       const [rows] = (await conn.execute(
-        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo')"
+        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_theme')"
       )) as any;
       const map: Record<string, string> = {};
       for (const r of rows as any[]) map[r.k] = r.v;
       res.json({
         siteName: map.brand_site_name || "Liquidity Reports",
         logo: map.brand_logo || null,
+        theme: map.brand_theme || "dark",
       });
     } catch (err: any) {
       console.error("Branding load error:", err.message);
-      res.json({ siteName: "Liquidity Reports", logo: null });
+      res.json({ siteName: "Liquidity Reports", logo: null, theme: "dark" });
     } finally {
       await conn.end();
     }
@@ -1285,13 +1286,16 @@ async function startServer() {
 
   // POST /api/branding — update logo and/or site name (Admin only)
   app.post("/api/branding", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
-    const { siteName, logo } = req.body || {};
+    const { siteName, logo, theme } = req.body || {};
     // Logo is stored as a data URL; cap size to keep the payload sane (~1MB base64).
     if (logo != null && (typeof logo !== "string" || logo.length > 1_400_000)) {
       return res.status(400).json({ error: "Logo too large or invalid (max ~1MB image)" });
     }
     if (siteName != null && (typeof siteName !== "string" || siteName.length > 120)) {
       return res.status(400).json({ error: "Site name invalid" });
+    }
+    if (theme != null && !["dark", "gray"].includes(theme)) {
+      return res.status(400).json({ error: "Theme invalid" });
     }
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1302,6 +1306,7 @@ async function startServer() {
       );
       if (typeof siteName === "string") await upsert("brand_site_name", siteName);
       if (typeof logo === "string") await upsert("brand_logo", logo);
+      if (typeof theme === "string") await upsert("brand_theme", theme);
       res.json({ ok: true });
     } catch (err: any) {
       console.error("Branding save error:", err.message);

@@ -32,7 +32,8 @@ import {
   LogOut,
   CreditCard,
   Image as ImageIcon,
-  UploadCloud
+  UploadCloud,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
@@ -105,6 +106,8 @@ const Sidebar = ({
   brandName: string,
   brandLogo: string | null,
 }) => {
+  // Companies behaves like a collapsible folder in the menu — expands to reveal the list.
+  const [companiesOpen, setCompaniesOpen] = useState(activePage === 'companies');
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
@@ -183,45 +186,61 @@ const Sidebar = ({
         <div className="space-y-1">
           {sectionLabel('Menu')}
           {workspaceNav.map(renderNavItem)}
-        </div>
 
-        <div className="space-y-1">
-          {sectionLabel('Companies')}
+          {/* Companies — collapsible folder (like Payment Providers, but expands a list) */}
           <button
-            onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer ${
-              selectedCompanyId === null && activePage === 'companies'
+            onClick={() => setCompaniesOpen(o => !o)}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium ${
+              activePage === 'companies'
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
-                : 'text-slate-300 hover:bg-slate-700/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/40'
             }`}
+            aria-expanded={companiesOpen}
           >
-            <span className="w-7 h-7 rounded-lg bg-slate-700/70 text-slate-300 flex items-center justify-center shrink-0">
-              <Building2 size={15} />
-            </span>
-            <span className="text-sm font-medium flex-1 text-left truncate">View All Companies</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded ${selectedCompanyId === null && activePage === 'companies' ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
+            <Building2 size={17} className="shrink-0" />
+            <span className="truncate flex-1 text-left">Companies</span>
+            <ChevronRight size={15} className={`shrink-0 transition-transform ${companiesOpen ? 'rotate-90' : ''}`} />
           </button>
 
-          {companies.map((company) => {
-            const active = selectedCompanyId === company.id && activePage === 'companies';
-            return (
+          {companiesOpen && (
+            <div className="mt-1 ml-3 pl-3 border-l border-sidebar-border/70 space-y-1">
               <button
-                key={company.id}
-                onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer ${
-                  active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
+                onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                  selectedCompanyId === null && activePage === 'companies'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
+                    : 'text-slate-300 hover:bg-slate-700/40'
                 }`}
               >
-                <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 ${active ? 'bg-white/20 text-white' : companyColor(company.name)}`}>
-                  {companyInitials(company.name)}
+                <span className="w-7 h-7 rounded-lg bg-slate-700/70 text-slate-300 flex items-center justify-center shrink-0">
+                  <Building2 size={15} />
                 </span>
-                <span className="text-sm font-medium flex-1 text-left truncate">{company.name}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${active ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>
-                  {company.banks.length}
-                </span>
+                <span className="text-sm font-medium flex-1 text-left truncate">View All Companies</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded ${selectedCompanyId === null && activePage === 'companies' ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
               </button>
-            );
-          })}
+
+              {companies.map((company) => {
+                const active = selectedCompanyId === company.id && activePage === 'companies';
+                return (
+                  <button
+                    key={company.id}
+                    onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                      active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
+                    }`}
+                  >
+                    <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 ${active ? 'bg-white/20 text-white' : companyColor(company.name)}`}>
+                      {companyInitials(company.name)}
+                    </span>
+                    <span className="text-sm font-medium flex-1 text-left truncate">{company.name}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${active ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>
+                      {company.banks.length}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </nav>
 
@@ -243,6 +262,15 @@ const Sidebar = ({
             <div className="font-medium text-slate-200 truncate">{authUser?.name || 'Unknown'}</div>
             <div className="text-slate-500 truncate">{authUser?.role}</div>
           </div>
+          {(!authUser || authUser.role === 'Admin' || authUser.role === 'Manager') && (
+            <button
+              onClick={() => { onNavigate('alerts'); onClose(); }}
+              title="Notifications"
+              className="text-slate-500 hover:text-indigo-300 transition-colors p-1.5 rounded-lg hover:bg-slate-700/40 shrink-0"
+            >
+              <Bell size={15} />
+            </button>
+          )}
           <button
             onClick={onLogout}
             title="Sign out"
@@ -1049,13 +1077,12 @@ const AlertsPage = ({
 // --- Header Component ---
 
 const Header = ({
-  title, searchTerm, onSearch, onMenuClick, onLogout,
+  title, searchTerm, onSearch, onMenuClick,
 }: {
   title: string;
   searchTerm: string;
   onSearch: (val: string) => void;
   onMenuClick: () => void;
-  onLogout: () => void;
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-14 md:h-16">
@@ -1075,7 +1102,7 @@ const Header = ({
         </span>
       </div>
 
-      {/* Right — search + bell */}
+      {/* Right — search (notifications + sign out now live in the sidebar user section) */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
         {/* Search */}
         <div className="relative hidden sm:block">
@@ -1088,16 +1115,6 @@ const Header = ({
             className="w-32 md:w-48 h-8 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
           />
         </div>
-        <button className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
-          <Bell size={18} />
-        </button>
-        <button
-          onClick={onLogout}
-          title="Sign out"
-          className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
-        >
-          <LogOut size={18} />
-        </button>
       </div>
     </header>
   );
@@ -1368,11 +1385,12 @@ const BrandingPage = ({
   branding,
   onSaved,
 }: {
-  branding: { siteName: string; logo: string | null };
-  onSaved: (b: { siteName: string; logo: string | null }) => void;
+  branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' };
+  onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' }) => void;
 }) => {
   const [siteName, setSiteName] = useState(branding.siteName);
   const [logo, setLogo] = useState<string | null>(branding.logo);
+  const [theme, setTheme] = useState<'dark' | 'gray'>(branding.theme);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -1396,13 +1414,13 @@ const BrandingPage = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo }),
+        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, theme }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || 'Save failed');
       }
-      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo };
+      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme };
       onSaved(next);
       setSaved(true);
     } catch (e: any) {
@@ -1465,6 +1483,27 @@ const BrandingPage = ({
             placeholder="Liquidity Reports"
             className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
           />
+        </div>
+
+        {/* Theme */}
+        <div>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Sidebar theme</label>
+          <div className="grid grid-cols-2 gap-3 max-w-sm">
+            {([
+              { id: 'dark', label: 'Dark', swatch: '#1e293b' },
+              { id: 'gray', label: 'Gray', swatch: '#3f4654' },
+            ] as const).map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => { setTheme(opt.id); setSaved(false); }}
+                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-colors text-left ${theme === opt.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'}`}
+              >
+                <span className="w-9 h-9 rounded-lg shrink-0 ring-1 ring-black/10" style={{ background: opt.swatch }} />
+                <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
+                {theme === opt.id && <Check size={15} className="text-indigo-600 ml-auto" />}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
@@ -1611,15 +1650,26 @@ export default function App() {
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
 
-  // Org branding (logo + site name) — configured in Settings → Appearance.
-  const [branding, setBranding] = useState<{ siteName: string; logo: string | null }>({ siteName: 'Liquidity Reports', logo: null });
+  // Org branding (logo + site name + theme) — configured in Settings → Appearance.
+  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark' });
   useEffect(() => {
     fetch('/api/branding', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null }); })
+      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null, theme: b.theme === 'gray' ? 'gray' : 'dark' }); })
       .catch(() => {});
   }, []);
   useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
+  // Apply the chosen sidebar theme by overriding the Tailwind theme variables at runtime.
+  useEffect(() => {
+    const palettes = {
+      dark: { bg: '#1e293b', border: '#334155' },
+      gray: { bg: '#3f4654', border: '#525a6b' },
+    };
+    const p = palettes[branding.theme] || palettes.dark;
+    const root = document.documentElement;
+    root.style.setProperty('--color-sidebar-bg', p.bg);
+    root.style.setProperty('--color-sidebar-border', p.border);
+  }, [branding.theme]);
 
   const handleShowBankDetails = (bank: Bank) => {
     setSelectedBankDetails(bank);
@@ -1973,7 +2023,6 @@ export default function App() {
           searchTerm={searchQuery}
           onSearch={setSearchQuery}
           onMenuClick={() => setSidebarOpen(true)}
-          onLogout={handleLogout}
         />
 
         <main ref={mainContentRef} className="flex-1 overflow-y-auto">
