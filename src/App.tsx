@@ -39,7 +39,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
 import { MOCK_COMPANIES } from './mockData';
-import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate } from './types';
+import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate, RoleDef, UserPermission } from './types';
 import WidgetCanvas from './dashboard/WidgetCanvas';
 import { SparklineChart } from './dashboard/widgets';
 import type { SparkPoint } from './dashboard/widgets';
@@ -627,25 +627,167 @@ const ROLE_DESC: Record<string, string> = {
   Viewer: 'Read-only access to assigned companies.',
 };
 
+// Reusable company × bank access grid for roles. Click a cell to pick which
+// banks the role can see within a company (all / some / none).
+const RoleAccessMatrix = ({
+  roles,
+  companies,
+  onSaveAccess,
+  onDeleteRole,
+  savingId,
+}: {
+  roles: RoleDef[];
+  companies: Company[];
+  onSaveAccess: (roleId: string, permissions: UserPermission[]) => void;
+  onDeleteRole: (id: string) => void;
+  savingId: string | null;
+}) => {
+  const [openCell, setOpenCell] = useState<{ roleId: string; companyId: string } | null>(null);
+  const roleBadge = (name: string) =>
+    name === 'Admin' ? 'bg-indigo-100 text-indigo-700' :
+    name === 'Manager' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
+  const companyById = (id: string) => companies.find(c => c.id === id);
+  const banksOf = (c?: Company) => (c?.banks || []);
+  const permFor = (perms: UserPermission[], cid: string) => perms.find(p => p.companyId === cid);
+  const isBankOn = (perms: UserPermission[], cid: string, bid: string) => {
+    const p = permFor(perms, cid);
+    if (!p) return false;
+    return p.bankIds.length === 0 || p.bankIds.includes(bid);
+  };
+  const isAdmin = (role: RoleDef) => role.name === 'Admin';
+  const cellState = (role: RoleDef, cid: string): 'all' | 'partial' | 'none' => {
+    if (isAdmin(role)) return 'all';
+    const p = permFor(role.permissions, cid);
+    if (!p) return 'none';
+    return p.bankIds.length === 0 ? 'all' : 'partial';
+  };
+  const setAll = (role: RoleDef, cid: string, all: boolean) =>
+    onSaveAccess(role.id, all
+      ? [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds: [] }]
+      : role.permissions.filter(p => p.companyId !== cid));
+  const toggleBank = (role: RoleDef, cid: string, bid: string) => {
+    const allIds = banksOf(companyById(cid)).map(b => b.id);
+    const p = permFor(role.permissions, cid);
+    let bankIds: string[];
+    if (!p) bankIds = [bid];
+    else if (p.bankIds.length === 0) bankIds = allIds.filter(id => id !== bid);
+    else bankIds = p.bankIds.includes(bid) ? p.bankIds.filter(id => id !== bid) : [...p.bankIds, bid];
+    let permissions;
+    if (bankIds.length === 0) permissions = role.permissions.filter(p => p.companyId !== cid);
+    else if (allIds.length > 0 && bankIds.length === allIds.length) permissions = [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds: [] }];
+    else permissions = [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds }];
+    onSaveAccess(role.id, permissions);
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left min-w-[640px]">
+        <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <tr>
+            <th className="px-6 py-3 border-b border-slate-100">Role</th>
+            {companies.map(c => <th key={c.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{c.name}</th>)}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50">
+          {roles.map(role => (
+            <Fragment key={role.id}>
+              <tr className="hover:bg-slate-50/40">
+                <td className="px-6 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(role.name)}`}>{role.name}</span>
+                    {role.builtin && <span className="text-[9px] text-slate-400 uppercase tracking-wider">built-in</span>}
+                    {!role.builtin && <button onClick={() => onDeleteRole(role.id)} title="Delete role" className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><XCircle size={14} /></button>}
+                    {savingId === role.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
+                  </div>
+                </td>
+                {companies.map(c => {
+                  const locked = isAdmin(role);
+                  const state = cellState(role, c.id);
+                  const isOpen = openCell?.roleId === role.id && openCell?.companyId === c.id;
+                  return (
+                    <td key={c.id} className="px-3 py-3 text-center">
+                      <button
+                        onClick={() => !locked && setOpenCell(isOpen ? null : { roleId: role.id, companyId: c.id })}
+                        disabled={locked || savingId === role.id}
+                        title={locked ? 'Admins have full access' : 'Set bank access'}
+                        className={`w-7 h-7 rounded-md inline-flex items-center justify-center text-[10px] font-bold transition-colors ${state === 'all' ? 'bg-indigo-600 text-white' : state === 'partial' ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''} ${isOpen ? 'ring-2 ring-indigo-400' : ''}`}
+                      >
+                        {state === 'all' ? <Check size={14} /> : state === 'partial' ? permFor(role.permissions, c.id)!.bankIds.length : ''}
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+              {openCell?.roleId === role.id && !isAdmin(role) && (() => {
+                const c = companyById(openCell.companyId);
+                if (!c) return null;
+                return (
+                  <tr>
+                    <td colSpan={1 + companies.length} className="bg-slate-50/60 px-6 py-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                        <p className="text-xs font-bold text-slate-700">{c.name} — bank access for {role.name}</p>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setAll(role, c.id, true)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700">All banks</button>
+                          <button onClick={() => setAll(role, c.id, false)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-200">No access</button>
+                          <button onClick={() => setOpenCell(null)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-slate-600">Close</button>
+                        </div>
+                      </div>
+                      {banksOf(c).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No banks for this company.</p>
+                      ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {banksOf(c).map(bank => {
+                            const on = isBankOn(role.permissions, c.id, bank.id);
+                            return (
+                              <button key={bank.id} onClick={() => toggleBank(role, c.id, bank.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-xs transition-colors ${on ? 'bg-white border-indigo-200 text-slate-700' : 'bg-slate-100/60 border-transparent text-slate-400'}`}>
+                                <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
+                                <span className="truncate font-medium">{bank.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })()}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const UserManagementPage = ({
   users,
   onAddUser,
   onEditUser,
   onDeleteUser,
-  onUpdateUser,
   companies,
   currentUserId,
+  roles,
+  onCreateRole,
+  onUpdateRole,
+  onDeleteRole,
 }: {
   users: User[],
   onAddUser: () => void,
   onEditUser: (user: User) => void,
   onDeleteUser: (id: string) => void,
-  onUpdateUser: (user: User) => Promise<void>,
   companies: Company[],
   currentUserId?: string,
+  roles: RoleDef[],
+  onCreateRole: (name: string) => Promise<void>,
+  onUpdateRole: (role: RoleDef) => Promise<void>,
+  onDeleteRole: (id: string) => Promise<void>,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [tab, setTab] = useState<'users' | 'roles'>('users');
+  const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [roleError, setRoleError] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const filteredUsers = users.filter(u =>
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -663,52 +805,29 @@ const UserManagementPage = ({
     viewer: users.filter(u => u.role === 'Viewer').length,
   };
 
-  const [tab, setTab] = useState<'users' | 'roles'>('users');
-  const [openCell, setOpenCell] = useState<{ userId: string; companyId: string } | null>(null);
-
   const initials = (name: string) => name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  const permFor = (user: User, companyId: string) => user.permissions.find(p => p.companyId === companyId);
-  const companyById = (id: string) => companies.find(c => c.id === id);
-  const banksOf = (c?: Company) => (c?.banks || []);
 
-  const save = async (user: User, permissions: User['permissions']) => {
-    setSavingId(user.id);
-    try { await onUpdateUser({ ...user, permissions }); }
-    catch (e) { console.error('Permission update failed', e); }
-    finally { setSavingId(null); }
+  const saveRoleAccess = async (roleId: string, permissions: UserPermission[]) => {
+    const role = roles.find(r => r.id === roleId);
+    if (!role) return;
+    setSavingRoleId(roleId);
+    try { await onUpdateRole({ ...role, permissions }); }
+    catch (e) { console.error('Role access update failed', e); }
+    finally { setSavingRoleId(null); }
   };
 
-  // Grant all banks (bankIds: []) or revoke the company entirely.
-  const setCompanyAll = (user: User, companyId: string, all: boolean) =>
-    save(user, all
-      ? [...user.permissions.filter(p => p.companyId !== companyId), { companyId, bankIds: [] }]
-      : user.permissions.filter(p => p.companyId !== companyId));
-
-  const isBankOn = (user: User, companyId: string, bankId: string) => {
-    const p = permFor(user, companyId);
-    if (!p) return false;
-    return p.bankIds.length === 0 || p.bankIds.includes(bankId); // empty bankIds = all banks
+  const handleCreateRole = async () => {
+    const name = newRoleName.trim();
+    if (!name) return;
+    setCreating(true); setRoleError('');
+    try { await onCreateRole(name); setNewRoleName(''); }
+    catch (e: any) { setRoleError(e.message || 'Failed to create role'); }
+    finally { setCreating(false); }
   };
 
-  const toggleBank = (user: User, companyId: string, bankId: string) => {
-    const allIds = banksOf(companyById(companyId)).map(b => b.id);
-    const p = permFor(user, companyId);
-    let bankIds: string[];
-    if (!p) bankIds = [bankId];
-    else if (p.bankIds.length === 0) bankIds = allIds.filter(id => id !== bankId); // was "all" → all except this
-    else bankIds = p.bankIds.includes(bankId) ? p.bankIds.filter(id => id !== bankId) : [...p.bankIds, bankId];
-    let permissions;
-    if (bankIds.length === 0) permissions = user.permissions.filter(p => p.companyId !== companyId);
-    else if (allIds.length > 0 && bankIds.length === allIds.length) permissions = [...user.permissions.filter(p => p.companyId !== companyId), { companyId, bankIds: [] }];
-    else permissions = [...user.permissions.filter(p => p.companyId !== companyId), { companyId, bankIds }];
-    save(user, permissions);
-  };
-
-  const cellState = (user: User, companyId: string): 'all' | 'partial' | 'none' => {
-    if (user.role === 'Admin') return 'all';
-    const p = permFor(user, companyId);
-    if (!p) return 'none';
-    return p.bankIds.length === 0 ? 'all' : 'partial';
+  const handleDeleteRole = async (id: string) => {
+    try { await onDeleteRole(id); }
+    catch (e) { console.error('Role delete failed', e); }
   };
 
   return (
@@ -820,112 +939,48 @@ const UserManagementPage = ({
               </table>
             </div>
           </div>
-
-          {/* Company + bank access matrix */}
-          {companies.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-slate-400" />
-                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Company &amp; Bank Access</h3>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">Click a cell to choose which banks a user can see within that company (all, some, or none). A number means partial access. Admins always have full access.</p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[640px]">
-                  <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    <tr>
-                      <th className="px-6 py-3 border-b border-slate-100">User</th>
-                      {companies.map(c => <th key={c.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{c.name}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {users.map(user => (
-                      <Fragment key={user.id}>
-                        <tr className="hover:bg-slate-50/40">
-                          <td className="px-6 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-slate-800 text-sm">{user.name}</span>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span>
-                              {savingId === user.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
-                            </div>
-                          </td>
-                          {companies.map(c => {
-                            const locked = user.role === 'Admin';
-                            const state = cellState(user, c.id);
-                            const isOpen = openCell?.userId === user.id && openCell?.companyId === c.id;
-                            return (
-                              <td key={c.id} className="px-3 py-3 text-center">
-                                <button
-                                  onClick={() => !locked && setOpenCell(isOpen ? null : { userId: user.id, companyId: c.id })}
-                                  disabled={locked || savingId === user.id}
-                                  title={locked ? 'Admins have full access' : 'Set bank access'}
-                                  className={`w-7 h-7 rounded-md inline-flex items-center justify-center text-[10px] font-bold transition-colors ${state === 'all' ? 'bg-indigo-600 text-white' : state === 'partial' ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''} ${isOpen ? 'ring-2 ring-indigo-400' : ''}`}
-                                >
-                                  {state === 'all' ? <Check size={14} /> : state === 'partial' ? permFor(user, c.id)!.bankIds.length : ''}
-                                </button>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                        {openCell?.userId === user.id && user.role !== 'Admin' && (() => {
-                          const c = companyById(openCell.companyId);
-                          if (!c) return null;
-                          return (
-                            <tr>
-                              <td colSpan={1 + companies.length} className="bg-slate-50/60 px-6 py-4">
-                                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                                  <p className="text-xs font-bold text-slate-700">{c.name} — bank access for {user.name}</p>
-                                  <div className="flex items-center gap-2">
-                                    <button onClick={() => setCompanyAll(user, c.id, true)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700">All banks</button>
-                                    <button onClick={() => setCompanyAll(user, c.id, false)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-200">No access</button>
-                                    <button onClick={() => setOpenCell(null)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-slate-600">Close</button>
-                                  </div>
-                                </div>
-                                {banksOf(c).length === 0 ? (
-                                  <p className="text-xs text-slate-400 italic">No banks for this company.</p>
-                                ) : (
-                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                    {banksOf(c).map(bank => {
-                                      const on = isBankOn(user, c.id, bank.id);
-                                      return (
-                                        <button key={bank.id} onClick={() => toggleBank(user, c.id, bank.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-xs transition-colors ${on ? 'bg-white border-indigo-200 text-slate-700' : 'bg-slate-100/60 border-transparent text-slate-400'}`}>
-                                          <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
-                                          <span className="truncate font-medium">{bank.name}</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })()}
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </>
       ) : (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-500">System roles set what a user can do. Company &amp; bank access is assigned per user in the Users tab.</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(['Admin', 'Manager', 'Viewer'] as const).map(role => (
-              <div key={role} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(role)}`}>{role}</span>
-                  <span className="text-xs text-slate-400">{users.filter(u => u.role === role).length} users</span>
-                </div>
-                <p className="text-sm text-slate-600">{ROLE_DESC[role]}</p>
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Permissions</p>
-                  <p className="text-xs text-slate-400 mt-1 italic">Per-role permissions coming soon.</p>
-                </div>
+        <div className="space-y-6">
+          {/* Create role */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Create role</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="text"
+                value={newRoleName}
+                onChange={e => { setNewRoleName(e.target.value); setRoleError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateRole(); }}
+                placeholder="e.g. Treasury Analyst"
+                className="flex-1 min-w-[200px] border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+              />
+              <button onClick={handleCreateRole} disabled={creating || !newRoleName.trim()} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                <Plus size={15} /> Create
+              </button>
+            </div>
+            {roleError && <p className="text-xs text-red-600 mt-2">{roleError}</p>}
+          </div>
+
+          {/* Per-role company & bank access */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={16} className="text-slate-400" />
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Role Company &amp; Bank Access</h3>
               </div>
-            ))}
+              <p className="text-[11px] text-slate-400 mt-1">Click a cell to choose which banks each role can see within a company (all, some, or none). A number means partial access. Admins always have full access.</p>
+            </div>
+            {companies.length === 0 ? (
+              <p className="px-6 py-8 text-sm text-slate-400 text-center">No companies available.</p>
+            ) : (
+              <RoleAccessMatrix
+                roles={roles}
+                companies={companies}
+                onSaveAccess={saveRoleAccess}
+                onDeleteRole={handleDeleteRole}
+                savingId={savingRoleId}
+              />
+            )}
           </div>
         </div>
       )}
@@ -2058,9 +2113,34 @@ export default function App() {
     }
   };
 
+  // Roles (custom roles + per-role company/bank access) — managed in User Management → Roles.
+  const [roles, setRoles] = useState<RoleDef[]>([]);
+  const loadRoles = async () => {
+    try {
+      const res = await fetch('/api/roles', { credentials: 'include' });
+      if (res.ok) { const data = await res.json(); setRoles(data.roles || []); }
+    } catch (e) { console.error('Failed to load roles:', e); }
+  };
+
   useEffect(() => {
-    if (authUser?.role === 'Admin') loadUsers();
+    if (authUser?.role === 'Admin') { loadUsers(); loadRoles(); }
   }, [authUser]);
+
+  const handleCreateRole = async (name: string): Promise<void> => {
+    const res = await fetch('/api/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ name }) });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Failed to create role'); }
+    await loadRoles();
+  };
+  const handleUpdateRole = async (role: RoleDef): Promise<void> => {
+    const res = await fetch(`/api/roles/${role.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ name: role.name, permissions: role.permissions }) });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Failed to update role'); }
+    await loadRoles();
+  };
+  const handleDeleteRole = async (id: string): Promise<void> => {
+    const res = await fetch(`/api/roles/${id}`, { method: 'DELETE', credentials: 'include' });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Failed to delete role'); }
+    await loadRoles();
+  };
 
   const [alerts, setAlerts] = useState<WalletAlert[]>([]);
   const [portfolioHistory, setPortfolioHistory] = useState<{ date: string; fiat: number; crypto: number; total: number; }[]>([]);
@@ -3022,9 +3102,12 @@ export default function App() {
                   onAddUser={handleAddUser}
                   onEditUser={handleEditUser}
                   onDeleteUser={handleDeleteUser}
-                  onUpdateUser={handleUpdateUser}
                   companies={companies}
                   currentUserId={authUser?.id}
+                  roles={roles}
+                  onCreateRole={handleCreateRole}
+                  onUpdateRole={handleUpdateRole}
+                  onDeleteRole={handleDeleteRole}
                 />
               </motion.div>
             )}

@@ -92,6 +92,14 @@ export interface User {
   password?: string; // only used when creating/updating — never returned by API
 }
 
+// A role with its own company/bank access (managed in User Management → Roles).
+export interface RoleDef {
+  id: string;
+  name: string;
+  builtin: boolean;
+  permissions: UserPermission[];
+}
+
 export interface Company {
   id: string;
   name: string;

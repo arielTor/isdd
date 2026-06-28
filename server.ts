@@ -1348,6 +1348,106 @@ async function startServer() {
     }
   });
 
+  // ── Roles table (custom roles + per-role company/bank access) ─────────────
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS app_roles (
+            id               VARCHAR(64)  NOT NULL PRIMARY KEY,
+            name             VARCHAR(120) NOT NULL,
+            builtin          TINYINT      NOT NULL DEFAULT 0,
+            permissions_json LONGTEXT     NOT NULL,
+            updated_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        // Seed the built-in roles once.
+        const [rows] = (await conn.execute("SELECT COUNT(*) AS n FROM app_roles")) as any;
+        if (!rows[0].n) {
+          for (const name of ["Admin", "Manager", "Viewer"]) {
+            await conn.execute(
+              "INSERT INTO app_roles (id, name, builtin, permissions_json) VALUES (?, ?, 1, '[]')",
+              [name.toLowerCase(), name]
+            );
+          }
+        }
+        console.log("[Roles] app_roles table ready");
+      } catch (e: any) { console.warn("[Roles] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Roles] DB not reachable on startup (roles table skipped):", e.message);
+    }
+  })();
+
+  // GET /api/roles — list roles with parsed company/bank access
+  app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute("SELECT id, name, builtin, permissions_json FROM app_roles ORDER BY builtin DESC, name")) as any;
+      const roles = (rows as any[]).map(r => {
+        let permissions = [];
+        try { permissions = JSON.parse(r.permissions_json); } catch { permissions = []; }
+        return { id: r.id, name: r.name, builtin: !!r.builtin, permissions };
+      });
+      res.json({ roles });
+    } catch (err: any) {
+      console.error("Roles load error:", err.message);
+      res.status(500).json({ error: "Failed to load roles" });
+    } finally { await conn.end(); }
+  });
+
+  // POST /api/roles — create a custom role (Admin only)
+  app.post("/api/roles", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const name = (req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Role name is required" });
+    if (name.length > 120) return res.status(400).json({ error: "Role name too long" });
+    const id = `role_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`;
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute("INSERT INTO app_roles (id, name, builtin, permissions_json) VALUES (?, ?, 0, '[]')", [id, name]);
+      res.json({ ok: true, id });
+    } catch (err: any) {
+      console.error("Role create error:", err.message);
+      res.status(500).json({ error: "Failed to create role" });
+    } finally { await conn.end(); }
+  });
+
+  // PUT /api/roles/:id — update a role's name and/or company/bank access (Admin only)
+  app.put("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const { name, permissions } = req.body || {};
+    if (permissions != null && !Array.isArray(permissions)) {
+      return res.status(400).json({ error: "permissions must be an array" });
+    }
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      if (typeof name === "string" && name.trim()) {
+        await conn.execute("UPDATE app_roles SET name = ? WHERE id = ?", [name.trim(), req.params.id]);
+      }
+      if (Array.isArray(permissions)) {
+        await conn.execute("UPDATE app_roles SET permissions_json = ? WHERE id = ?", [JSON.stringify(permissions), req.params.id]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Role update error:", err.message);
+      res.status(500).json({ error: "Failed to update role" });
+    } finally { await conn.end(); }
+  });
+
+  // DELETE /api/roles/:id — remove a custom role (built-in roles are protected)
+  app.delete("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute("SELECT builtin FROM app_roles WHERE id = ?", [req.params.id])) as any;
+      if (rows.length && rows[0].builtin) return res.status(400).json({ error: "Built-in roles cannot be deleted" });
+      await conn.execute("DELETE FROM app_roles WHERE id = ?", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Role delete error:", err.message);
+      res.status(500).json({ error: "Failed to delete role" });
+    } finally { await conn.end(); }
+  });
+
   // GET /api/alerts — list all alerts
   app.get("/api/alerts", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
