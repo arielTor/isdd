@@ -8,6 +8,8 @@ import {
   Landmark,
   Coins,
   Table as TableIcon,
+  BarChart3,
+  TrendingUp,
 } from 'lucide-react';
 import { CURRENCY_SYMBOLS } from '../types';
 import type { Company, PortfolioPoint, WidgetType } from '../types';
@@ -436,6 +438,60 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
   );
 };
 
+// ── Chart widgets ───────────────────────────────────────────────────────────
+
+const BarChartWidget = ({ companies, groupBy, title }: { companies: Company[]; groupBy: 'bank' | 'company' | 'currency'; title: string }) => {
+  const agg = aggregateVerified(companies);
+  const data = groupBy === 'bank' ? agg.byBank : groupBy === 'company' ? agg.byCompany : agg.byCurrency;
+  const entries = Object.entries(data).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const max = Math.max(...entries.map(([, v]) => Math.abs(v)), 1);
+  if (!entries.length) return <EmptyState label="No verified balances" />;
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100 shrink-0 flex items-center gap-2">
+        <BarChart3 size={14} className="text-indigo-500" />
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{title}</p>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {entries.map(([label, usd]) => {
+          const neg = usd < 0;
+          const pct = (Math.abs(usd) / max) * 100;
+          return (
+            <div key={label}>
+              <div className="flex items-center justify-between text-xs mb-1 gap-2">
+                <span className="text-slate-600 font-medium truncate">{label}</span>
+                <span className={`font-mono font-bold shrink-0 ${neg ? 'text-red-600' : 'text-slate-800'}`}>{fmtUsd(usd)}</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className={`h-full rounded-full ${neg ? 'bg-red-400' : 'bg-indigo-500'}`} style={{ width: `${Math.max(pct, 1)}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const TrendChartWidget = ({ companies, history }: { companies: Company[]; history: PortfolioPoint[] }) => {
+  const { grandTotalUsd } = splitAssets(companies);
+  const spark = sparkSeries(history);
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100 shrink-0 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <TrendingUp size={14} className="text-indigo-500" />
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Portfolio Trend</p>
+        </div>
+        <span className="text-sm font-bold font-mono text-slate-800">{fmtUsd(grandTotalUsd)}</span>
+      </div>
+      <div className="flex-1 flex items-center px-2 pb-2">
+        <SparklineChart data={spark.total} color="#6366f1" gradId="gradTrendW" height={200} fmtVal={fmtUsd} />
+      </div>
+    </div>
+  );
+};
+
 // ── Registry + dispatcher ───────────────────────────────────────────────────
 
 export interface WidgetMeta {
@@ -456,6 +512,10 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
   { type: 'summary-by-currency', label: 'By Currency', description: 'USD totals grouped by currency', icon: Coins, defaultW: 4, defaultH: 3 },
   { type: 'portfolio-table', label: 'Portfolio Table', description: 'Full company / bank / currency table', icon: TableIcon, defaultW: 12, defaultH: 4 },
   { type: 'company-detail', label: 'Company Detail', description: 'One company\'s bank balances', icon: Building2, defaultW: 6, defaultH: 4, singleCompany: true },
+  { type: 'chart-trend', label: 'Portfolio Trend', description: 'Total portfolio over time (chart)', icon: TrendingUp, defaultW: 6, defaultH: 3 },
+  { type: 'chart-by-bank', label: 'By Bank (chart)', description: 'USD by bank (bar chart)', icon: BarChart3, defaultW: 4, defaultH: 4 },
+  { type: 'chart-by-company', label: 'By Company (chart)', description: 'USD by company (bar chart)', icon: BarChart3, defaultW: 4, defaultH: 4 },
+  { type: 'chart-by-currency', label: 'By Currency (chart)', description: 'USD by currency (bar chart)', icon: BarChart3, defaultW: 4, defaultH: 4 },
 ];
 
 export const widgetMeta = (type: WidgetType) => WIDGET_REGISTRY.find(w => w.type === type)!;
@@ -469,6 +529,10 @@ export function WidgetView({ type, companies, history }: { type: WidgetType; com
     case 'summary-by-currency': return <SummaryTableWidget companies={companies} groupBy="currency" title="By Currency" />;
     case 'portfolio-table': return <PortfolioTableWidget companies={companies} />;
     case 'company-detail': return <CompanyDetailWidget companies={companies} />;
+    case 'chart-trend': return <TrendChartWidget companies={companies} history={history} />;
+    case 'chart-by-bank': return <BarChartWidget companies={companies} groupBy="bank" title="By Bank" />;
+    case 'chart-by-company': return <BarChartWidget companies={companies} groupBy="company" title="By Company" />;
+    case 'chart-by-currency': return <BarChartWidget companies={companies} groupBy="currency" title="By Currency" />;
     default: return <EmptyState label="Unknown widget" />;
   }
 }

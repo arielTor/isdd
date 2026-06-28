@@ -143,7 +143,11 @@ export type WidgetType =
   | 'summary-by-company'
   | 'summary-by-currency'
   | 'portfolio-table'
-  | 'company-detail';
+  | 'company-detail'
+  | 'chart-trend'
+  | 'chart-by-bank'
+  | 'chart-by-company'
+  | 'chart-by-currency';
 
 // One placed widget instance. Position/size are in 12-column grid units;
 // `h` is measured in row units (see GRID_ROW_PX in the canvas).

@@ -101,7 +101,7 @@ function AddWidgetMenu({ onAdd, onClose }: { onAdd: (type: DashboardWidget['type
   return (
     <>
       <div className="fixed inset-0 z-30" onClick={onClose} />
-      <div className="absolute right-0 top-12 z-40 w-72 bg-white rounded-xl border border-slate-200 shadow-xl p-2">
+      <div className="absolute right-0 top-12 z-40 w-72 max-h-[70vh] overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-xl p-2">
         <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Add a widget</div>
         {WIDGET_REGISTRY.map(w => (
           <button
