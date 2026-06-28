@@ -1255,16 +1255,17 @@ const AlertsPage = ({
 // --- Header Component ---
 
 const Header = ({
-  title, searchTerm, onSearch, onMenuClick,
+  title, searchTerm, onSearch, onMenuClick, logo,
 }: {
   title: string;
   searchTerm: string;
   onSearch: (val: string) => void;
   onMenuClick: () => void;
+  logo?: string | null;
 }) => {
   return (
-    <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-14 md:h-16">
-      {/* Left — hamburger + title */}
+    <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-16 md:h-20">
+      {/* Left — hamburger + company logo + title */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onMenuClick}
@@ -1273,11 +1274,12 @@ const Header = ({
         >
           <Menu size={20} />
         </button>
-        <h1 className="text-base md:text-lg font-semibold text-slate-900 leading-none truncate">{title}</h1>
-        <span className="text-slate-300 hidden lg:block">|</span>
-        <span className="text-sm text-slate-500 hidden lg:block">
-          Active View: <span className="font-medium text-slate-900 uppercase tracking-wider text-[11px]">Secure Connection</span>
-        </span>
+        {logo && (
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center shrink-0 p-1 ring-1 ring-black/5" style={{ backgroundColor: '#ffffff' }}>
+            <img src={logo} alt={title} className="max-w-full max-h-full object-contain" />
+          </div>
+        )}
+        <h1 className="text-xl md:text-2xl font-bold text-slate-900 leading-none truncate">{title}</h1>
       </div>
 
       {/* Right — search (notifications + sign out now live in the sidebar user section) */}
@@ -2594,6 +2596,7 @@ export default function App() {
           searchTerm={searchQuery}
           onSearch={setSearchQuery}
           onMenuClick={() => setSidebarOpen(true)}
+          logo={activePage === 'companies' && selectedCompanyId ? (branding.companyLogos[selectedCompanyId] || null) : null}
         />
 
         <main ref={mainContentRef} className="flex-1 overflow-y-auto">
