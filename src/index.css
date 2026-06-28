@@ -67,6 +67,7 @@ html[data-theme="dark"] .bg-slate-50, html[data-theme="gray"] .bg-slate-50 { bac
 
 /* Secondary surfaces (headers, hovers, subtle fills) */
 html[data-theme="dark"] .bg-slate-100, html[data-theme="gray"] .bg-slate-100,
+html[data-theme="dark"] .bg-slate-200, html[data-theme="gray"] .bg-slate-200,
 html[data-theme="dark"] [class*="bg-slate-50/"], html[data-theme="gray"] [class*="bg-slate-50/"] { background-color: var(--p-sub) !important; }
 
 /* Text */
@@ -89,3 +90,40 @@ html[data-theme="dark"] input[type="text"], html[data-theme="dark"] input[type="
 html[data-theme="gray"] input[type="text"], html[data-theme="gray"] input[type="date"], html[data-theme="gray"] input[type="password"], html[data-theme="gray"] input[type="email"], html[data-theme="gray"] select {
   background-color: var(--p-sub) !important; color: var(--p-text) !important; border-color: var(--p-border) !important;
 }
+
+/* ── Accent surfaces, chips & text ───────────────────────────────────────────
+   Coloured tints (bg-*-50 / bg-*-100) are light by default; retint them to dark
+   translucent fills and lighten their coloured text so totals rows, alert rows
+   and currency badges keep contrast on the dark and gray themes. */
+html[data-theme="dark"] .bg-indigo-50, html[data-theme="gray"] .bg-indigo-50,
+html[data-theme="dark"] [class*="bg-indigo-50/"], html[data-theme="gray"] [class*="bg-indigo-50/"],
+html[data-theme="dark"] .bg-indigo-100, html[data-theme="gray"] .bg-indigo-100 { background-color: rgba(99,102,241,0.20) !important; }
+html[data-theme="dark"] .bg-amber-50, html[data-theme="gray"] .bg-amber-50,
+html[data-theme="dark"] .bg-amber-100, html[data-theme="gray"] .bg-amber-100 { background-color: rgba(245,158,11,0.18) !important; }
+html[data-theme="dark"] .bg-red-50, html[data-theme="gray"] .bg-red-50,
+html[data-theme="dark"] [class*="bg-red-50/"], html[data-theme="gray"] [class*="bg-red-50/"],
+html[data-theme="dark"] .bg-red-100, html[data-theme="gray"] .bg-red-100 { background-color: rgba(239,68,68,0.18) !important; }
+html[data-theme="dark"] .bg-emerald-50, html[data-theme="gray"] .bg-emerald-50,
+html[data-theme="dark"] .bg-emerald-100, html[data-theme="gray"] .bg-emerald-100 { background-color: rgba(16,185,129,0.18) !important; }
+html[data-theme="dark"] .bg-blue-50, html[data-theme="gray"] .bg-blue-50,
+html[data-theme="dark"] .bg-blue-100, html[data-theme="gray"] .bg-blue-100 { background-color: rgba(59,130,246,0.20) !important; }
+html[data-theme="dark"] .bg-orange-100, html[data-theme="gray"] .bg-orange-100 { background-color: rgba(249,115,22,0.20) !important; }
+html[data-theme="dark"] .bg-sky-100, html[data-theme="gray"] .bg-sky-100 { background-color: rgba(56,189,248,0.20) !important; }
+
+/* Coloured text → brighter shades that read on the dark tints above */
+html[data-theme="dark"] .text-indigo-700, html[data-theme="gray"] .text-indigo-700,
+html[data-theme="dark"] .text-indigo-600, html[data-theme="gray"] .text-indigo-600 { color: #a5b4fc !important; }
+html[data-theme="dark"] .text-amber-700, html[data-theme="gray"] .text-amber-700,
+html[data-theme="dark"] .text-amber-800, html[data-theme="gray"] .text-amber-800 { color: #fcd34d !important; }
+html[data-theme="dark"] .text-red-600, html[data-theme="gray"] .text-red-600,
+html[data-theme="dark"] .text-red-700, html[data-theme="gray"] .text-red-700 { color: #f87171 !important; }
+html[data-theme="dark"] .text-emerald-600, html[data-theme="gray"] .text-emerald-600,
+html[data-theme="dark"] .text-emerald-700, html[data-theme="gray"] .text-emerald-700 { color: #34d399 !important; }
+html[data-theme="dark"] .text-blue-700, html[data-theme="gray"] .text-blue-700 { color: #93c5fd !important; }
+html[data-theme="dark"] .text-orange-700, html[data-theme="gray"] .text-orange-700 { color: #fdba74 !important; }
+
+/* Accent borders → faint, themed */
+html[data-theme="dark"] .border-indigo-100, html[data-theme="gray"] .border-indigo-100,
+html[data-theme="dark"] .border-indigo-200, html[data-theme="gray"] .border-indigo-200 { border-color: rgba(99,102,241,0.35) !important; }
+html[data-theme="dark"] .border-amber-200, html[data-theme="gray"] .border-amber-200 { border-color: rgba(245,158,11,0.35) !important; }
+html[data-theme="dark"] .border-red-100, html[data-theme="gray"] .border-red-100 { border-color: rgba(239,68,68,0.35) !important; }

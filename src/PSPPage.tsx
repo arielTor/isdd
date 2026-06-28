@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { CreditCard, Info, RefreshCcw, Globe } from 'lucide-react';
+import { CreditCard, Info, RefreshCcw, Globe, Download } from 'lucide-react';
 import { Company } from './types';
+import { downloadCsv } from './exportCsv';
 import PSPSection, {
   fmtUsd,
   walletBalance,
@@ -171,6 +172,16 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
   const cashInTotal = cashIn.reduce((s, d) => s + d.amountUsd, 0);
   const maxCashIn = Math.max(...cashIn.map(d => d.amountUsd), 1);
 
+  const exportCsv = () => {
+    const data = rows.map(r => [
+      r.companyName, r.providerName, r.currency,
+      Math.round(r.transactionsUsd), Math.round(r.reserveUsd), Math.round(r.balanceUsd),
+      Math.round(r.settlementUsd), Math.round(r.balanceUsd + r.settlementUsd),
+    ]);
+    const name = activeValid ? `psp-${(companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'company')}` : 'psp-all-companies';
+    downloadCsv(`${name}.csv`, ['Company', 'Acquirer', 'Currency', 'Transactions (USD)', 'Reserve (USD)', 'Balance (USD)', 'Settlement (USD)', 'Exposure (USD)'], data);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -178,16 +189,24 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
           <h1 className="text-2xl font-bold text-slate-900">Payment Providers</h1>
           <p className="text-sm text-slate-500">Real-time overview of PSP balances, settlements and expected cash</p>
         </div>
-        {onSync && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={onSync}
-            disabled={isSyncing}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${isSyncing ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+            onClick={exportCsv}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
           >
-            {isSyncing ? <RefreshCcw size={14} className="animate-spin" /> : <Globe size={14} />}
-            {isSyncing ? 'Syncing…' : 'Sync All'}
+            <Download size={14} /> Export CSV
           </button>
-        )}
+          {onSync && (
+            <button
+              onClick={onSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${isSyncing ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+            >
+              {isSyncing ? <RefreshCcw size={14} className="animate-spin" /> : <Globe size={14} />}
+              {isSyncing ? 'Syncing…' : 'Sync All'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Company selector — View All + per company (like the Companies page) */}

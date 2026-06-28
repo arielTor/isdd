@@ -1267,18 +1267,27 @@ async function startServer() {
     const conn = await mysql.createConnection(dbConfig());
     try {
       const [rows] = (await conn.execute(
-        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_theme')"
+        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_theme') OR k LIKE 'company_logo_%'"
       )) as any;
       const map: Record<string, string> = {};
-      for (const r of rows as any[]) map[r.k] = r.v;
+      const companyLogos: Record<string, string> = {};
+      for (const r of rows as any[]) {
+        if (typeof r.k === "string" && r.k.startsWith("company_logo_")) {
+          const id = r.k.slice("company_logo_".length);
+          if (r.v) companyLogos[id] = r.v;
+        } else {
+          map[r.k] = r.v;
+        }
+      }
       res.json({
         siteName: map.brand_site_name || "Liquidity Reports",
         logo: map.brand_logo || null,
         theme: map.brand_theme || "dark",
+        companyLogos,
       });
     } catch (err: any) {
       console.error("Branding load error:", err.message);
-      res.json({ siteName: "Liquidity Reports", logo: null, theme: "dark" });
+      res.json({ siteName: "Liquidity Reports", logo: null, theme: "dark", companyLogos: {} });
     } finally {
       await conn.end();
     }
@@ -1297,6 +1306,17 @@ async function startServer() {
     if (theme != null && !["dark", "gray", "light"].includes(theme)) {
       return res.status(400).json({ error: "Theme invalid" });
     }
+    const companyLogos = req.body?.companyLogos;
+    if (companyLogos != null && (typeof companyLogos !== "object" || Array.isArray(companyLogos))) {
+      return res.status(400).json({ error: "companyLogos must be an object" });
+    }
+    if (companyLogos) {
+      for (const v of Object.values(companyLogos)) {
+        if (v != null && (typeof v !== "string" || v.length > 1_400_000)) {
+          return res.status(400).json({ error: "A company logo is too large or invalid (max ~1MB image)" });
+        }
+      }
+    }
     const conn = await mysql.createConnection(dbConfig());
     try {
       const upsert = (k: string, v: string) => conn.execute(
@@ -1307,6 +1327,12 @@ async function startServer() {
       if (typeof siteName === "string") await upsert("brand_site_name", siteName);
       if (typeof logo === "string") await upsert("brand_logo", logo);
       if (typeof theme === "string") await upsert("brand_theme", theme);
+      if (companyLogos) {
+        for (const [id, v] of Object.entries(companyLogos)) {
+          // empty string clears that company's logo
+          await upsert(`company_logo_${id}`, typeof v === "string" ? v : "");
+        }
+      }
       res.json({ ok: true });
     } catch (err: any) {
       console.error("Branding save error:", err.message);

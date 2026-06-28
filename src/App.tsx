@@ -33,7 +33,8 @@ import {
   CreditCard,
   Image as ImageIcon,
   UploadCloud,
-  Check
+  Check,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
@@ -42,6 +43,7 @@ import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAle
 import WidgetCanvas from './dashboard/WidgetCanvas';
 import { SparklineChart } from './dashboard/widgets';
 import type { SparkPoint } from './dashboard/widgets';
+import { downloadCsv } from './exportCsv';
 import UploadScreen from './UploadScreen';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
@@ -93,6 +95,7 @@ const Sidebar = ({
   onClose,
   brandName,
   brandLogo,
+  companyLogos,
 }: {
   companies: Company[],
   selectedCompanyId: string | null,
@@ -105,9 +108,8 @@ const Sidebar = ({
   onClose: () => void,
   brandName: string,
   brandLogo: string | null,
+  companyLogos: Record<string, string>,
 }) => {
-  // Companies behaves like a collapsible folder in the menu — expands to reveal the list.
-  const [companiesOpen, setCompaniesOpen] = useState(activePage === 'companies');
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
@@ -161,14 +163,16 @@ const Sidebar = ({
       <div className="px-5 py-5 flex items-center justify-between border-b border-sidebar-border/70">
         <div className="flex items-center gap-3 min-w-0">
           {brandLogo ? (
-            <img src={brandLogo} alt={brandName} className="w-9 h-9 rounded-xl object-contain shrink-0" />
+            <div className="w-[72px] h-[72px] rounded-xl flex items-center justify-center shrink-0 p-1.5 ring-1 ring-black/5" style={{ backgroundColor: '#ffffff' }}>
+              <img src={brandLogo} alt={brandName} className="max-w-full max-h-full object-contain" />
+            </div>
           ) : (
-            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-900/40 shrink-0">
+            <div className="w-[72px] h-[72px] bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white text-2xl shadow-lg shadow-indigo-900/40 shrink-0">
               {(brandName?.[0] || 'L').toUpperCase()}
             </div>
           )}
           <div className="leading-tight min-w-0">
-            <div className="text-base font-bold tracking-tight truncate">{brandName}</div>
+            <div className="text-base font-bold tracking-tight">{brandName}</div>
             <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Treasury</div>
           </div>
         </div>
@@ -185,62 +189,53 @@ const Sidebar = ({
       <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
         <div className="space-y-1">
           {sectionLabel('Menu')}
-          {workspaceNav.map(renderNavItem)}
+          {workspaceNav.filter(item => item.id === 'dashboard').map(renderNavItem)}
 
-          {/* Companies — collapsible folder (like Payment Providers, but expands a list) */}
+          {/* Companies — always expanded, placed before Payment Providers.
+             The header itself acts as "View All Companies". */}
           <button
-            onClick={() => setCompaniesOpen(o => !o)}
+            onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium ${
-              activePage === 'companies'
+              activePage === 'companies' && selectedCompanyId === null
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-700/40'
             }`}
-            aria-expanded={companiesOpen}
           >
             <Building2 size={17} className="shrink-0" />
             <span className="truncate flex-1 text-left">Companies</span>
-            <ChevronRight size={15} className={`shrink-0 transition-transform ${companiesOpen ? 'rotate-90' : ''}`} />
+            <span className={`text-[10px] px-2 py-0.5 rounded ${activePage === 'companies' && selectedCompanyId === null ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
           </button>
 
-          {companiesOpen && (
-            <div className="mt-1 ml-3 pl-3 border-l border-sidebar-border/70 space-y-1">
-              <button
-                onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
-                  selectedCompanyId === null && activePage === 'companies'
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
-                    : 'text-slate-300 hover:bg-slate-700/40'
-                }`}
-              >
-                <span className="w-7 h-7 rounded-lg bg-slate-700/70 text-slate-300 flex items-center justify-center shrink-0">
-                  <Building2 size={15} />
-                </span>
-                <span className="text-sm font-medium flex-1 text-left truncate">View All Companies</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded ${selectedCompanyId === null && activePage === 'companies' ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
-              </button>
-
-              {companies.map((company) => {
-                const active = selectedCompanyId === company.id && activePage === 'companies';
-                return (
-                  <button
-                    key={company.id}
-                    onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
-                      active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
-                    }`}
-                  >
+          <div className="ml-3 pl-3 border-l border-sidebar-border/70 space-y-1">
+            {companies.map((company) => {
+              const active = selectedCompanyId === company.id && activePage === 'companies';
+              return (
+                <button
+                  key={company.id}
+                  onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                    active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
+                  }`}
+                >
+                  {companyLogos[company.id] ? (
+                    <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 p-0.5" style={{ backgroundColor: '#ffffff' }}>
+                      <img src={companyLogos[company.id]} alt={company.name} className="max-w-full max-h-full object-contain" />
+                    </span>
+                  ) : (
                     <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 ${active ? 'bg-white/20 text-white' : companyColor(company.name)}`}>
                       {companyInitials(company.name)}
                     </span>
-                    <span className="text-sm font-medium flex-1 text-left truncate">{company.name}</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${active ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>
-                      {company.banks.length}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                  )}
+                  <span className="text-sm font-medium flex-1 text-left truncate">{company.name}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${active ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>
+                    {company.banks.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {workspaceNav.filter(item => item.id !== 'dashboard').map(renderNavItem)}
         </div>
       </nav>
 
@@ -1630,18 +1625,33 @@ const CompanyTabs = ({
 
 const BrandingPage = ({
   branding,
+  companies,
   onSaved,
 }: {
-  branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light' };
-  onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light' }) => void;
+  branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; companyLogos: Record<string, string> };
+  companies: Company[];
+  onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; companyLogos: Record<string, string> }) => void;
 }) => {
   const [siteName, setSiteName] = useState(branding.siteName);
   const [logo, setLogo] = useState<string | null>(branding.logo);
   const [theme, setTheme] = useState<'dark' | 'gray' | 'light'>(branding.theme);
+  const [companyLogos, setCompanyLogos] = useState<Record<string, string>>(branding.companyLogos || {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const companyFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const handleCompanyFile = (id: string, file?: File) => {
+    setError('');
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setError('Please choose an image file.'); return; }
+    if (file.size > 1_000_000) { setError('Image is too large (max 1MB). Try a smaller PNG/SVG.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { setCompanyLogos(prev => ({ ...prev, [id]: reader.result as string })); setSaved(false); };
+    reader.onerror = () => setError('Could not read that file.');
+    reader.readAsDataURL(file);
+  };
 
   const handleFile = (file?: File) => {
     setError('');
@@ -1661,13 +1671,14 @@ const BrandingPage = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, theme }),
+        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, theme, companyLogos }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || 'Save failed');
       }
-      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme };
+      const cleanLogos = Object.fromEntries(Object.entries(companyLogos).filter(([, v]) => v));
+      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme, companyLogos: cleanLogos };
       onSaved(next);
       setSaved(true);
     } catch (e: any) {
@@ -1689,10 +1700,10 @@ const BrandingPage = ({
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Portal logo</label>
           <div className="flex items-center gap-5">
-            <div className="w-16 h-16 rounded-xl bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
+            <div className="w-16 h-16 rounded-xl flex items-center justify-center shrink-0 p-2 ring-1 ring-black/5" style={{ backgroundColor: logo ? '#ffffff' : undefined }}>
               {logo
-                ? <img src={logo} alt="Logo preview" className="w-full h-full object-contain" />
-                : <span className="text-white font-bold text-xl">{(siteName?.[0] || 'L').toUpperCase()}</span>}
+                ? <img src={logo} alt="Logo preview" className="max-w-full max-h-full object-contain" />
+                : <span className="w-full h-full rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-xl">{(siteName?.[0] || 'L').toUpperCase()}</span>}
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
@@ -1753,6 +1764,30 @@ const BrandingPage = ({
             ))}
           </div>
         </div>
+
+        {/* Per-company logos */}
+        {companies.length > 0 && (
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Company logos</label>
+            <div className="space-y-2">
+              {companies.map(c => (
+                <div key={c.id} className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 p-1 ring-1 ring-slate-200" style={{ backgroundColor: companyLogos[c.id] ? '#ffffff' : '#eef2ff' }}>
+                    {companyLogos[c.id]
+                      ? <img src={companyLogos[c.id]} alt={c.name} className="max-w-full max-h-full object-contain" />
+                      : <span className="text-indigo-600 font-bold text-xs">{c.name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()}</span>}
+                  </div>
+                  <span className="text-sm font-medium text-slate-700 flex-1 truncate">{c.name}</span>
+                  <button onClick={() => companyFileRefs.current[c.id]?.click()} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Upload</button>
+                  {companyLogos[c.id] && (
+                    <button onClick={() => { setCompanyLogos(prev => ({ ...prev, [c.id]: '' })); setSaved(false); }} className="text-xs font-semibold text-slate-400 hover:text-red-500">Remove</button>
+                  )}
+                  <input ref={el => { companyFileRefs.current[c.id] = el; }} type="file" accept="image/*" className="hidden" onChange={e => handleCompanyFile(c.id, e.target.files?.[0])} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
 
@@ -1899,11 +1934,11 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
 
   // Org branding (logo + site name + theme) — configured in Settings → Appearance.
-  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light' }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark' });
+  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; companyLogos: Record<string, string> }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark', companyLogos: {} });
   useEffect(() => {
     fetch('/api/branding', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null, theme: ['gray', 'light', 'dark'].includes(b.theme) ? b.theme : 'dark' }); })
+      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null, theme: ['gray', 'light', 'dark'].includes(b.theme) ? b.theme : 'dark', companyLogos: b.companyLogos || {} }); })
       .catch(() => {});
   }, []);
   useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
@@ -1925,6 +1960,37 @@ export default function App() {
   const handleShowBankDetails = (bank: Bank) => {
     setSelectedBankDetails(bank);
     setIsBankDetailsModalOpen(true);
+  };
+
+  // Export the current Companies view (verified balances, per company/bank/currency) to CSV.
+  const handleExportCompaniesCsv = () => {
+    const out: (string | number)[][] = [];
+    filteredCompanies.forEach(company => {
+      (company.banks || []).forEach((bank: any) => {
+        const isVerified = bank.is_verified !== undefined
+          ? (bank.is_verified === 1 || bank.is_verified === '1' || bank.is_verified === true)
+          : bank.isVerified === true;
+        if (!isVerified) return;
+        const accounts = (bank.bank_accounts || bank.accounts || []) as any[];
+        const cellMap: Record<string, { balance: number; usd: number }> = {};
+        accounts.forEach((acc: any) => {
+          let wallets = acc.wallets || [];
+          if (typeof wallets === 'string') { try { wallets = JSON.parse(wallets); } catch { wallets = []; } }
+          (wallets as any[]).forEach(w => {
+            const cur = w.currency || '?';
+            if (!cellMap[cur]) cellMap[cur] = { balance: 0, usd: 0 };
+            cellMap[cur].balance += Number(w.balance) || 0;
+            cellMap[cur].usd += Number(w.value_usd) || 0;
+          });
+        });
+        Object.entries(cellMap).forEach(([currency, cell]) => {
+          const fx = cell.balance !== 0 ? cell.usd / cell.balance : 0;
+          out.push([company.name, bank.name, currency, Math.round(cell.balance), fx ? fx.toFixed(4) : '', Math.round(cell.usd)]);
+        });
+      });
+    });
+    const who = selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'company') : 'all-companies';
+    downloadCsv(`portfolio-${who}.csv`, ['Company', 'Bank', 'Currency', 'Balance', 'FX Rate', 'USD Value'], out);
   };
 
   // Users are now stored in DB — no localStorage sync needed
@@ -2266,6 +2332,7 @@ export default function App() {
         onClose={() => setSidebarOpen(false)}
         brandName={branding.siteName}
         brandLogo={branding.logo}
+        companyLogos={branding.companyLogos}
       />
 
       <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
@@ -2295,9 +2362,19 @@ export default function App() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="max-w-7xl mx-auto p-4 md:p-8 space-y-6 md:space-y-8"
+                className="w-full max-w-[2000px] mx-auto p-4 md:p-8 space-y-6 md:space-y-8"
               >
                 <div className="space-y-6">
+
+                  {/* Export toolbar */}
+                  <div className="flex items-center justify-end">
+                    <button
+                      onClick={handleExportCompaniesCsv}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Download size={15} /> Export CSV
+                    </button>
+                  </div>
 
                   {/* Historical mode banner */}
                   {isHistoricalMode && !historyLoading && (
@@ -2846,7 +2923,7 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <BrandingPage branding={branding} onSaved={setBranding} />
+                <BrandingPage branding={branding} companies={companies} onSaved={setBranding} />
               </motion.div>
             )}
           </AnimatePresence>

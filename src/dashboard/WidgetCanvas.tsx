@@ -135,7 +135,11 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   const [showAdd, setShowAdd] = useState(false);
   const [configId, setConfigId] = useState<string | null>(null);
   const [containerW, setContainerW] = useState(1200);
+  const [isMobile, setIsMobile] = useState(false);
   const [drag, setDrag] = useState<DragState>(null);
+  // Trend window for sparklines; defaults to the current month (month-to-date).
+  const [period, setPeriod] = useState<'month' | '7d' | '30d' | '90d'>('month');
+  const [histData, setHistData] = useState<PortfolioPoint[]>(history);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,9 +164,23 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
     return () => { cancelled = true; };
   }, []);
 
-  // Track container width for grid math
+  // Refetch the portfolio history when the trend window changes ('month' = month-to-date).
+  useEffect(() => {
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : new Date().getDate();
+    let cancelled = false;
+    fetch(`/api/portfolio-history?days=${days}`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : { data: [] }))
+      .then(res => { if (!cancelled) setHistData(Array.isArray(res.data) ? res.data : []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [period]);
+
+  // Track container width for grid math + detect mobile (stacked, non-draggable layout)
   useLayoutEffect(() => {
-    const measure = () => { if (containerRef.current) setContainerW(containerRef.current.clientWidth); };
+    const measure = () => {
+      if (containerRef.current) setContainerW(containerRef.current.clientWidth);
+      setIsMobile(window.innerWidth < 768);
+    };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
@@ -273,6 +291,54 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
     );
   }
 
+  // Mobile: a 12-col free grid can't work on a phone, so stack widgets full-width
+  // in layout order. Drag/resize is desktop-only.
+  if (isMobile) {
+    const ordered = [...layout].sort((a, b) => a.y - b.y || a.x - b.x);
+    // Widgets stack vertically on mobile, so give each a height that fits its
+    // content in a single column (the asset breakdown stacks tallest).
+    const MOBILE_H: Record<string, number> = {
+      'asset-breakdown': 520,
+      'total-portfolio': 180,
+      'summary-by-bank': 300,
+      'summary-by-company': 300,
+      'summary-by-currency': 300,
+      'portfolio-table': 380,
+      'company-detail': 380,
+    };
+    return (
+      <div className="w-full px-3 py-4 space-y-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">My Dashboard</h2>
+          <p className="text-xs text-slate-400">Your personal view across companies.</p>
+        </div>
+        <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden text-xs font-semibold w-max">
+          {([['month', 'Month'], ['7d', '7D'], ['30d', '30D'], ['90d', '90D']] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setPeriod(id)} className={`px-3 py-2 ${period === id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{label}</button>
+          ))}
+        </div>
+        {ordered.length === 0 ? (
+          <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center text-slate-400">
+            <LayoutDashboard size={24} className="mx-auto mb-2 text-slate-300" />
+            <p className="text-sm font-semibold text-slate-500">No widgets yet</p>
+            <p className="text-xs mt-1">Open the dashboard on a larger screen to add and arrange widgets.</p>
+          </div>
+        ) : (
+          ordered.map(it => (
+            <div
+              key={it.i}
+              className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+              style={{ height: MOBILE_H[it.type] ?? 320 }}
+            >
+              <WidgetView type={it.type} companies={companiesFor(it)} history={histData} />
+            </div>
+          ))
+        )}
+        <p className="text-[11px] text-slate-400 text-center pt-2">Open on a larger screen to rearrange widgets.</p>
+      </div>
+    );
+  }
+
   const gridHeight = layout.reduce((m, it) => Math.max(m, it.y + it.h), 0);
 
   return (
@@ -289,6 +355,12 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
               {saveState === 'saving' ? <><Loader2 size={12} className="animate-spin" /> Saving</> : <><Check size={12} className="text-emerald-500" /> Saved</>}
             </span>
           )}
+          {/* Trend window — defaults to current month */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden text-xs font-semibold">
+            {([['month', 'This month'], ['7d', '7D'], ['30d', '30D'], ['90d', '90D']] as const).map(([id, label]) => (
+              <button key={id} onClick={() => setPeriod(id)} className={`px-2.5 py-2 transition-colors ${period === id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{label}</button>
+            ))}
+          </div>
           {editing && (
             <div className="relative">
               <button onClick={() => setShowAdd(v => !v)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50">
@@ -362,7 +434,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
                   )}
 
                   <div className={`h-full ${editing ? 'pt-9' : ''} ${dragging ? 'pointer-events-none' : ''}`}>
-                    <WidgetView type={it.type} companies={companiesFor(it)} history={history} />
+                    <WidgetView type={it.type} companies={companiesFor(it)} history={histData} />
                   </div>
 
                   {editing && (
