@@ -1379,6 +1379,253 @@ const BankCard = ({ bank, onShowDetails, alerts }: { bank: Bank, onShowDetails: 
   );
 };
 
+// --- Company detail (rendered as tabs under "View All Companies") ---
+
+const CompanyDetailCard = ({
+  company,
+  alerts,
+  onShowBankDetails,
+}: {
+  company: Company;
+  alerts: WalletAlert[];
+  onShowBankDetails: (bank: Bank) => void;
+}) => {
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse min-w-[600px]">
+          <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            <tr>
+              <th className="px-6 py-4 border-b border-slate-100">Bank</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-right">Wallets</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-right">Balance (LCY)</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-right">Currency</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-right">Valuation (USD/T)</th>
+            </tr>
+          </thead>
+          <tbody className="text-sm">
+            {(company.banks || []).flatMap(bank => {
+              // 1. Determine verification status (prioritizing is_verified underscore field)
+              const isVerified = bank.is_verified !== undefined
+                ? (bank.is_verified === 1 || bank.is_verified === "1" || bank.is_verified === true)
+                : (bank.isVerified === true || (bank.isVerified as any) === 1);
+
+              if (!isVerified) {
+                return [];
+              }
+
+              // 2. Get all accounts for this bank (with defensive parsing for stringified JSON from DB)
+              let accounts: BankAccount[] = [];
+              const rawAccounts = bank.bank_accounts || bank.accounts;
+              try {
+                if (Array.isArray(rawAccounts)) {
+                  accounts = rawAccounts;
+                } else if (typeof rawAccounts === 'string') {
+                  accounts = JSON.parse(rawAccounts);
+                }
+              } catch (e) {
+                console.error("Failed to parse accounts for bank:", bank.name, e);
+              }
+
+              // 2. Identify active accounts (those with wallets)
+              const activeAccounts = accounts.filter(acc => {
+                let wallets = acc.wallets || [];
+                if (typeof wallets === 'string') {
+                  try { wallets = JSON.parse(wallets); } catch(e) { wallets = []; }
+                }
+                return Array.isArray(wallets) && wallets.length > 0;
+              });
+
+              // 3. Handle banks with absolutely no detected accounts
+              if (accounts.length === 0) {
+                return [];
+              }
+
+              // 4. Transform active accounts into wallet rows
+              const activeRows = activeAccounts.flatMap(acc => {
+                let wallets = acc.wallets || [];
+                if (typeof wallets === 'string') {
+                  try { wallets = JSON.parse(wallets); } catch(e) { wallets = []; }
+                }
+                return (wallets as any[]).map((w) => ({
+                  ...w,
+                  accountNumber: acc.account_number || acc.accountNumber,
+                  bankName: bank.name,
+                  isVerified: isVerified,
+                  lastSync: bank.last_modified_date
+                }));
+              });
+
+              // 5. Identify accounts with no wallets
+              const inactiveAccounts = accounts.filter(acc => {
+                let wallets = acc.wallets || [];
+                if (typeof wallets === 'string') {
+                  try { wallets = JSON.parse(wallets); } catch(e) { wallets = []; }
+                }
+                return !wallets || wallets.length === 0;
+              });
+
+              // 6. Generate JSX rows
+              const resultRows: any[] = [];
+
+              // Add active rows (Wallets)
+              activeRows.forEach((wallet, idx) => {
+                const usdVal = wallet.value_usd ?? (wallet as any).usd_value ?? (wallet as any).valueUsd ?? (wallet as any).usdValue;
+                // Allow negative values (overdrafts) — only hide when truly absent or exactly zero balance with no DB value
+                const converted = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0)
+                  ? { amount: Number(usdVal), estimated: !!(wallet as any).value_usd_estimated }
+                  : null;
+                const isFirstInBank = idx === 0;
+
+                const bankHasActiveAlert = accounts.flatMap(acc => acc.wallets || []).some(w => {
+                  const alert = alerts.find(a => a.bankId === bank.id && a.walletId === w.id && a.isEnabled);
+                  return alert ? (w.balance || 0) <= alert.threshold : false;
+                });
+
+                const shouldHighlight = (walletId: string) => {
+                  const hasAlertConfigured = alerts.some(a => a.bankId === bank.id && a.walletId === walletId && a.isEnabled);
+                  const alert = alerts.find(a => a.bankId === bank.id && a.walletId === walletId && a.isEnabled);
+                  const triggeredLocally = alert && (wallet.balance || 0) <= alert.threshold;
+                  return triggeredLocally || (bankHasActiveAlert && hasAlertConfigured);
+                };
+
+                const isAlertRow = shouldHighlight(wallet.id);
+
+                resultRows.push(
+                  <tr key={`${bank.id}-${wallet.id}-${idx}`} className={`transition-colors group ${isAlertRow ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-slate-50/50'}`}>
+                    <td className={`px-6 py-4 border-b border-slate-100 ${isAlertRow ? 'border-red-100' : ''}`}>
+                      {isFirstInBank ? (
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900">{bank.name}</span>
+                            {isVerified && <ShieldCheck size={12} className="text-emerald-500" />}
+                          </div>
+                          {wallet.lastSync && (
+                            <span className="text-[9px] text-indigo-500 font-bold uppercase mt-1 tracking-tight">Sync: {wallet.lastSync}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
+                    <td className={`px-6 py-4 border-b border-slate-100 text-right font-mono font-bold ${isAlertRow ? 'text-red-600 animate-pulse' : 'text-slate-900'}`}>
+                      {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-right">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wallet.currency === 'USD' || wallet.currency === 'USDT' ? 'bg-emerald-100 text-emerald-700' : wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {wallet.currency}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-right font-mono">
+                      {converted ? (() => {
+                        const neg = converted.amount < 0;
+                        const abs = Math.abs(converted.amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                        return (
+                          <span className={`font-bold text-sm ${neg ? 'text-red-600' : 'text-slate-900'}`}>
+                            {neg ? '-' : ''}${abs}
+                          </span>
+                        );
+                      })() : (
+                        <span className="text-slate-300 text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              });
+
+              // Add inactive rows
+              inactiveAccounts.forEach((acc, idx) => {
+                const isFirstInBank = activeRows.length === 0 && idx === 0;
+                resultRows.push(
+                  <tr key={`${bank.id}-${acc.accountNumber}-${idx}`} className="hover:bg-slate-50/50 grayscale opacity-60">
+                    <td className="px-6 py-4 border-b border-slate-100">
+                      {isFirstInBank ? (
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900">{bank.name}</span>
+                            {isVerified && <ShieldCheck size={12} className="text-emerald-500" />}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-300 font-medium ml-2">↳ {activeRows.length > 0 ? "Additional Acct" : "Continued"}</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 text-xs font-mono">{acc.accountNumber}</td>
+                    <td colSpan={3} className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 italic text-xs">
+                      {/* Hidden */}
+                    </td>
+                  </tr>
+                );
+              });
+
+              return resultRows;
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="p-4 bg-slate-50/30 flex justify-end">
+        {company.banks && company.banks.length > 0 && (
+          <button
+            onClick={() => onShowBankDetails(company.banks[0])}
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 group"
+          >
+            Full Ledger View <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const CompanyTabs = ({
+  companies,
+  alerts,
+  onShowBankDetails,
+}: {
+  companies: Company[];
+  alerts: WalletAlert[];
+  onShowBankDetails: (bank: Bank) => void;
+}) => {
+  const [activeId, setActiveId] = useState<string | null>(companies[0]?.id ?? null);
+  const active = companies.find(c => c.id === activeId) || companies[0];
+  if (!active) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Tab bar — one tab per company */}
+      <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50/60 px-2">
+        {companies.map(c => {
+          const on = c.id === active.id;
+          return (
+            <button
+              key={c.id}
+              onClick={() => setActiveId(c.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              <span>{c.name}</span>
+              {c.industry && (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>{c.industry}</span>
+              )}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active company header + detail */}
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+        <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
+        <h3 className="text-xl font-bold text-slate-800 tracking-tight">{active.name}</h3>
+        {active.status === 'Onboarding' && (
+          <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase animate-pulse">Onboarding</span>
+        )}
+      </div>
+      <CompanyDetailCard company={active} alerts={alerts} onShowBankDetails={onShowBankDetails} />
+    </div>
+  );
+};
+
 // --- Appearance / Branding settings ---
 
 const BrandingPage = ({
@@ -1659,14 +1906,16 @@ export default function App() {
       .catch(() => {});
   }, []);
   useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
-  // Apply the chosen sidebar theme by overriding the Tailwind theme variables at runtime.
+  // Apply the chosen theme: data-theme drives the portal-wide CSS (see index.css),
+  // and we tint the sidebar variables so the rail matches the surface palette.
   useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = branding.theme;
     const palettes = {
-      dark: { bg: '#1e293b', border: '#334155' },
-      gray: { bg: '#3f4654', border: '#525a6b' },
+      dark: { bg: '#0f172a', border: '#1e293b' },
+      gray: { bg: '#2b333f', border: '#3c4655' },
     };
     const p = palettes[branding.theme] || palettes.dark;
-    const root = document.documentElement;
     root.style.setProperty('--color-sidebar-bg', p.bg);
     root.style.setProperty('--color-sidebar-border', p.border);
   }, [branding.theme]);
@@ -2447,212 +2696,7 @@ export default function App() {
                         </button>
                       </div>
                     ) : (
-                      /* Per-company detail only when one company is selected; in "View All"
-                         the overview above (breakdown + summaries + portfolio table) already
-                         covers every company, so we skip the long redundant stack. */
-                      (selectedCompanyId ? filteredCompanies : []).map(company => (
-                        <div key={company.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                          <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
-                              <h3 className="text-xl font-bold text-slate-800 tracking-tight">{company.name}</h3>
-                              {company.industry && (
-                                <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-                                  {company.industry}
-                                </span>
-                              )}
-                              {company.status === 'Onboarding' && (
-                                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase animate-pulse">
-                                  Onboarding
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse min-w-[600px]">
-                              <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                <tr>
-                                  <th className="px-6 py-4 border-b border-slate-100">Bank</th>
-                                  <th className="px-6 py-4 border-b border-slate-100 text-right">Wallets</th>
-                                  <th className="px-6 py-4 border-b border-slate-100 text-right">Balance (LCY)</th>
-                                  <th className="px-6 py-4 border-b border-slate-100 text-right">Currency</th>
-                                  <th className="px-6 py-4 border-b border-slate-100 text-right">Valuation (USD/T)</th>
-                                </tr>
-                              </thead>
-                              <tbody className="text-sm">
-                                {(company.banks || []).flatMap(bank => {
-                                  // 1. Determine verification status (prioritizing is_verified underscore field)
-                                  const isVerified = bank.is_verified !== undefined 
-                                    ? (bank.is_verified === 1 || bank.is_verified === "1" || bank.is_verified === true)
-                                    : (bank.isVerified === true || (bank.isVerified as any) === 1);
-
-                                  if (!isVerified) {
-                                    return [];
-                                  }
-
-                                  // 2. Get all accounts for this bank (with defensive parsing for stringified JSON from DB)
-                                  let accounts: BankAccount[] = [];
-                                  const rawAccounts = bank.bank_accounts || bank.accounts;
-                                  try {
-                                    if (Array.isArray(rawAccounts)) {
-                                      accounts = rawAccounts;
-                                    } else if (typeof rawAccounts === 'string') {
-                                      accounts = JSON.parse(rawAccounts);
-                                    }
-                                  } catch (e) {
-                                    console.error("Failed to parse accounts for bank:", bank.name, e);
-                                  }
-
-                                  // 2. Identify active accounts (those with wallets)
-                                  const activeAccounts = accounts.filter(acc => {
-                                    let wallets = acc.wallets || [];
-                                    if (typeof wallets === 'string') {
-                                      try { wallets = JSON.parse(wallets); } catch(e) { wallets = []; }
-                                    }
-                                    return Array.isArray(wallets) && wallets.length > 0;
-                                  });
-                                  
-                                  // 3. Handle banks with absolutely no detected accounts
-                                  if (accounts.length === 0) {
-                                    return [];
-                                  }
-
-                                  // 4. Transform active accounts into wallet rows
-                                  const activeRows = activeAccounts.flatMap(acc => {
-                                    let wallets = acc.wallets || [];
-                                    if (typeof wallets === 'string') {
-                                      try { wallets = JSON.parse(wallets); } catch(e) { wallets = []; }
-                                    }
-                                    return (wallets as any[]).map((w) => ({ 
-                                      ...w, 
-                                      accountNumber: acc.account_number || acc.accountNumber,
-                                      bankName: bank.name,
-                                      isVerified: isVerified,
-                                      lastSync: bank.last_modified_date
-                                    }));
-                                  });
-
-                                  // 5. Identify accounts with no wallets
-                                  const inactiveAccounts = accounts.filter(acc => {
-                                    let wallets = acc.wallets || [];
-                                    if (typeof wallets === 'string') {
-                                      try { wallets = JSON.parse(wallets); } catch(e) { wallets = []; }
-                                    }
-                                    return !wallets || wallets.length === 0;
-                                  });
-
-                                  // 6. Generate JSX rows
-                                  const resultRows: any[] = [];
-
-                                  // Add active rows (Wallets)
-                                  activeRows.forEach((wallet, idx) => {
-                                    const usdVal = wallet.value_usd ?? (wallet as any).usd_value ?? (wallet as any).valueUsd ?? (wallet as any).usdValue;
-                                    // Allow negative values (overdrafts) — only hide when truly absent or exactly zero balance with no DB value
-                                    const converted = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0)
-                                      ? { amount: Number(usdVal), estimated: !!(wallet as any).value_usd_estimated }
-                                      : null;
-                                    const isFirstInBank = idx === 0;
-                                    
-                                    const bankHasActiveAlert = accounts.flatMap(acc => acc.wallets || []).some(w => {
-                                      const alert = alerts.find(a => a.bankId === bank.id && a.walletId === w.id && a.isEnabled);
-                                      return alert ? (w.balance || 0) <= alert.threshold : false;
-                                    });
-
-                                    const shouldHighlight = (walletId: string) => {
-                                      const hasAlertConfigured = alerts.some(a => a.bankId === bank.id && a.walletId === walletId && a.isEnabled);
-                                      const alert = alerts.find(a => a.bankId === bank.id && a.walletId === walletId && a.isEnabled);
-                                      const triggeredLocally = alert && (wallet.balance || 0) <= alert.threshold;
-                                      return triggeredLocally || (bankHasActiveAlert && hasAlertConfigured);
-                                    };
-
-                                    const isAlertRow = shouldHighlight(wallet.id);
-
-                                    resultRows.push(
-                                      <tr key={`${bank.id}-${wallet.id}-${idx}`} className={`transition-colors group ${isAlertRow ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-slate-50/50'}`}>
-                                        <td className={`px-6 py-4 border-b border-slate-100 ${isAlertRow ? 'border-red-100' : ''}`}>
-                                          {isFirstInBank ? (
-                                            <div className="flex flex-col">
-                                              <div className="flex items-center gap-2">
-                                                <span className="font-bold text-slate-900">{bank.name}</span>
-                                                {isVerified && <ShieldCheck size={12} className="text-emerald-500" />}
-                                              </div>
-                                              {wallet.lastSync && (
-                                                <span className="text-[9px] text-indigo-500 font-bold uppercase mt-1 tracking-tight">Sync: {wallet.lastSync}</span>
-                                              )}
-                                            </div>
-                                          ) : (
-                                            <div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>
-                                          )}
-                                        </td>
-                                        <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
-                                        <td className={`px-6 py-4 border-b border-slate-100 text-right font-mono font-bold ${isAlertRow ? 'text-red-600 animate-pulse' : 'text-slate-900'}`}>
-                                          {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                        </td>
-                                        <td className="px-6 py-4 border-b border-slate-100 text-right">
-                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wallet.currency === 'USD' || wallet.currency === 'USDT' ? 'bg-emerald-100 text-emerald-700' : wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                                            {wallet.currency}
-                                          </span>
-                                        </td>
-                                        <td className="px-6 py-4 border-b border-slate-100 text-right font-mono">
-                                          {converted ? (() => {
-                                            const neg = converted.amount < 0;
-                                            const abs = Math.abs(converted.amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-                                            return (
-                                              <span className={`font-bold text-sm ${neg ? 'text-red-600' : 'text-slate-900'}`}>
-                                                {neg ? '-' : ''}${abs}
-                                              </span>
-                                            );
-                                          })() : (
-                                            <span className="text-slate-300 text-xs">—</span>
-                                          )}
-                                        </td>
-                                      </tr>
-                                    );
-                                  });
-
-                                  // Add inactive rows
-                                  inactiveAccounts.forEach((acc, idx) => {
-                                    const isFirstInBank = activeRows.length === 0 && idx === 0;
-                                    resultRows.push(
-                                      <tr key={`${bank.id}-${acc.accountNumber}-${idx}`} className="hover:bg-slate-50/50 grayscale opacity-60">
-                                        <td className="px-6 py-4 border-b border-slate-100">
-                                          {isFirstInBank ? (
-                                            <div className="flex flex-col">
-                                              <div className="flex items-center gap-2">
-                                                <span className="font-bold text-slate-900">{bank.name}</span>
-                                                {isVerified && <ShieldCheck size={12} className="text-emerald-500" />}
-                                              </div>
-                                            </div>
-                                          ) : (
-                                            <div className="text-[10px] text-slate-300 font-medium ml-2">↳ {activeRows.length > 0 ? "Additional Acct" : "Continued"}</div>
-                                          )}
-                                        </td>
-                                        <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 text-xs font-mono">{acc.accountNumber}</td>
-                                        <td colSpan={3} className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 italic text-xs">
-                                          {/* Hidden */}
-                                        </td>
-                                      </tr>
-                                    );
-                                  });
-
-                                  return resultRows;
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                          <div className="p-4 bg-slate-50/30 flex justify-end">
-                             {company.banks && company.banks.length > 0 && (
-                               <button 
-                                 onClick={() => handleShowBankDetails(company.banks[0])}
-                                 className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 group"
-                               >
-                                 Full Ledger View <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
-                               </button>
-                             )}
-                          </div>
-                        </div>
-                      ))
+                      <CompanyTabs companies={filteredCompanies} alerts={alerts} onShowBankDetails={handleShowBankDetails} />
                     )}
                   </div>
                 </div>

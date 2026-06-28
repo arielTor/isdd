@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { CreditCard, Info, RefreshCcw, Globe } from 'lucide-react';
 import { Company } from './types';
 import PSPSection, {
@@ -130,6 +131,7 @@ const BreakdownTable = ({ title, data }: { title: string; data: Record<string, {
 };
 
 const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSync?: () => void; isSyncing?: boolean }) => {
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const companiesWithPsp = companies.filter(c => (c.psp_providers || []).length > 0);
 
   if (companiesWithPsp.length === 0) {
@@ -146,7 +148,10 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
     );
   }
 
-  const rows = buildRows(companiesWithPsp);
+  // "View All" (null) aggregates every company; otherwise scope to the selected one.
+  const activeValid = !!activeCompanyId && companiesWithPsp.some(c => c.id === activeCompanyId);
+  const scoped = activeValid ? companiesWithPsp.filter(c => c.id === activeCompanyId) : companiesWithPsp;
+  const rows = buildRows(scoped);
   const totalBalanceUsd = rows.reduce((s, r) => s + r.balanceUsd, 0);
   const totalSettlementUsd = rows.reduce((s, r) => s + r.settlementUsd, 0);
   const totalReserveUsd = rows.reduce((s, r) => s + r.reserveUsd, 0);
@@ -162,7 +167,7 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
   const byCompany = groupBy(rows, 'companyName');
   const byCurrency = groupBy(rows, 'currency');
 
-  const cashIn = next7DaysCashIn(companiesWithPsp);
+  const cashIn = next7DaysCashIn(scoped);
   const cashInTotal = cashIn.reduce((s, d) => s + d.amountUsd, 0);
   const maxCashIn = Math.max(...cashIn.map(d => d.amountUsd), 1);
 
@@ -184,6 +189,31 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
           </button>
         )}
       </div>
+
+      {/* Company selector — View All + per company (like the Companies page) */}
+      {companiesWithPsp.length > 1 && (
+        <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200">
+          <button
+            onClick={() => setActiveCompanyId(null)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!activeValid ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          >
+            View All
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${!activeValid ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>ALL</span>
+          </button>
+          {companiesWithPsp.map(c => {
+            const on = activeCompanyId === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setActiveCompanyId(c.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              >
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Top 4 summary cards */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">

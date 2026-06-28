@@ -29,3 +29,63 @@
   background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px),
     linear-gradient(to bottom, #f1f5f9 1px, transparent 1px);
 }
+
+/* ── Portal themes (Appearance → theme) ──────────────────────────────────────
+   Applied via html[data-theme]. The app is built with light utility classes
+   (bg-white, bg-slate-50, text-slate-*, …); these scoped rules retint the
+   common surfaces so the whole portal — not just the sidebar — follows the
+   chosen theme. "gray" is a mid-tone between the default light and full dark. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --p-bg: #0b1220;        /* page background */
+  --p-card: #1e293b;      /* primary surfaces (default white) */
+  --p-sub: #172033;       /* secondary surfaces (default slate-50) */
+  --p-border: #334155;
+  --p-text: #e2e8f0;      /* strong text */
+  --p-text-dim: #94a3b8;  /* secondary text */
+}
+html[data-theme="gray"] {
+  color-scheme: dark;
+  --p-bg: #2f3845;
+  --p-card: #3c4655;
+  --p-sub: #353f4d;
+  --p-border: #4b5666;
+  --p-text: #f1f5f9;
+  --p-text-dim: #cbd5e1;
+}
+
+html[data-theme="dark"] body,
+html[data-theme="gray"] body { background: var(--p-bg); color: var(--p-text); }
+
+/* Primary surfaces */
+html[data-theme="dark"] .bg-white, html[data-theme="gray"] .bg-white,
+html[data-theme="dark"] [class*="bg-white/"], html[data-theme="gray"] [class*="bg-white/"] { background-color: var(--p-card) !important; }
+
+/* Page-level surfaces */
+html[data-theme="dark"] .bg-surface-bg, html[data-theme="gray"] .bg-surface-bg,
+html[data-theme="dark"] .bg-slate-50, html[data-theme="gray"] .bg-slate-50 { background-color: var(--p-bg) !important; }
+
+/* Secondary surfaces (headers, hovers, subtle fills) */
+html[data-theme="dark"] .bg-slate-100, html[data-theme="gray"] .bg-slate-100,
+html[data-theme="dark"] [class*="bg-slate-50/"], html[data-theme="gray"] [class*="bg-slate-50/"] { background-color: var(--p-sub) !important; }
+
+/* Text */
+html[data-theme="dark"] .text-slate-900, html[data-theme="gray"] .text-slate-900,
+html[data-theme="dark"] .text-slate-800, html[data-theme="gray"] .text-slate-800,
+html[data-theme="dark"] .text-slate-700, html[data-theme="gray"] .text-slate-700 { color: var(--p-text) !important; }
+html[data-theme="dark"] .text-slate-600, html[data-theme="gray"] .text-slate-600,
+html[data-theme="dark"] .text-slate-500, html[data-theme="gray"] .text-slate-500 { color: var(--p-text-dim) !important; }
+
+/* Borders */
+html[data-theme="dark"] .border-slate-50, html[data-theme="gray"] .border-slate-50,
+html[data-theme="dark"] .border-slate-100, html[data-theme="gray"] .border-slate-100,
+html[data-theme="dark"] .border-slate-200, html[data-theme="gray"] .border-slate-200 { border-color: var(--p-border) !important; }
+
+/* SVG figures whose fill is hardcoded to the light-mode ink colour */
+html[data-theme="dark"] [fill="#1e293b"], html[data-theme="gray"] [fill="#1e293b"] { fill: var(--p-text) !important; }
+
+/* Form fields */
+html[data-theme="dark"] input[type="text"], html[data-theme="dark"] input[type="date"], html[data-theme="dark"] input[type="password"], html[data-theme="dark"] input[type="email"], html[data-theme="dark"] select,
+html[data-theme="gray"] input[type="text"], html[data-theme="gray"] input[type="date"], html[data-theme="gray"] input[type="password"], html[data-theme="gray"] input[type="email"], html[data-theme="gray"] select {
+  background-color: var(--p-sub) !important; color: var(--p-text) !important; border-color: var(--p-border) !important;
+}
