@@ -692,11 +692,12 @@ const RoleAccessMatrix = ({
           {roles.map(role => (
             <Fragment key={role.id}>
               <tr className="hover:bg-slate-50/40">
-                <td className="px-6 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(role.name)}`}>{role.name}</span>
-                    {role.builtin && <span className="text-[9px] text-slate-400 uppercase tracking-wider">built-in</span>}
-                    {!role.builtin && <button onClick={() => onDeleteRole(role.id)} title="Delete role" className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><XCircle size={14} /></button>}
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
+                    <span className="text-base font-semibold text-slate-800">{role.name}</span>
+                    <span className="text-[11px] text-slate-400">{role.builtin ? 'Built-in' : 'Custom'}</span>
+                    {!role.builtin && <button onClick={() => onDeleteRole(role.id)} title="Delete role" className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><XCircle size={15} /></button>}
                     {savingId === role.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
                   </div>
                 </td>
@@ -705,14 +706,14 @@ const RoleAccessMatrix = ({
                   const state = cellState(role, c.id);
                   const isOpen = openCell?.roleId === role.id && openCell?.companyId === c.id;
                   return (
-                    <td key={c.id} className="px-3 py-3 text-center">
+                    <td key={c.id} className="px-3 py-4 text-center">
                       <button
                         onClick={() => !locked && setOpenCell(isOpen ? null : { roleId: role.id, companyId: c.id })}
                         disabled={locked || savingId === role.id}
-                        title={locked ? 'Admins have full access' : 'Set bank access'}
-                        className={`w-7 h-7 rounded-md inline-flex items-center justify-center text-[10px] font-bold transition-colors ${state === 'all' ? 'bg-indigo-600 text-white' : state === 'partial' ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''} ${isOpen ? 'ring-2 ring-indigo-400' : ''}`}
+                        title={locked ? 'Admins have full access' : state === 'none' ? 'Grant bank access' : 'Edit bank access'}
+                        className={`w-9 h-9 rounded-lg inline-flex items-center justify-center text-xs font-bold border-2 transition-colors ${state === 'all' ? 'bg-indigo-600 text-white border-indigo-600' : state === 'partial' ? 'bg-indigo-100 text-indigo-700 border-indigo-400' : 'border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500'} ${locked ? 'opacity-60 cursor-not-allowed' : ''} ${isOpen ? 'ring-2 ring-indigo-400' : ''}`}
                       >
-                        {state === 'all' ? <Check size={14} /> : state === 'partial' ? permFor(role.permissions, c.id)!.bankIds.length : ''}
+                        {state === 'all' ? <Check size={16} /> : state === 'partial' ? permFor(role.permissions, c.id)!.bankIds.length : <Plus size={14} className="opacity-50" />}
                       </button>
                     </td>
                   );
@@ -944,7 +945,8 @@ const UserManagementPage = ({
         <div className="space-y-6">
           {/* Create role */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Create role</p>
+            <h3 className="text-base font-semibold text-slate-800 mb-1">Create a role</h3>
+            <p className="text-sm text-slate-400 mb-3">Add a custom role, then set its company and bank access below.</p>
             <div className="flex items-center gap-2 flex-wrap">
               <input
                 type="text"
@@ -965,10 +967,15 @@ const UserManagementPage = ({
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
               <div className="flex items-center gap-2">
-                <ShieldCheck size={16} className="text-slate-400" />
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Role Company &amp; Bank Access</h3>
+                <ShieldCheck size={18} className="text-indigo-500" />
+                <h3 className="text-base font-semibold text-slate-800">Company &amp; bank access</h3>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">Click a cell to choose which banks each role can see within a company (all, some, or none). A number means partial access. Admins always have full access.</p>
+              <p className="text-sm text-slate-400 mt-1">Click a cell to choose which banks each role can see in a company. Admins always have full access.</p>
+              <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded-md bg-indigo-600 text-white inline-flex items-center justify-center"><Check size={12} /></span> All banks</span>
+                <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded-md bg-indigo-100 text-indigo-700 border-2 border-indigo-400 inline-flex items-center justify-center text-[10px] font-bold">2</span> Some banks</span>
+                <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded-md border-2 border-dashed border-slate-300 inline-flex items-center justify-center text-slate-400"><Plus size={11} /></span> No access</span>
+              </div>
             </div>
             {companies.length === 0 ? (
               <p className="px-6 py-8 text-sm text-slate-400 text-center">No companies available.</p>
