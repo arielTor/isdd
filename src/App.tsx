@@ -43,7 +43,7 @@ import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAle
 import WidgetCanvas from './dashboard/WidgetCanvas';
 import { SparklineChart } from './dashboard/widgets';
 import type { SparkPoint } from './dashboard/widgets';
-import { downloadCsv } from './exportCsv';
+import { downloadExcel } from './exportCsv';
 import UploadScreen from './UploadScreen';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
@@ -79,7 +79,11 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
 };
 
 // --- Types ---
-type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding';
+type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics';
+
+// Backdrop colour for a logo badge — admin picks this in Appearance so logos
+// designed for light *or* dark backgrounds both render correctly.
+const logoBgColor = (bg: string) => (bg === 'dark' ? '#0f172a' : bg === 'none' ? 'transparent' : '#ffffff');
 
 // --- Sidebar Component ---
 
@@ -95,6 +99,7 @@ const Sidebar = ({
   onClose,
   brandName,
   brandLogo,
+  brandLogoBg,
   companyLogos,
 }: {
   companies: Company[],
@@ -108,6 +113,7 @@ const Sidebar = ({
   onClose: () => void,
   brandName: string,
   brandLogo: string | null,
+  brandLogoBg: string,
   companyLogos: Record<string, string>,
 }) => {
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
@@ -121,6 +127,7 @@ const Sidebar = ({
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
     { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin'] },
+    { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
 
   // Deterministic company avatar (initials + colour) — gives each company a consistent "logo"
@@ -142,7 +149,7 @@ const Sidebar = ({
     <button
       key={item.id}
       onClick={() => { onNavigate(item.id as Page); onClose(); }}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium ${
+      className={`w-full flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-lg transition-all text-sm font-medium ${
         activePage === item.id
           ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
           : 'text-slate-400 hover:text-white hover:bg-slate-700/40'
@@ -158,16 +165,16 @@ const Sidebar = ({
   );
 
   const sidebarContent = (
-    <div className="w-64 h-full bg-sidebar-bg text-white flex flex-col">
+    <div className="w-[84vw] max-w-[320px] md:w-64 h-full bg-sidebar-bg text-white flex flex-col">
       {/* Brand */}
-      <div className="px-5 py-5 flex items-center justify-between border-b border-sidebar-border/70">
+      <div className="px-4 py-4 md:px-5 md:py-5 flex items-center justify-between border-b border-sidebar-border/70">
         <div className="flex items-center gap-3 min-w-0">
           {brandLogo ? (
-            <div className="w-[72px] h-[72px] rounded-xl flex items-center justify-center shrink-0 p-1.5 ring-1 ring-black/5" style={{ backgroundColor: '#ffffff' }}>
+            <div className={`w-12 h-12 md:w-[72px] md:h-[72px] rounded-xl flex items-center justify-center shrink-0 p-1 md:p-1.5 ${brandLogoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(brandLogoBg) }}>
               <img src={brandLogo} alt={brandName} className="max-w-full max-h-full object-contain" />
             </div>
           ) : (
-            <div className="w-[72px] h-[72px] bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white text-2xl shadow-lg shadow-indigo-900/40 shrink-0">
+            <div className="w-12 h-12 md:w-[72px] md:h-[72px] bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white text-lg md:text-2xl shadow-lg shadow-indigo-900/40 shrink-0">
               {(brandName?.[0] || 'L').toUpperCase()}
             </div>
           )}
@@ -179,9 +186,9 @@ const Sidebar = ({
         {/* Close button — mobile only */}
         <button
           onClick={onClose}
-          className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
+          className="md:hidden p-2 -mr-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
         >
-          <X size={18} />
+          <X size={22} />
         </button>
       </div>
 
@@ -195,7 +202,7 @@ const Sidebar = ({
              The header itself acts as "View All Companies". */}
           <button
             onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium ${
+            className={`w-full flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-lg transition-all text-sm font-medium ${
               activePage === 'companies' && selectedCompanyId === null
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-700/40'
@@ -213,7 +220,7 @@ const Sidebar = ({
                 <button
                   key={company.id}
                   onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 md:py-2 rounded-lg transition-all cursor-pointer ${
                     active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
                   }`}
                 >
@@ -1628,13 +1635,14 @@ const BrandingPage = ({
   companies,
   onSaved,
 }: {
-  branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; companyLogos: Record<string, string> };
+  branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> };
   companies: Company[];
-  onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; companyLogos: Record<string, string> }) => void;
+  onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> }) => void;
 }) => {
   const [siteName, setSiteName] = useState(branding.siteName);
   const [logo, setLogo] = useState<string | null>(branding.logo);
   const [theme, setTheme] = useState<'dark' | 'gray' | 'light'>(branding.theme);
+  const [logoBg, setLogoBg] = useState<'light' | 'dark' | 'none'>(branding.logoBg);
   const [companyLogos, setCompanyLogos] = useState<Record<string, string>>(branding.companyLogos || {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1671,14 +1679,14 @@ const BrandingPage = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, theme, companyLogos }),
+        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, theme, logoBg, companyLogos }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || 'Save failed');
       }
       const cleanLogos = Object.fromEntries(Object.entries(companyLogos).filter(([, v]) => v));
-      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme, companyLogos: cleanLogos };
+      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme, logoBg, companyLogos: cleanLogos };
       onSaved(next);
       setSaved(true);
     } catch (e: any) {
@@ -1700,7 +1708,7 @@ const BrandingPage = ({
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Portal logo</label>
           <div className="flex items-center gap-5">
-            <div className="w-16 h-16 rounded-xl flex items-center justify-center shrink-0 p-2 ring-1 ring-black/5" style={{ backgroundColor: logo ? '#ffffff' : undefined }}>
+            <div className={`w-16 h-16 rounded-xl flex items-center justify-center shrink-0 p-2 ${logo && logoBg !== 'none' ? 'ring-1 ring-black/5' : ''}`} style={{ backgroundColor: logo ? logoBgColor(logoBg) : undefined }}>
               {logo
                 ? <img src={logo} alt="Logo preview" className="max-w-full max-h-full object-contain" />
                 : <span className="w-full h-full rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-xl">{(siteName?.[0] || 'L').toUpperCase()}</span>}
@@ -1728,6 +1736,23 @@ const BrandingPage = ({
               className="hidden"
               onChange={e => handleFile(e.target.files?.[0])}
             />
+          </div>
+
+          {/* Logo backdrop — pick what suits the logo (light-on-transparent vs dark-on-transparent) */}
+          <div className="mt-4">
+            <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Logo background</span>
+            <div className="flex items-center gap-2">
+              {([['light', 'White'], ['dark', 'Dark'], ['none', 'Transparent']] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => { setLogoBg(id); setSaved(false); }}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 text-sm font-semibold transition-colors ${logoBg === id ? 'border-indigo-500 bg-indigo-50/50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                >
+                  <span className="w-4 h-4 rounded ring-1 ring-black/10" style={id === 'none' ? { backgroundImage: 'linear-gradient(45deg,#cbd5e1 25%,transparent 25%,transparent 75%,#cbd5e1 75%),linear-gradient(45deg,#cbd5e1 25%,#fff 25%,#fff 75%,#cbd5e1 75%)', backgroundSize: '8px 8px', backgroundPosition: '0 0,4px 4px' } : { backgroundColor: logoBgColor(id) }} />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1934,11 +1959,11 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
 
   // Org branding (logo + site name + theme) — configured in Settings → Appearance.
-  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; companyLogos: Record<string, string> }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark', companyLogos: {} });
+  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark', logoBg: 'light', companyLogos: {} });
   useEffect(() => {
     fetch('/api/branding', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null, theme: ['gray', 'light', 'dark'].includes(b.theme) ? b.theme : 'dark', companyLogos: b.companyLogos || {} }); })
+      .then(b => { if (b && b.siteName) setBranding({ siteName: b.siteName, logo: b.logo || null, theme: ['gray', 'light', 'dark'].includes(b.theme) ? b.theme : 'dark', logoBg: ['light', 'dark', 'none'].includes(b.logoBg) ? b.logoBg : 'light', companyLogos: b.companyLogos || {} }); })
       .catch(() => {});
   }, []);
   useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
@@ -1962,9 +1987,12 @@ export default function App() {
     setIsBankDetailsModalOpen(true);
   };
 
-  // Export the current Companies view (verified balances, per company/bank/currency) to CSV.
+  // Export the current Companies view to Excel — one worksheet per on-screen table.
   const handleExportCompaniesCsv = () => {
-    const out: (string | number)[][] = [];
+    const flat: (string | number)[][] = [];
+    const byBank: Record<string, number> = {};
+    const byCompany: Record<string, number> = {};
+    const byCurrency: Record<string, number> = {};
     filteredCompanies.forEach(company => {
       (company.banks || []).forEach((bank: any) => {
         const isVerified = bank.is_verified !== undefined
@@ -1985,12 +2013,21 @@ export default function App() {
         });
         Object.entries(cellMap).forEach(([currency, cell]) => {
           const fx = cell.balance !== 0 ? cell.usd / cell.balance : 0;
-          out.push([company.name, bank.name, currency, Math.round(cell.balance), fx ? fx.toFixed(4) : '', Math.round(cell.usd)]);
+          flat.push([company.name, bank.name, currency, Math.round(cell.balance), fx ? fx.toFixed(4) : '', Math.round(cell.usd)]);
+          byBank[bank.name] = (byBank[bank.name] || 0) + cell.usd;
+          byCompany[company.name] = (byCompany[company.name] || 0) + cell.usd;
+          byCurrency[currency] = (byCurrency[currency] || 0) + cell.usd;
         });
       });
     });
+    const toRows = (m: Record<string, number>) => Object.entries(m).map(([k, v]) => [k, Math.round(v)]);
     const who = selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'company') : 'all-companies';
-    downloadCsv(`portfolio-${who}.csv`, ['Company', 'Bank', 'Currency', 'Balance', 'FX Rate', 'USD Value'], out);
+    downloadExcel(`portfolio-${who}.xls`, [
+      { name: 'Portfolio Summary', headers: ['Company', 'Bank', 'Currency', 'Balance', 'FX Rate', 'USD Value'], rows: flat },
+      { name: 'By Bank', headers: ['Bank', 'USD Value'], rows: toRows(byBank) },
+      { name: 'By Company', headers: ['Company', 'USD Value'], rows: toRows(byCompany) },
+      { name: 'By Currency', headers: ['Currency', 'USD Value'], rows: toRows(byCurrency) },
+    ]);
   };
 
   // Users are now stored in DB — no localStorage sync needed
@@ -2130,6 +2167,7 @@ export default function App() {
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
     if (activePage === 'branding') return 'Appearance';
+    if (activePage === 'diagnostics') return 'Diagnostics';
     if (!selectedCompanyId) return 'Liquidity Overview';
     return companies.find(c => c.id === selectedCompanyId)?.name || 'Companies';
   }, [selectedCompanyId, activePage, companies]);
@@ -2332,6 +2370,7 @@ export default function App() {
         onClose={() => setSidebarOpen(false)}
         brandName={branding.siteName}
         brandLogo={branding.logo}
+        brandLogoBg={branding.logoBg}
         companyLogos={branding.companyLogos}
       />
 
@@ -2372,7 +2411,7 @@ export default function App() {
                       onClick={handleExportCompaniesCsv}
                       className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
                     >
-                      <Download size={15} /> Export CSV
+                      <Download size={15} /> Export Excel
                     </button>
                   </div>
 
@@ -2779,23 +2818,45 @@ export default function App() {
                     )}
                   </div>
                 </div>
+              </motion.div>
+            )}
 
-                <div className="mt-12 flex flex-col items-center gap-4 pb-12">
-                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-                     System Maintenance & Troubleshooting
-                   </p>
-                   <button 
-                     onClick={() => setShowDebug(!showDebug)}
-                     className="px-6 py-3 bg-white text-slate-800 rounded-2xl text-xs font-bold hover:shadow-lg hover:bg-slate-50 transition-all shadow-sm flex items-center gap-3 border border-slate-200 group"
-                   >
-                     <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white group-hover:scale-110 transition-transform">
-                        <Terminal size={14} />
-                     </div>
-                     <div className="text-left">
-                        <p className="leading-none">Open Technical Diagnostics</p>
-                        <p className="text-[9px] text-slate-400 mt-1 font-medium">Verify live data payload and server endpoints</p>
-                     </div>
-                   </button>
+            {activePage === 'psp' && (
+              <motion.div
+                key="psp"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="max-w-7xl mx-auto p-4 md:p-8"
+              >
+                <PSPPage companies={companies} onSync={handleRefresh} isSyncing={isRefreshing} />
+              </motion.div>
+            )}
+
+            {activePage === 'diagnostics' && authUser?.role === 'Admin' && (
+              <motion.div
+                key="diagnostics"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="max-w-3xl mx-auto p-4 md:p-8"
+              >
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                    System Maintenance &amp; Troubleshooting
+                  </p>
+                  <button
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="px-6 py-3 bg-white text-slate-800 rounded-2xl text-xs font-bold hover:shadow-lg hover:bg-slate-50 transition-all shadow-sm flex items-center gap-3 border border-slate-200 group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white group-hover:scale-110 transition-transform">
+                      <Terminal size={14} />
+                    </div>
+                    <div className="text-left">
+                      <p className="leading-none">Open Technical Diagnostics</p>
+                      <p className="text-[9px] text-slate-400 mt-1 font-medium">Verify live data payload and server endpoints</p>
+                    </div>
+                  </button>
                 </div>
 
                 {showDebug && (
@@ -2812,7 +2873,7 @@ export default function App() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button 
+                          <button
                             onClick={() => {
                               localStorage.removeItem('smarttool_data');
                               window.location.reload();
@@ -2821,7 +2882,7 @@ export default function App() {
                           >
                             Hard Reset state
                           </button>
-                          <button 
+                          <button
                             onClick={() => setShowDebug(false)}
                             className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-all"
                           >
@@ -2831,43 +2892,31 @@ export default function App() {
                       </div>
                       <div className="flex-1 overflow-auto p-6 font-mono text-[11px]">
                         <div className="grid grid-cols-2 gap-4 mb-6">
-                           <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                              <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Active State</p>
-                              <div className="space-y-1">
-                                 <p className="text-emerald-400">• Total Companies: {companies.length}</p>
-                                 <p className="text-emerald-400">• Current View: {selectedCompanyId || 'ALL'}</p>
-                                 <p className="text-emerald-400">• Last Global Sync: {lastSynced}</p>
-                              </div>
-                           </div>
-                           <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                              <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Persistence</p>
-                              <div className="space-y-1">
-                                 <p className="text-indigo-400">• LocalCache: {localStorage.getItem('smarttool_data') ? 'PRESENT' : 'EMPTY'}</p>
-                                 <p className="text-indigo-400">• Cache Size: {(localStorage.getItem('smarttool_data')?.length || 0).toLocaleString()} bytes</p>
-                                 <p className="text-indigo-400 mt-2">• API Endpoint: {window.location.origin}/api/update-data</p>
-                              </div>
-                           </div>
+                          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+                            <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Active State</p>
+                            <div className="space-y-1">
+                              <p className="text-emerald-400">• Total Companies: {companies.length}</p>
+                              <p className="text-emerald-400">• Current View: {selectedCompanyId || 'ALL'}</p>
+                              <p className="text-emerald-400">• Last Global Sync: {lastSynced}</p>
+                            </div>
+                          </div>
+                          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+                            <p className="text-slate-500 uppercase font-bold text-[9px] mb-2 tracking-widest">Persistence</p>
+                            <div className="space-y-1">
+                              <p className="text-indigo-400">• LocalCache: {localStorage.getItem('smarttool_data') ? 'PRESENT' : 'EMPTY'}</p>
+                              <p className="text-indigo-400">• Cache Size: {(localStorage.getItem('smarttool_data')?.length || 0).toLocaleString()} bytes</p>
+                              <p className="text-indigo-400 mt-2">• API Endpoint: {window.location.origin}/api/update-data</p>
+                            </div>
+                          </div>
                         </div>
                         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                           <p className="text-slate-500 uppercase font-bold text-[9px] mb-4 tracking-widest">Raw Company JSON</p>
-                           <pre className="text-emerald-500 leading-relaxed whitespace-pre-wrap">{JSON.stringify(companies, null, 2)}</pre>
+                          <p className="text-slate-500 uppercase font-bold text-[9px] mb-4 tracking-widest">Raw Company JSON</p>
+                          <pre className="text-emerald-500 leading-relaxed whitespace-pre-wrap">{JSON.stringify(companies, null, 2)}</pre>
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
-              </motion.div>
-            )}
-
-            {activePage === 'psp' && (
-              <motion.div
-                key="psp"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="max-w-7xl mx-auto p-4 md:p-8"
-              >
-                <PSPPage companies={companies} onSync={handleRefresh} isSyncing={isRefreshing} />
               </motion.div>
             )}
 

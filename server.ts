@@ -1267,7 +1267,7 @@ async function startServer() {
     const conn = await mysql.createConnection(dbConfig());
     try {
       const [rows] = (await conn.execute(
-        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_theme') OR k LIKE 'company_logo_%'"
+        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_theme', 'brand_logo_bg') OR k LIKE 'company_logo_%'"
       )) as any;
       const map: Record<string, string> = {};
       const companyLogos: Record<string, string> = {};
@@ -1283,11 +1283,12 @@ async function startServer() {
         siteName: map.brand_site_name || "Liquidity Reports",
         logo: map.brand_logo || null,
         theme: map.brand_theme || "dark",
+        logoBg: map.brand_logo_bg || "light",
         companyLogos,
       });
     } catch (err: any) {
       console.error("Branding load error:", err.message);
-      res.json({ siteName: "Liquidity Reports", logo: null, theme: "dark", companyLogos: {} });
+      res.json({ siteName: "Liquidity Reports", logo: null, theme: "dark", logoBg: "light", companyLogos: {} });
     } finally {
       await conn.end();
     }
@@ -1305,6 +1306,10 @@ async function startServer() {
     }
     if (theme != null && !["dark", "gray", "light"].includes(theme)) {
       return res.status(400).json({ error: "Theme invalid" });
+    }
+    const logoBg = req.body?.logoBg;
+    if (logoBg != null && !["light", "dark", "none"].includes(logoBg)) {
+      return res.status(400).json({ error: "Logo background invalid" });
     }
     const companyLogos = req.body?.companyLogos;
     if (companyLogos != null && (typeof companyLogos !== "object" || Array.isArray(companyLogos))) {
@@ -1327,6 +1332,7 @@ async function startServer() {
       if (typeof siteName === "string") await upsert("brand_site_name", siteName);
       if (typeof logo === "string") await upsert("brand_logo", logo);
       if (typeof theme === "string") await upsert("brand_theme", theme);
+      if (typeof logoBg === "string") await upsert("brand_logo_bg", logoBg);
       if (companyLogos) {
         for (const [id, v] of Object.entries(companyLogos)) {
           // empty string clears that company's logo

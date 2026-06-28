@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CreditCard, Info, RefreshCcw, Globe, Download } from 'lucide-react';
 import { Company } from './types';
-import { downloadCsv } from './exportCsv';
+import { downloadExcel } from './exportCsv';
 import PSPSection, {
   fmtUsd,
   walletBalance,
@@ -173,13 +173,24 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
   const maxCashIn = Math.max(...cashIn.map(d => d.amountUsd), 1);
 
   const exportCsv = () => {
-    const data = rows.map(r => [
+    const summary = rows.map(r => [
       r.companyName, r.providerName, r.currency,
       Math.round(r.transactionsUsd), Math.round(r.reserveUsd), Math.round(r.balanceUsd),
       Math.round(r.settlementUsd), Math.round(r.balanceUsd + r.settlementUsd),
     ]);
+    const breakdownRows = (m: Record<string, { transactionsUsd: number; reserveUsd: number; balanceUsd: number; settlementUsd: number }>) =>
+      Object.entries(m).map(([k, v]) => [
+        k, Math.round(v.transactionsUsd), Math.round(v.reserveUsd), Math.round(v.balanceUsd),
+        Math.round(v.settlementUsd), Math.round(v.balanceUsd + v.settlementUsd),
+      ]);
+    const bh = ['Transactions (USD)', 'Reserve (USD)', 'Balance (USD)', 'Settlement (USD)', 'Exposure (USD)'];
     const name = activeValid ? `psp-${(companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'company')}` : 'psp-all-companies';
-    downloadCsv(`${name}.csv`, ['Company', 'Acquirer', 'Currency', 'Transactions (USD)', 'Reserve (USD)', 'Balance (USD)', 'Settlement (USD)', 'Exposure (USD)'], data);
+    downloadExcel(`${name}.xls`, [
+      { name: 'PSP Summary', headers: ['Company', 'Acquirer', 'Currency', ...bh], rows: summary },
+      { name: 'By Acquirer', headers: ['Acquirer', ...bh], rows: breakdownRows(byAcquirer) },
+      { name: 'By Company', headers: ['Company', ...bh], rows: breakdownRows(byCompany) },
+      { name: 'By Currency', headers: ['Currency', ...bh], rows: breakdownRows(byCurrency) },
+    ]);
   };
 
   return (
@@ -194,7 +205,7 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
             onClick={exportCsv}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
           >
-            <Download size={14} /> Export CSV
+            <Download size={14} /> Export Excel
           </button>
           {onSync && (
             <button
