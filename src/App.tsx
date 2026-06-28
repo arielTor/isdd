@@ -2192,6 +2192,7 @@ export default function App() {
   // Export the current Companies view to Excel — one worksheet per on-screen table.
   const handleExportCompaniesCsv = () => {
     const flat: (string | number)[][] = [];
+    const detail: (string | number)[][] = [];
     const byBank: Record<string, number> = {};
     const byCompany: Record<string, number> = {};
     const byCurrency: Record<string, number> = {};
@@ -2211,6 +2212,12 @@ export default function App() {
             if (!cellMap[cur]) cellMap[cur] = { balance: 0, usd: 0 };
             cellMap[cur].balance += Number(w.balance) || 0;
             cellMap[cur].usd += Number(w.value_usd) || 0;
+            // Per-account/wallet row (matches the per-company bank detail section)
+            detail.push([
+              company.name, bank.name, acc.account_number || acc.accountNumber || '',
+              cur, Number(w.balance) || 0, Math.round(Number(w.value_usd) || 0),
+              bank.last_modified_date || '',
+            ]);
           });
         });
         Object.entries(cellMap).forEach(([currency, cell]) => {
@@ -2226,6 +2233,7 @@ export default function App() {
     const who = selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'company') : 'all-companies';
     downloadExcel(`portfolio-${who}.xls`, [
       { name: 'Portfolio Summary', headers: ['Company', 'Bank', 'Currency', 'Balance', 'FX Rate', 'USD Value'], rows: flat },
+      { name: 'Bank Detail', headers: ['Company', 'Bank', 'Account', 'Currency', 'Balance (LCY)', 'USD Value', 'Last Sync'], rows: detail },
       { name: 'By Bank', headers: ['Bank', 'USD Value'], rows: toRows(byBank) },
       { name: 'By Company', headers: ['Company', 'USD Value'], rows: toRows(byCompany) },
       { name: 'By Currency', headers: ['Currency', 'USD Value'], rows: toRows(byCurrency) },
