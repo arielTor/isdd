@@ -68,7 +68,12 @@ html[data-theme="dark"] .bg-slate-50, html[data-theme="gray"] .bg-slate-50 { bac
 /* Secondary surfaces (headers, hovers, subtle fills) */
 html[data-theme="dark"] .bg-slate-100, html[data-theme="gray"] .bg-slate-100,
 html[data-theme="dark"] .bg-slate-200, html[data-theme="gray"] .bg-slate-200,
-html[data-theme="dark"] [class*="bg-slate-50/"], html[data-theme="gray"] [class*="bg-slate-50/"] { background-color: var(--p-sub) !important; }
+html[data-theme="dark"] [class*="bg-slate-50/"], html[data-theme="gray"] [class*="bg-slate-50/"],
+html[data-theme="dark"] [class*="bg-slate-100/"], html[data-theme="gray"] [class*="bg-slate-100/"],
+html[data-theme="dark"] [class*="bg-slate-200/"], html[data-theme="gray"] [class*="bg-slate-200/"] { background-color: var(--p-sub) !important; }
+
+/* Mid-tone borders used on toggles/checkboxes */
+html[data-theme="dark"] .border-slate-300, html[data-theme="gray"] .border-slate-300 { border-color: var(--p-border) !important; }
 
 /* Text */
 html[data-theme="dark"] .text-slate-900, html[data-theme="gray"] .text-slate-900,
