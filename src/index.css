@@ -124,8 +124,9 @@ html[data-theme="dark"] .bg-orange-100, html[data-theme="gray"] .bg-orange-100 {
 html[data-theme="dark"] .bg-sky-100, html[data-theme="gray"] .bg-sky-100 { background-color: rgba(56,189,248,0.20) !important; }
 
 /* Coloured text → brighter shades that read on the dark tints above */
-html[data-theme="dark"] .text-indigo-700, html[data-theme="gray"] .text-indigo-700,
+html[data-theme="dark"] .text-indigo-500, html[data-theme="gray"] .text-indigo-500,
 html[data-theme="dark"] .text-indigo-600, html[data-theme="gray"] .text-indigo-600,
+html[data-theme="dark"] .text-indigo-700, html[data-theme="gray"] .text-indigo-700,
 html[data-theme="dark"] .text-indigo-800, html[data-theme="gray"] .text-indigo-800,
 html[data-theme="dark"] .text-indigo-900, html[data-theme="gray"] .text-indigo-900 { color: #c7d2fe !important; }
 html[data-theme="dark"] .text-amber-700, html[data-theme="gray"] .text-amber-700,
