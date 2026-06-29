@@ -92,12 +92,13 @@ export interface User {
   password?: string; // only used when creating/updating — never returned by API
 }
 
-// A role with its own company/bank access (managed in User Management → Roles).
+// A role with page access + company/bank access (managed in User Management → Roles).
 export interface RoleDef {
   id: string;
   name: string;
   builtin: boolean;
-  permissions: UserPermission[];
+  pages: string[];            // page ids the role may open (empty = none; Admin = all)
+  permissions: UserPermission[]; // per-company bank access (also gates that company's PSP data)
 }
 
 export interface Company {

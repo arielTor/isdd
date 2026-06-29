@@ -627,6 +627,15 @@ const ROLE_DESC: Record<string, string> = {
   Viewer: 'Read-only access to assigned companies.',
 };
 
+// Portal areas a role can be granted access to.
+const PAGE_PERMS: { id: string; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'companies', label: 'Companies' },
+  { id: 'psp', label: 'Payment Providers' },
+  { id: 'alerts', label: 'Alert Center' },
+  { id: 'upload', label: 'Manual Data Upload' },
+];
+
 // Reusable company × bank access grid for roles. Click a cell to pick which
 // banks the role can see within a company (all / some / none).
 const RoleAccessMatrix = ({
@@ -817,6 +826,17 @@ const UserManagementPage = ({
     finally { setSavingRoleId(null); }
   };
 
+  const togglePage = async (role: RoleDef, pageId: string) => {
+    if (role.name === 'Admin') return; // admin can open everything
+    const pages = (role.pages || []).includes(pageId)
+      ? role.pages.filter(p => p !== pageId)
+      : [...(role.pages || []), pageId];
+    setSavingRoleId(role.id);
+    try { await onUpdateRole({ ...role, pages }); }
+    catch (e) { console.error('Role page update failed', e); }
+    finally { setSavingRoleId(null); }
+  };
+
   const handleCreateRole = async () => {
     const name = newRoleName.trim();
     if (!name) return;
@@ -961,6 +981,58 @@ const UserManagementPage = ({
               </button>
             </div>
             {roleError && <p className="text-xs text-red-600 mt-2">{roleError}</p>}
+          </div>
+
+          {/* Per-role page access */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                <LayoutDashboard size={18} className="text-indigo-500" />
+                <h3 className="text-base font-semibold text-slate-800">Page access</h3>
+              </div>
+              <p className="text-sm text-slate-400 mt-1">Choose which areas of the portal each role can open. Admins can open everything.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[640px]">
+                <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <tr>
+                    <th className="px-6 py-3 border-b border-slate-100">Role</th>
+                    {PAGE_PERMS.map(p => <th key={p.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{p.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {roles.map(role => {
+                    const locked = role.name === 'Admin';
+                    return (
+                      <tr key={role.id} className="hover:bg-slate-50/40">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2.5">
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
+                            <span className="text-base font-semibold text-slate-800">{role.name}</span>
+                            {savingRoleId === role.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
+                          </div>
+                        </td>
+                        {PAGE_PERMS.map(p => {
+                          const on = locked || (role.pages || []).includes(p.id);
+                          return (
+                            <td key={p.id} className="px-3 py-4 text-center">
+                              <button
+                                onClick={() => togglePage(role, p.id)}
+                                disabled={locked || savingRoleId === role.id}
+                                title={locked ? 'Admins can open everything' : on ? 'Remove access' : 'Grant access'}
+                                className={`w-9 h-9 rounded-lg inline-flex items-center justify-center border-2 transition-colors ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500'} ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              >
+                                {on ? <Check size={16} /> : <Plus size={14} className="opacity-50" />}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Per-role company & bank access */}
@@ -2141,7 +2213,7 @@ export default function App() {
     await loadRoles();
   };
   const handleUpdateRole = async (role: RoleDef): Promise<void> => {
-    const res = await fetch(`/api/roles/${role.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ name: role.name, permissions: role.permissions }) });
+    const res = await fetch(`/api/roles/${role.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ name: role.name, permissions: role.permissions, pages: role.pages }) });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Failed to update role'); }
     await loadRoles();
   };

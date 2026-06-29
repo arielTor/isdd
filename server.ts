@@ -1362,6 +1362,9 @@ async function startServer() {
             updated_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
+        // Page-access column (added separately so existing installs upgrade in place).
+        try { await conn.execute("ALTER TABLE app_roles ADD COLUMN pages_json LONGTEXT NOT NULL DEFAULT ('[]')"); }
+        catch { /* column already exists */ }
         // Seed the built-in roles once.
         const [rows] = (await conn.execute("SELECT COUNT(*) AS n FROM app_roles")) as any;
         if (!rows[0].n) {
@@ -1384,11 +1387,12 @@ async function startServer() {
   app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
-      const [rows] = (await conn.execute("SELECT id, name, builtin, permissions_json FROM app_roles ORDER BY builtin DESC, name")) as any;
+      const [rows] = (await conn.execute("SELECT id, name, builtin, permissions_json, pages_json FROM app_roles ORDER BY builtin DESC, name")) as any;
       const roles = (rows as any[]).map(r => {
-        let permissions = [];
+        let permissions = [], pages = [];
         try { permissions = JSON.parse(r.permissions_json); } catch { permissions = []; }
-        return { id: r.id, name: r.name, builtin: !!r.builtin, permissions };
+        try { pages = JSON.parse(r.pages_json || '[]'); } catch { pages = []; }
+        return { id: r.id, name: r.name, builtin: !!r.builtin, pages, permissions };
       });
       res.json({ roles });
     } catch (err: any) {
@@ -1415,9 +1419,12 @@ async function startServer() {
 
   // PUT /api/roles/:id — update a role's name and/or company/bank access (Admin only)
   app.put("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
-    const { name, permissions } = req.body || {};
+    const { name, permissions, pages } = req.body || {};
     if (permissions != null && !Array.isArray(permissions)) {
       return res.status(400).json({ error: "permissions must be an array" });
+    }
+    if (pages != null && !Array.isArray(pages)) {
+      return res.status(400).json({ error: "pages must be an array" });
     }
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1426,6 +1433,9 @@ async function startServer() {
       }
       if (Array.isArray(permissions)) {
         await conn.execute("UPDATE app_roles SET permissions_json = ? WHERE id = ?", [JSON.stringify(permissions), req.params.id]);
+      }
+      if (Array.isArray(pages)) {
+        await conn.execute("UPDATE app_roles SET pages_json = ? WHERE id = ?", [JSON.stringify(pages), req.params.id]);
       }
       res.json({ ok: true });
     } catch (err: any) {
