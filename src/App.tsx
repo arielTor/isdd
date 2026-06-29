@@ -312,18 +312,20 @@ const Sidebar = ({
 
 // --- User Management Components ---
 
-const UserModal = ({ 
-  user, 
-  isOpen, 
-  onClose, 
-  onSave, 
-  companies 
-}: { 
+const UserModal = ({
+  user,
+  isOpen,
+  onClose,
+  onSave,
+  companies,
+  roles,
+}: {
   user?: User | null,
   isOpen: boolean,
   onClose: () => void,
   onSave: (user: User) => Promise<void>,
-  companies: Company[]
+  companies: Company[],
+  roles: RoleDef[],
 }) => {
   const [formData, setFormData] = useState<Partial<User>>(user || {
     name: '',
@@ -503,6 +505,29 @@ const UserModal = ({
             </div>
           </div>
 
+          {roles.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-slate-500 uppercase block tracking-wider">Assigned Roles</label>
+              <p className="text-[11px] text-slate-400">A user gets the combined access of all assigned roles.</p>
+              <div className="flex flex-wrap gap-2">
+                {roles.map(r => {
+                  const on = (formData.roleIds || []).includes(r.id);
+                  return (
+                    <button
+                      type="button"
+                      key={r.id}
+                      onClick={() => setFormData(prev => ({ ...prev, roleIds: on ? (prev.roleIds || []).filter(id => id !== r.id) : [...(prev.roleIds || []), r.id] }))}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${on ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                    >
+                      <span className={`w-4 h-4 rounded inline-flex items-center justify-center ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
+                      {r.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             <label className="text-[11px] font-bold text-slate-500 uppercase block tracking-wider">Company & Bank Access</label>
             <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
@@ -636,139 +661,7 @@ const PAGE_PERMS: { id: string; label: string }[] = [
   { id: 'upload', label: 'Manual Data Upload' },
 ];
 
-// Reusable company × bank access grid for roles. Click a cell to pick which
-// banks the role can see within a company (all / some / none).
-const RoleAccessMatrix = ({
-  roles,
-  companies,
-  onSaveAccess,
-  onDeleteRole,
-  savingId,
-}: {
-  roles: RoleDef[];
-  companies: Company[];
-  onSaveAccess: (roleId: string, permissions: UserPermission[]) => void;
-  onDeleteRole: (id: string) => void;
-  savingId: string | null;
-}) => {
-  const [openCell, setOpenCell] = useState<{ roleId: string; companyId: string } | null>(null);
-  const roleBadge = (name: string) =>
-    name === 'Admin' ? 'bg-indigo-100 text-indigo-700' :
-    name === 'Manager' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
-  const companyById = (id: string) => companies.find(c => c.id === id);
-  const banksOf = (c?: Company) => (c?.banks || []);
-  const permFor = (perms: UserPermission[], cid: string) => perms.find(p => p.companyId === cid);
-  const isBankOn = (perms: UserPermission[], cid: string, bid: string) => {
-    const p = permFor(perms, cid);
-    if (!p) return false;
-    return p.bankIds.length === 0 || p.bankIds.includes(bid);
-  };
-  const isAdmin = (role: RoleDef) => role.name === 'Admin';
-  const cellState = (role: RoleDef, cid: string): 'all' | 'partial' | 'none' => {
-    if (isAdmin(role)) return 'all';
-    const p = permFor(role.permissions, cid);
-    if (!p) return 'none';
-    return p.bankIds.length === 0 ? 'all' : 'partial';
-  };
-  const setAll = (role: RoleDef, cid: string, all: boolean) =>
-    onSaveAccess(role.id, all
-      ? [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds: [] }]
-      : role.permissions.filter(p => p.companyId !== cid));
-  const toggleBank = (role: RoleDef, cid: string, bid: string) => {
-    const allIds = banksOf(companyById(cid)).map(b => b.id);
-    const p = permFor(role.permissions, cid);
-    let bankIds: string[];
-    if (!p) bankIds = [bid];
-    else if (p.bankIds.length === 0) bankIds = allIds.filter(id => id !== bid);
-    else bankIds = p.bankIds.includes(bid) ? p.bankIds.filter(id => id !== bid) : [...p.bankIds, bid];
-    let permissions;
-    if (bankIds.length === 0) permissions = role.permissions.filter(p => p.companyId !== cid);
-    else if (allIds.length > 0 && bankIds.length === allIds.length) permissions = [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds: [] }];
-    else permissions = [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds }];
-    onSaveAccess(role.id, permissions);
-  };
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left min-w-[640px]">
-        <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-          <tr>
-            <th className="px-6 py-3 border-b border-slate-100">Role</th>
-            {companies.map(c => <th key={c.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{c.name}</th>)}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-50">
-          {roles.map(role => (
-            <Fragment key={role.id}>
-              <tr className="hover:bg-slate-50/40">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2.5">
-                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
-                    <span className="text-base font-semibold text-slate-800">{role.name}</span>
-                    <span className="text-[11px] text-slate-400">{role.builtin ? 'Built-in' : 'Custom'}</span>
-                    {!role.builtin && <button onClick={() => onDeleteRole(role.id)} title="Delete role" className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><XCircle size={15} /></button>}
-                    {savingId === role.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
-                  </div>
-                </td>
-                {companies.map(c => {
-                  const locked = isAdmin(role);
-                  const state = cellState(role, c.id);
-                  const isOpen = openCell?.roleId === role.id && openCell?.companyId === c.id;
-                  return (
-                    <td key={c.id} className="px-3 py-4 text-center">
-                      <button
-                        onClick={() => !locked && setOpenCell(isOpen ? null : { roleId: role.id, companyId: c.id })}
-                        disabled={locked || savingId === role.id}
-                        title={locked ? 'Admins have full access' : state === 'none' ? 'Grant bank access' : 'Edit bank access'}
-                        className={`w-9 h-9 rounded-lg inline-flex items-center justify-center text-xs font-bold border-2 transition-colors ${state === 'all' ? 'bg-indigo-600 text-white border-indigo-600' : state === 'partial' ? 'bg-indigo-100 text-indigo-700 border-indigo-400' : 'border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500'} ${locked ? 'opacity-60 cursor-not-allowed' : ''} ${isOpen ? 'ring-2 ring-indigo-400' : ''}`}
-                      >
-                        {state === 'all' ? <Check size={16} /> : state === 'partial' ? permFor(role.permissions, c.id)!.bankIds.length : <Plus size={14} className="opacity-50" />}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
-              {openCell?.roleId === role.id && !isAdmin(role) && (() => {
-                const c = companyById(openCell.companyId);
-                if (!c) return null;
-                return (
-                  <tr>
-                    <td colSpan={1 + companies.length} className="bg-slate-50/60 px-6 py-4">
-                      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                        <p className="text-xs font-bold text-slate-700">{c.name} — bank access for {role.name}</p>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => setAll(role, c.id, true)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700">All banks</button>
-                          <button onClick={() => setAll(role, c.id, false)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-200">No access</button>
-                          <button onClick={() => setOpenCell(null)} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-slate-600">Close</button>
-                        </div>
-                      </div>
-                      {banksOf(c).length === 0 ? (
-                        <p className="text-xs text-slate-400 italic">No banks for this company.</p>
-                      ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                          {banksOf(c).map(bank => {
-                            const on = isBankOn(role.permissions, c.id, bank.id);
-                            return (
-                              <button key={bank.id} onClick={() => toggleBank(role, c.id, bank.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-xs transition-colors ${on ? 'bg-white border-indigo-200 text-slate-700' : 'bg-slate-100/60 border-transparent text-slate-400'}`}>
-                                <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
-                                <span className="truncate font-medium">{bank.name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })()}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
+// --- User Management (Users + Roles tabs) ---
 const UserManagementPage = ({
   users,
   onAddUser,
@@ -798,6 +691,7 @@ const UserManagementPage = ({
   const [newRoleName, setNewRoleName] = useState('');
   const [roleError, setRoleError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
 
   const filteredUsers = users.filter(u =>
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -835,6 +729,38 @@ const UserManagementPage = ({
     try { await onUpdateRole({ ...role, pages }); }
     catch (e) { console.error('Role page update failed', e); }
     finally { setSavingRoleId(null); }
+  };
+
+  // Per-role company/bank access helpers (used by the role editor)
+  const rolePermFor = (role: RoleDef, cid: string) => role.permissions.find(p => p.companyId === cid);
+  const roleCompanyState = (role: RoleDef, cid: string): 'all' | 'partial' | 'none' => {
+    if (role.name === 'Admin') return 'all';
+    const p = rolePermFor(role, cid);
+    if (!p) return 'none';
+    return p.bankIds.length === 0 ? 'all' : 'partial';
+  };
+  const roleBankOn = (role: RoleDef, cid: string, bid: string) => {
+    const p = rolePermFor(role, cid);
+    if (!p) return false;
+    return p.bankIds.length === 0 || p.bankIds.includes(bid);
+  };
+  const setRoleCompanyAll = (role: RoleDef, cid: string, all: boolean) =>
+    saveRoleAccess(role.id, all
+      ? [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds: [] }]
+      : role.permissions.filter(p => p.companyId !== cid));
+  const toggleRoleBank = (role: RoleDef, cid: string, bid: string) => {
+    const company = companies.find(c => c.id === cid);
+    const allIds = (company?.banks || []).map(b => b.id);
+    const p = rolePermFor(role, cid);
+    let bankIds: string[];
+    if (!p) bankIds = [bid];
+    else if (p.bankIds.length === 0) bankIds = allIds.filter(id => id !== bid);
+    else bankIds = p.bankIds.includes(bid) ? p.bankIds.filter(id => id !== bid) : [...p.bankIds, bid];
+    let permissions;
+    if (bankIds.length === 0) permissions = role.permissions.filter(p => p.companyId !== cid);
+    else if (allIds.length > 0 && bankIds.length === allIds.length) permissions = [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds: [] }];
+    else permissions = [...role.permissions.filter(p => p.companyId !== cid), { companyId: cid, bankIds }];
+    saveRoleAccess(role.id, permissions);
   };
 
   const handleCreateRole = async () => {
@@ -925,7 +851,19 @@ const UserManagementPage = ({
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4"><span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span></td>
+                      <td className="px-6 py-4">
+                        {(user.roleIds && user.roleIds.length > 0) ? (
+                          <div className="flex flex-wrap gap-1">
+                            {user.roleIds.map(rid => {
+                              const r = roles.find(x => x.id === rid);
+                              const nm = r?.name || rid;
+                              return <span key={rid} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(nm)}`}>{nm}</span>;
+                            })}
+                          </div>
+                        ) : (
+                          <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
@@ -962,104 +900,113 @@ const UserManagementPage = ({
           </div>
         </>
       ) : (
-        <div className="space-y-6">
-          {/* Create role */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <h3 className="text-base font-semibold text-slate-800 mb-1">Create a role</h3>
-            <p className="text-sm text-slate-400 mb-3">Add a custom role, then set its company and bank access below.</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <input
-                type="text"
-                value={newRoleName}
-                onChange={e => { setNewRoleName(e.target.value); setRoleError(''); }}
-                onKeyDown={e => { if (e.key === 'Enter') handleCreateRole(); }}
-                placeholder="e.g. Treasury Analyst"
-                className="flex-1 min-w-[200px] border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
-              />
-              <button onClick={handleCreateRole} disabled={creating || !newRoleName.trim()} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-                <Plus size={15} /> Create
-              </button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left: create + role list */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-slate-800 mb-2">Create a role</h3>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newRoleName}
+                  onChange={e => { setNewRoleName(e.target.value); setRoleError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateRole(); }}
+                  placeholder="e.g. Treasury Analyst"
+                  className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+                />
+                <button onClick={handleCreateRole} disabled={creating || !newRoleName.trim()} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 shrink-0"><Plus size={16} /></button>
+              </div>
+              {roleError && <p className="text-xs text-red-600 mt-2">{roleError}</p>}
             </div>
-            {roleError && <p className="text-xs text-red-600 mt-2">{roleError}</p>}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-widest">Roles ({roles.length})</div>
+              <div className="max-h-[60vh] overflow-y-auto divide-y divide-slate-50">
+                {roles.map(role => {
+                  const active = (selectedRoleId || roles[0]?.id) === role.id;
+                  return (
+                    <button key={role.id} onClick={() => setSelectedRoleId(role.id)} className={`w-full flex items-center gap-2.5 px-4 py-3 text-left transition-colors ${active ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
+                      <span className={`text-sm font-semibold truncate ${active ? 'text-indigo-700' : 'text-slate-800'}`}>{role.name}</span>
+                      <span className="ml-auto text-[10px] text-slate-400 shrink-0">{role.builtin ? 'Built-in' : 'Custom'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          {/* Per-role page access */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <LayoutDashboard size={18} className="text-indigo-500" />
-                <h3 className="text-base font-semibold text-slate-800">Page access</h3>
-              </div>
-              <p className="text-sm text-slate-400 mt-1">Choose which areas of the portal each role can open. Admins can open everything.</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[640px]">
-                <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <tr>
-                    <th className="px-6 py-3 border-b border-slate-100">Role</th>
-                    {PAGE_PERMS.map(p => <th key={p.id} className="px-3 py-3 border-b border-slate-100 text-center font-bold">{p.label}</th>)}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {roles.map(role => {
-                    const locked = role.name === 'Admin';
-                    return (
-                      <tr key={role.id} className="hover:bg-slate-50/40">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2.5">
-                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
-                            <span className="text-base font-semibold text-slate-800">{role.name}</span>
-                            {savingRoleId === role.id && <RefreshCcw size={12} className="animate-spin text-slate-400" />}
-                          </div>
-                        </td>
-                        {PAGE_PERMS.map(p => {
-                          const on = locked || (role.pages || []).includes(p.id);
+          {/* Right: selected role editor */}
+          <div className="lg:col-span-2">
+            {(() => {
+              const role = roles.find(r => r.id === selectedRoleId) || roles[0];
+              if (!role) return <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center text-slate-400 text-sm">No roles yet — create one on the left.</div>;
+              const locked = role.name === 'Admin';
+              return (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+                  <div className="px-5 py-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className={`w-3 h-3 rounded-full shrink-0 ${role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
+                      <h3 className="text-lg font-bold text-slate-900 truncate">{role.name}</h3>
+                      <span className="text-[11px] text-slate-400 shrink-0">{role.builtin ? 'Built-in role' : 'Custom role'}</span>
+                      {savingRoleId === role.id && <RefreshCcw size={13} className="animate-spin text-slate-400 shrink-0" />}
+                    </div>
+                    {!role.builtin && <button onClick={() => { handleDeleteRole(role.id); setSelectedRoleId(null); }} className="text-xs font-semibold text-slate-400 hover:text-red-600 flex items-center gap-1 shrink-0"><XCircle size={14} /> Delete</button>}
+                  </div>
+
+                  <div className="px-5 py-4">
+                    <p className="text-sm font-semibold text-slate-800 mb-1">Page access</p>
+                    <p className="text-xs text-slate-400 mb-3">Which areas of the portal this role can open.{locked && ' Admins can open everything.'}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {PAGE_PERMS.map(p => {
+                        const on = locked || (role.pages || []).includes(p.id);
+                        return (
+                          <button key={p.id} onClick={() => togglePage(role, p.id)} disabled={locked || savingRoleId === role.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-sm transition-colors ${on ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'} ${locked ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                            <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
+                            {p.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="px-5 py-4">
+                    <p className="text-sm font-semibold text-slate-800 mb-1">Company &amp; bank access</p>
+                    <p className="text-xs text-slate-400 mb-3">Which companies and banks this role can see.{locked && ' Admins always have full access.'}</p>
+                    {companies.length === 0 ? <p className="text-xs text-slate-400">No companies available.</p> : (
+                      <div className="space-y-2">
+                        {companies.map(c => {
+                          const st = roleCompanyState(role, c.id);
                           return (
-                            <td key={p.id} className="px-3 py-4 text-center">
-                              <button
-                                onClick={() => togglePage(role, p.id)}
-                                disabled={locked || savingRoleId === role.id}
-                                title={locked ? 'Admins can open everything' : on ? 'Remove access' : 'Grant access'}
-                                className={`w-9 h-9 rounded-lg inline-flex items-center justify-center border-2 transition-colors ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500'} ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                              >
-                                {on ? <Check size={16} /> : <Plus size={14} className="opacity-50" />}
-                              </button>
-                            </td>
+                            <div key={c.id} className="border border-slate-200 rounded-lg p-3">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-slate-700">{c.name}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <button disabled={locked} onClick={() => setRoleCompanyAll(role, c.id, true)} className={`px-2.5 py-1 rounded-md text-[11px] font-semibold ${st === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}>All banks</button>
+                                  <button disabled={locked} onClick={() => setRoleCompanyAll(role, c.id, false)} className={`px-2.5 py-1 rounded-md text-[11px] font-semibold ${st === 'none' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}>None</button>
+                                </div>
+                              </div>
+                              {!locked && (c.banks || []).length > 0 && (
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
+                                  {(c.banks || []).map(bank => {
+                                    const on = roleBankOn(role, c.id, bank.id);
+                                    return (
+                                      <button key={bank.id} onClick={() => toggleRoleBank(role, c.id, bank.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-xs transition-colors ${on ? 'bg-white border-indigo-200 text-slate-700' : 'bg-slate-50 border-transparent text-slate-400'}`}>
+                                        <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
+                                        <span className="truncate font-medium">{bank.name}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Per-role company & bank access */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={18} className="text-indigo-500" />
-                <h3 className="text-base font-semibold text-slate-800">Company &amp; bank access</h3>
-              </div>
-              <p className="text-sm text-slate-400 mt-1">Click a cell to choose which banks each role can see in a company. Admins always have full access.</p>
-              <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
-                <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded-md bg-indigo-600 text-white inline-flex items-center justify-center"><Check size={12} /></span> All banks</span>
-                <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded-md bg-indigo-100 text-indigo-700 border-2 border-indigo-400 inline-flex items-center justify-center text-[10px] font-bold">2</span> Some banks</span>
-                <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded-md border-2 border-dashed border-slate-300 inline-flex items-center justify-center text-slate-400"><Plus size={11} /></span> No access</span>
-              </div>
-            </div>
-            {companies.length === 0 ? (
-              <p className="px-6 py-8 text-sm text-slate-400 text-center">No companies available.</p>
-            ) : (
-              <RoleAccessMatrix
-                roles={roles}
-                companies={companies}
-                onSaveAccess={saveRoleAccess}
-                onDeleteRole={handleDeleteRole}
-                savingId={savingRoleId}
-              />
-            )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -3237,6 +3184,7 @@ export default function App() {
           onClose={() => setIsUserModalOpen(false)}
           onSave={handleSaveUser}
           companies={companies}
+          roles={roles}
         />
 
         <BankDetailsModal 

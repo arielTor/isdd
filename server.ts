@@ -679,6 +679,9 @@ async function startServer() {
       const [perms] = (await conn.execute(
         "SELECT user_id, company_id, bank_id FROM user_permissions"
       )) as [any[], any];
+      const [userRoles] = (await conn.execute(
+        "SELECT user_id, role_id FROM user_roles"
+      )) as [any[], any];
 
       const result = users.map((u: any) => ({
         ...u,
@@ -688,6 +691,7 @@ async function startServer() {
             companyId: p.company_id,
             bankIds: p.bank_id ? [p.bank_id] : [],
           })),
+        roleIds: (userRoles as any[]).filter((r: any) => r.user_id === u.id).map((r: any) => r.role_id),
       }));
 
       res.json({ users: result });
@@ -701,7 +705,7 @@ async function startServer() {
 
   // Create user
   app.post("/api/users", corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
-    const { name, email, role, status, password, permissions } = req.body;
+    const { name, email, role, status, password, permissions, roleIds } = req.body;
     if (!name || !email || !role)
       return res.status(400).json({ error: "Name, email and role required" });
 
@@ -740,6 +744,12 @@ async function startServer() {
         }
       }
 
+      if (Array.isArray(roleIds)) {
+        for (const rid of roleIds) {
+          if (rid) await conn.execute("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)", [id, rid]);
+        }
+      }
+
       res.json({ id, ok: true });
     } catch (err: any) {
       console.error("POST /api/users error:", err.message);
@@ -752,7 +762,7 @@ async function startServer() {
   // Update user
   app.put("/api/users/:id", corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { name, email, role, status, password, permissions } = req.body;
+    const { name, email, role, status, password, permissions, roleIds } = req.body;
 
     let conn: any;
     try {
@@ -787,6 +797,14 @@ async function startServer() {
         }
       }
 
+      // Replace role assignments
+      if (Array.isArray(roleIds)) {
+        await conn.execute("DELETE FROM user_roles WHERE user_id = ?", [id]);
+        for (const rid of roleIds) {
+          if (rid) await conn.execute("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)", [id, rid]);
+        }
+      }
+
       res.json({ ok: true });
     } catch (err: any) {
       console.error("PUT /api/users/:id error:", err.message);
@@ -803,6 +821,7 @@ async function startServer() {
     try {
       conn = await mysql.createConnection(dbConfig());
       await conn.execute("DELETE FROM user_permissions WHERE user_id = ?", [id]);
+      await conn.execute("DELETE FROM user_roles WHERE user_id = ?", [id]);
       await conn.execute("DELETE FROM users WHERE id = ?", [id]);
       res.json({ ok: true });
     } catch (err: any) {
@@ -1375,7 +1394,23 @@ async function startServer() {
             );
           }
         }
-        console.log("[Roles] app_roles table ready");
+        // user ↔ roles mapping (a user can hold several roles)
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS user_roles (
+            user_id VARCHAR(64) NOT NULL,
+            role_id VARCHAR(64) NOT NULL,
+            PRIMARY KEY (user_id, role_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        // One-time migration: map each existing user to their current enum role and
+        // give the built-in roles sensible default page access (preserves behaviour).
+        const [ur] = (await conn.execute("SELECT COUNT(*) AS n FROM user_roles")) as any;
+        if (!ur[0].n) {
+          await conn.execute("UPDATE app_roles SET pages_json = ? WHERE id = 'manager' AND (pages_json = '[]' OR pages_json IS NULL)", [JSON.stringify(['dashboard', 'companies', 'psp', 'alerts', 'upload'])]);
+          await conn.execute("UPDATE app_roles SET pages_json = ? WHERE id = 'viewer' AND (pages_json = '[]' OR pages_json IS NULL)", [JSON.stringify(['dashboard', 'companies', 'psp'])]);
+          try { await conn.execute("INSERT IGNORE INTO user_roles (user_id, role_id) SELECT id, LOWER(role) FROM users WHERE role IS NOT NULL"); } catch (e: any) { console.warn("[Roles] user_roles seed:", e.message); }
+        }
+        console.log("[Roles] app_roles + user_roles tables ready");
       } catch (e: any) { console.warn("[Roles] table init:", e.message); }
       finally { conn.end(); }
     } catch (e: any) {

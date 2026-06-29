@@ -89,6 +89,7 @@ export interface User {
   status: 'Active' | 'Inactive';
   lastActive: string;
   permissions: UserPermission[];
+  roleIds?: string[]; // assigned roles (a user can hold several)
   password?: string; // only used when creating/updating — never returned by API
 }
 
