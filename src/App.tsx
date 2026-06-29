@@ -702,13 +702,6 @@ const UserManagementPage = ({
     role === 'Admin' ? 'bg-indigo-100 text-indigo-700' :
     role === 'Manager' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600';
 
-  const counts = {
-    total: users.length,
-    admin: users.filter(u => u.role === 'Admin').length,
-    manager: users.filter(u => u.role === 'Manager').length,
-    viewer: users.filter(u => u.role === 'Viewer').length,
-  };
-
   const initials = (name: string) => name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
   const saveRoleAccess = async (roleId: string, permissions: UserPermission[]) => {
@@ -801,21 +794,6 @@ const UserManagementPage = ({
 
       {tab === 'users' ? (
         <>
-          {/* Role stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { label: 'Total Users', value: counts.total },
-              { label: 'Admins', value: counts.admin },
-              { label: 'Managers', value: counts.manager },
-              { label: 'Viewers', value: counts.viewer },
-            ].map(s => (
-              <div key={s.label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{s.label}</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{s.value}</p>
-              </div>
-            ))}
-          </div>
-
           {/* Users table */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
