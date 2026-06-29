@@ -11,8 +11,10 @@ import {
   BarChart3,
   TrendingUp,
 } from 'lucide-react';
+import { CreditCard } from 'lucide-react';
 import { CURRENCY_SYMBOLS } from '../types';
 import type { Company, PortfolioPoint, WidgetType } from '../types';
+import { walletBalance, walletRate, buildCurrencyRateMap, settlementUsd, pendingSettlementSum } from '../PSPSection';
 
 // ── Shared constants & formatters ───────────────────────────────────────────
 
@@ -494,6 +496,132 @@ const TrendChartWidget = ({ companies, history }: { companies: Company[]; histor
   );
 };
 
+// ── Payment Providers widgets ───────────────────────────────────────────────
+
+type PspRow = { companyName: string; providerName: string; currency: string; balanceUsd: number; settlementUsd: number };
+
+function pspRows(companies: Company[]): PspRow[] {
+  const rates = buildCurrencyRateMap(companies);
+  const rows: PspRow[] = [];
+  companies.forEach(company => {
+    const settlements = company.psp_settlements || [];
+    (company.psp_providers || []).forEach(provider => {
+      (provider.ewallets || []).forEach(ew => {
+        (ew.wallets || []).forEach(w => {
+          const rate = walletRate(w);
+          const settlementNative = pendingSettlementSum(settlements, ew.id, w.currency);
+          rows.push({
+            companyName: company.name,
+            providerName: provider.name,
+            currency: w.currency,
+            balanceUsd: walletBalance(w) * rate,
+            settlementUsd: settlementUsd(settlementNative, w.currency, rates),
+          });
+        });
+      });
+    });
+  });
+  return rows;
+}
+
+const PspTotalWidget = ({ companies }: { companies: Company[] }) => {
+  const rows = pspRows(companies);
+  const balance = rows.reduce((s, r) => s + r.balanceUsd, 0);
+  const settlement = rows.reduce((s, r) => s + r.settlementUsd, 0);
+  return (
+    <div className="relative h-full bg-[#1a1a2e] p-5 overflow-hidden flex flex-col justify-center gap-3">
+      <div className="flex items-center gap-2">
+        <CreditCard size={14} className="text-indigo-300" />
+        <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest">Payment Providers</p>
+      </div>
+      <div>
+        <p className="text-[10px] font-bold text-indigo-300/70 uppercase tracking-widest">Total Exposure (USD)</p>
+        <p className={`text-3xl font-bold font-mono leading-none ${balance + settlement < 0 ? 'text-red-400' : 'text-white'}`}>{fmtUsd(balance + settlement)}</p>
+      </div>
+      <div className="flex items-center gap-5 text-xs">
+        <div><span className="text-indigo-300/70">Balance</span> <span className="font-mono font-bold text-white">{fmtUsd(balance)}</span></div>
+        <div><span className="text-indigo-300/70">Settlement</span> <span className="font-mono font-bold text-emerald-300">{fmtUsd(settlement)}</span></div>
+      </div>
+    </div>
+  );
+};
+
+const PspBarWidget = ({ companies, groupBy, title }: { companies: Company[]; groupBy: 'providerName' | 'currency'; title: string }) => {
+  const rows = pspRows(companies);
+  const map: Record<string, number> = {};
+  rows.forEach(r => { map[r[groupBy]] = (map[r[groupBy]] || 0) + r.balanceUsd; });
+  const entries = Object.entries(map).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const max = Math.max(...entries.map(([, v]) => Math.abs(v)), 1);
+  if (!entries.length) return <EmptyState label="No PSP balances" />;
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100 shrink-0 flex items-center gap-2">
+        <CreditCard size={14} className="text-indigo-500" />
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{title}</p>
+      </div>
+      <div className="flex-1 flex items-end gap-2 px-4 pt-6 pb-2 overflow-x-auto">
+        {entries.map(([label, usd]) => {
+          const neg = usd < 0;
+          const pct = Math.max((Math.abs(usd) / max) * 100, 1.5);
+          return (
+            <div key={label} className="flex-1 min-w-[44px] h-full flex flex-col">
+              <div className="flex-1 flex flex-col justify-end items-center gap-1">
+                <span className={`text-[10px] font-mono font-bold whitespace-nowrap ${neg ? 'text-red-600' : 'text-slate-700'}`}>{fmtUsd(usd)}</span>
+                <div className={`w-full max-w-[52px] rounded-t-md ${neg ? 'bg-gradient-to-t from-red-500 to-red-300' : 'bg-gradient-to-t from-indigo-600 to-indigo-400'}`} style={{ height: `${pct}%` }} title={`${label}: ${fmtUsd(usd)}`} />
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1.5 w-full text-center truncate" title={label}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const PspSummaryWidget = ({ companies }: { companies: Company[] }) => {
+  const rows = pspRows(companies);
+  if (!rows.length) return <EmptyState label="No PSP balances" />;
+  const total = rows.reduce((s, r) => s + r.balanceUsd + r.settlementUsd, 0);
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
+        <CreditCard size={16} className="text-indigo-500" />
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">PSP Summary</h3>
+      </div>
+      <div className="flex-1 overflow-auto">
+        <table className="w-full text-left border-collapse text-xs min-w-[560px]">
+          <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0">
+            <tr>
+              <th className="px-5 py-3 border-b border-slate-100">Company</th>
+              <th className="px-5 py-3 border-b border-slate-100">Acquirer</th>
+              <th className="px-5 py-3 border-b border-slate-100">Currency</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Exposure</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
+                <td className="px-5 py-3 font-medium text-slate-700">{r.companyName}</td>
+                <td className="px-5 py-3 text-slate-600">{r.providerName}</td>
+                <td className="px-5 py-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
+                <td className={`px-5 py-3 text-right font-mono ${usdCls(r.balanceUsd)}`}>{fmtUsd(r.balanceUsd)}</td>
+                <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(r.balanceUsd + r.settlementUsd)}`}>{fmtUsd(r.balanceUsd + r.settlementUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-indigo-50 border-t-2 border-indigo-100">
+              <td colSpan={4} className="px-5 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total Exposure</td>
+              <td className={`px-5 py-3 text-right font-mono font-bold text-sm ${usdCls(total)}`}>{fmtUsd(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 // ── Registry + dispatcher ───────────────────────────────────────────────────
 
 export interface WidgetMeta {
@@ -508,7 +636,6 @@ export interface WidgetMeta {
 
 export const WIDGET_REGISTRY: WidgetMeta[] = [
   { type: 'asset-breakdown', label: 'Asset Breakdown', description: 'Crypto vs fiat donut + totals', icon: LayoutDashboard, defaultW: 8, defaultH: 4 },
-  { type: 'total-portfolio', label: 'Total Portfolio', description: 'Headline USD total + trend', icon: WalletIcon, defaultW: 4, defaultH: 2 },
   { type: 'summary-by-bank', label: 'By Bank', description: 'USD totals grouped by bank', icon: Landmark, defaultW: 4, defaultH: 3 },
   { type: 'summary-by-company', label: 'By Company', description: 'USD totals grouped by company', icon: Building2, defaultW: 4, defaultH: 3 },
   { type: 'summary-by-currency', label: 'By Currency', description: 'USD totals grouped by currency', icon: Coins, defaultW: 4, defaultH: 3 },
@@ -518,6 +645,10 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
   { type: 'chart-by-bank', label: 'By Bank (chart)', description: 'USD by bank (bar chart)', icon: BarChart3, defaultW: 4, defaultH: 4 },
   { type: 'chart-by-company', label: 'By Company (chart)', description: 'USD by company (bar chart)', icon: BarChart3, defaultW: 4, defaultH: 4 },
   { type: 'chart-by-currency', label: 'By Currency (chart)', description: 'USD by currency (bar chart)', icon: BarChart3, defaultW: 4, defaultH: 4 },
+  { type: 'psp-total', label: 'PSP Exposure', description: 'Payment-provider balance + settlement', icon: CreditCard, defaultW: 4, defaultH: 2 },
+  { type: 'psp-summary', label: 'PSP Summary', description: 'Provider balances per company', icon: CreditCard, defaultW: 8, defaultH: 4 },
+  { type: 'psp-by-acquirer', label: 'PSP by Acquirer', description: 'PSP USD by acquirer (bar chart)', icon: CreditCard, defaultW: 4, defaultH: 4 },
+  { type: 'psp-by-currency', label: 'PSP by Currency', description: 'PSP USD by currency (bar chart)', icon: CreditCard, defaultW: 4, defaultH: 4 },
 ];
 
 export const widgetMeta = (type: WidgetType) => WIDGET_REGISTRY.find(w => w.type === type)!;
@@ -535,6 +666,10 @@ export function WidgetView({ type, companies, history }: { type: WidgetType; com
     case 'chart-by-bank': return <BarChartWidget companies={companies} groupBy="bank" title="By Bank" />;
     case 'chart-by-company': return <BarChartWidget companies={companies} groupBy="company" title="By Company" />;
     case 'chart-by-currency': return <BarChartWidget companies={companies} groupBy="currency" title="By Currency" />;
+    case 'psp-total': return <PspTotalWidget companies={companies} />;
+    case 'psp-summary': return <PspSummaryWidget companies={companies} />;
+    case 'psp-by-acquirer': return <PspBarWidget companies={companies} groupBy="providerName" title="PSP by Acquirer" />;
+    case 'psp-by-currency': return <PspBarWidget companies={companies} groupBy="currency" title="PSP by Currency" />;
     default: return <EmptyState label="Unknown widget" />;
   }
 }

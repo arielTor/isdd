@@ -157,7 +157,11 @@ export type WidgetType =
   | 'chart-trend'
   | 'chart-by-bank'
   | 'chart-by-company'
-  | 'chart-by-currency';
+  | 'chart-by-currency'
+  | 'psp-total'
+  | 'psp-summary'
+  | 'psp-by-acquirer'
+  | 'psp-by-currency';
 
 // One placed widget instance. Position/size are in 12-column grid units;
 // `h` is measured in row units (see GRID_ROW_PX in the canvas).

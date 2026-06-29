@@ -127,7 +127,7 @@ html[data-theme="dark"] .bg-sky-100, html[data-theme="gray"] .bg-sky-100 { backg
 html[data-theme="dark"] .text-indigo-700, html[data-theme="gray"] .text-indigo-700,
 html[data-theme="dark"] .text-indigo-600, html[data-theme="gray"] .text-indigo-600,
 html[data-theme="dark"] .text-indigo-800, html[data-theme="gray"] .text-indigo-800,
-html[data-theme="dark"] .text-indigo-900, html[data-theme="gray"] .text-indigo-900 { color: #a5b4fc !important; }
+html[data-theme="dark"] .text-indigo-900, html[data-theme="gray"] .text-indigo-900 { color: #c7d2fe !important; }
 html[data-theme="dark"] .text-amber-700, html[data-theme="gray"] .text-amber-700,
 html[data-theme="dark"] .text-amber-800, html[data-theme="gray"] .text-amber-800 { color: #fcd34d !important; }
 html[data-theme="dark"] .text-red-600, html[data-theme="gray"] .text-red-600,

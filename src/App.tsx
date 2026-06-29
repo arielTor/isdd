@@ -902,10 +902,10 @@ const UserManagementPage = ({
                 {roles.map(role => {
                   const active = (selectedRoleId || roles[0]?.id) === role.id;
                   return (
-                    <button key={role.id} onClick={() => setSelectedRoleId(role.id)} className={`w-full flex items-center gap-2.5 px-4 py-3 text-left transition-colors ${active ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
-                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
-                      <span className={`text-sm font-semibold truncate ${active ? 'text-indigo-700' : 'text-slate-800'}`}>{role.name}</span>
-                      <span className="ml-auto text-[10px] text-slate-400 shrink-0">{role.builtin ? 'Built-in' : 'Custom'}</span>
+                    <button key={role.id} onClick={() => setSelectedRoleId(role.id)} className={`w-full flex items-center gap-2.5 px-4 py-3 text-left transition-colors ${active ? 'bg-indigo-600' : 'hover:bg-slate-50'}`}>
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${active ? 'bg-white' : role.name === 'Admin' ? 'bg-indigo-500' : role.name === 'Manager' ? 'bg-emerald-500' : role.name === 'Viewer' ? 'bg-slate-400' : 'bg-violet-500'}`} />
+                      <span className={`text-sm font-semibold truncate ${active ? 'text-white' : 'text-slate-800'}`}>{role.name}</span>
+                      <span className={`ml-auto text-[10px] shrink-0 ${active ? 'text-white/70' : 'text-slate-400'}`}>{role.builtin ? 'Built-in' : 'Custom'}</span>
                     </button>
                   );
                 })}
@@ -938,8 +938,8 @@ const UserManagementPage = ({
                       {PAGE_PERMS.map(p => {
                         const on = locked || (role.pages || []).includes(p.id);
                         return (
-                          <button key={p.id} onClick={() => togglePage(role, p.id)} disabled={locked || savingRoleId === role.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-sm transition-colors ${on ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'} ${locked ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                            <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-indigo-600 text-white' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
+                          <button key={p.id} onClick={() => togglePage(role, p.id)} disabled={locked || savingRoleId === role.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-sm font-medium transition-colors ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'} ${locked ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                            <span className={`w-4 h-4 rounded inline-flex items-center justify-center shrink-0 ${on ? 'bg-white text-indigo-600' : 'border border-slate-300'}`}>{on && <Check size={11} />}</span>
                             {p.label}
                           </button>
                         );
