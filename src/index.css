@@ -125,14 +125,17 @@ html[data-theme="dark"] .bg-sky-100, html[data-theme="gray"] .bg-sky-100 { backg
 
 /* Coloured text → brighter shades that read on the dark tints above */
 html[data-theme="dark"] .text-indigo-700, html[data-theme="gray"] .text-indigo-700,
-html[data-theme="dark"] .text-indigo-600, html[data-theme="gray"] .text-indigo-600 { color: #a5b4fc !important; }
+html[data-theme="dark"] .text-indigo-600, html[data-theme="gray"] .text-indigo-600,
+html[data-theme="dark"] .text-indigo-800, html[data-theme="gray"] .text-indigo-800,
+html[data-theme="dark"] .text-indigo-900, html[data-theme="gray"] .text-indigo-900 { color: #a5b4fc !important; }
 html[data-theme="dark"] .text-amber-700, html[data-theme="gray"] .text-amber-700,
 html[data-theme="dark"] .text-amber-800, html[data-theme="gray"] .text-amber-800 { color: #fcd34d !important; }
 html[data-theme="dark"] .text-red-600, html[data-theme="gray"] .text-red-600,
 html[data-theme="dark"] .text-red-700, html[data-theme="gray"] .text-red-700 { color: #f87171 !important; }
 html[data-theme="dark"] .text-emerald-600, html[data-theme="gray"] .text-emerald-600,
 html[data-theme="dark"] .text-emerald-700, html[data-theme="gray"] .text-emerald-700 { color: #34d399 !important; }
-html[data-theme="dark"] .text-blue-700, html[data-theme="gray"] .text-blue-700 { color: #93c5fd !important; }
+html[data-theme="dark"] .text-blue-700, html[data-theme="gray"] .text-blue-700,
+html[data-theme="dark"] .text-blue-800, html[data-theme="gray"] .text-blue-800 { color: #93c5fd !important; }
 html[data-theme="dark"] .text-orange-700, html[data-theme="gray"] .text-orange-700 { color: #fdba74 !important; }
 
 /* Accent borders → faint, themed */
