@@ -2051,7 +2051,7 @@ export default function App() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const mainContentRef = useRef<HTMLElement>(null);
 
-  const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [activePage, setActivePage] = useState<Page>('companies');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // ── Historical date picker ────────────────────────────────────────────────
