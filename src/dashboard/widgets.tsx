@@ -452,19 +452,21 @@ const BarChartWidget = ({ companies, groupBy, title }: { companies: Company[]; g
         <BarChart3 size={14} className="text-indigo-500" />
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{title}</p>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 flex items-end gap-2 px-4 pt-6 pb-2 overflow-x-auto">
         {entries.map(([label, usd]) => {
           const neg = usd < 0;
-          const pct = (Math.abs(usd) / max) * 100;
+          const pct = Math.max((Math.abs(usd) / max) * 100, 1.5);
           return (
-            <div key={label}>
-              <div className="flex items-center justify-between text-xs mb-1 gap-2">
-                <span className="text-slate-600 font-medium truncate">{label}</span>
-                <span className={`font-mono font-bold shrink-0 ${neg ? 'text-red-600' : 'text-slate-800'}`}>{fmtUsd(usd)}</span>
+            <div key={label} className="flex-1 min-w-[44px] h-full flex flex-col">
+              <div className="flex-1 flex flex-col justify-end items-center gap-1">
+                <span className={`text-[10px] font-mono font-bold whitespace-nowrap ${neg ? 'text-red-600' : 'text-slate-700'}`}>{fmtUsd(usd)}</span>
+                <div
+                  className={`w-full max-w-[52px] rounded-t-md ${neg ? 'bg-gradient-to-t from-red-500 to-red-300' : 'bg-gradient-to-t from-indigo-600 to-indigo-400'}`}
+                  style={{ height: `${pct}%` }}
+                  title={`${label}: ${fmtUsd(usd)}`}
+                />
               </div>
-              <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                <div className={`h-full rounded-full ${neg ? 'bg-red-400' : 'bg-indigo-500'}`} style={{ width: `${Math.max(pct, 1)}%` }} />
-              </div>
+              <span className="text-[10px] text-slate-500 mt-1.5 w-full text-center truncate" title={label}>{label}</span>
             </div>
           );
         })}
