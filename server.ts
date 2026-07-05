@@ -835,8 +835,17 @@ async function startServer() {
             mappedRoleIds = (mr as any[]).map(r => r.role_id);
           }
           if (!mappedRoleIds.length) {
-            console.warn(`SAML login denied — ${upn || email} is in no mapped group`);
-            return res.redirect("/?sso=not_authorized");
+            console.warn(`SAML login denied — ${upn || email} groups=[${groups.join(", ")}]`);
+            // Temporary (staging): show what the token actually carried so group mapping
+            // can be verified. Remove once SSO is confirmed working.
+            const claimKeys = Object.keys(profile || {}).filter(k => k !== "getAssertionXml" && typeof (profile as any)[k] !== "function");
+            return res.status(403).type("text/plain").send(
+              `SSO not authorized: none of your groups are mapped to a role.\n\n` +
+              `Groups in the token (${groups.length}): ${groups.join(", ") || "(none — the groups claim was not sent)"}\n` +
+              `UPN: ${upn}\nEmail: ${email}\nName: ${name}\n\n` +
+              `All claim keys present: ${claimKeys.join(", ")}\n\n` +
+              `Map one of the group IDs above to a role in User Management → Entra Groups, then sign in again.`
+            );
           }
 
           // 3) Find or create the user (match by oid → upn → email).
