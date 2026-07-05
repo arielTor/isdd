@@ -391,9 +391,12 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
 };
 
 const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
-  // A detail widget is scoped to a single company; show the first assigned one.
-  const company = companies[0];
-  if (!company) return <EmptyState label="Assign a company" />;
+  // When several companies are in scope, show a tab bar (like the Companies page);
+  // when only one, it's just that company.
+  const [activeIdx, setActiveIdx] = useState(0);
+  if (!companies.length) return <EmptyState label="Assign a company" />;
+  const idx = Math.min(activeIdx, companies.length - 1);
+  const company = companies[idx];
   const rows: { bank: string; account: string; balance: number; currency: string; usd: number | null }[] = [];
   (company.banks || []).forEach((bank: any) => {
     if (!bankIsVerified(bank)) return;
@@ -406,6 +409,19 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
   });
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {companies.length > 1 && (
+        <div className="flex items-center gap-1 px-3 pt-2 border-b border-slate-200 overflow-x-auto shrink-0">
+          {companies.map((c, i) => (
+            <button
+              key={c.id}
+              onClick={() => setActiveIdx(i)}
+              className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${i === idx ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
         <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
         <h3 className="text-base font-bold text-slate-800 tracking-tight truncate">{company.name}</h3>

@@ -39,13 +39,14 @@ function newId() {
 
 // The default dashboard mirrors the Companies "View All" overview: a full-width
 // asset breakdown on top, the By Bank / By Company / By Currency summary tables in a
-// row, then the full portfolio table.
+// row, the per-company detail (tabbed), then the full portfolio table.
 const DEFAULT_LAYOUT = (): DashboardLayout => [
   { i: newId(), type: 'asset-breakdown', companyIds: [], x: 0, y: 0, w: 12, h: 4 },
   { i: newId(), type: 'summary-by-bank', companyIds: [], x: 0, y: 4, w: 4, h: 5 },
   { i: newId(), type: 'summary-by-company', companyIds: [], x: 4, y: 4, w: 4, h: 5 },
   { i: newId(), type: 'summary-by-currency', companyIds: [], x: 8, y: 4, w: 4, h: 5 },
-  { i: newId(), type: 'portfolio-table', companyIds: [], x: 0, y: 9, w: 12, h: 5 },
+  { i: newId(), type: 'company-detail', companyIds: [], x: 0, y: 9, w: 12, h: 5 },
+  { i: newId(), type: 'portfolio-table', companyIds: [], x: 0, y: 14, w: 12, h: 5 },
 ];
 
 // ── Company sourcing popover ────────────────────────────────────────────────
