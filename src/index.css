@@ -15,8 +15,10 @@
 }
 
 @layer base {
+  html { direction: ltr; }
   body {
-    @apply bg-surface-bg text-slate-800 font-sans antialiased;
+    @apply bg-surface-bg text-slate-800 font-sans antialiased text-left;
+    direction: ltr;
   }
 }
 
