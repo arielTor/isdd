@@ -972,7 +972,7 @@ const UserManagementPage = ({
                   {filteredUsers.map(user => (
                     <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-3 justify-center">
+                        <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 border border-slate-200 text-xs shrink-0">{initials(user.name)}</div>
                           <div className="min-w-0 text-left">
                             <p className="font-semibold text-slate-900 leading-none truncate">{user.name}</p>
@@ -1013,7 +1013,7 @@ const UserManagementPage = ({
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-3">
+                        <div className="flex items-center justify-end gap-3">
                           {/* SSO indicator + toggle (on = Microsoft SSO, off = local password) */}
                           <div
                             className="flex items-center gap-1.5"
