@@ -153,9 +153,12 @@ async function startServer() {
   // ── SAML SSO (optional — active only when the SAML_* env vars are set) ────
   // Lets a customer's employees sign in via their Microsoft Entra ID tenant.
   // Runs alongside email/password login (hybrid), never instead of it. All
-  // config (IdP URL, issuer, signing cert) comes from env — nothing hardcoded.
+  // config (signing cert, issuer, callback) comes from env. The Entra tenant is a
+  // non-secret identifier (it appears in every login URL/token), so it is baked in
+  // here and the IdP login URL is derived from it — no SAML_ENTRY_POINT needed.
+  const ENTRA_TENANT_ID = "318030de-752f-42b3-9848-abd6ec3809e3";
+  const SAML_ENTRY_POINT = process.env.SAML_ENTRY_POINT || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/saml2`;
   const SAML_ENABLED = !!(
-    process.env.SAML_ENTRY_POINT &&
     process.env.SAML_ISSUER &&
     process.env.SAML_IDP_CERT &&
     process.env.SAML_CALLBACK_URL
@@ -164,7 +167,7 @@ async function startServer() {
   if (SAML_ENABLED) {
     samlStrategy = new SamlStrategy(
       {
-        entryPoint: process.env.SAML_ENTRY_POINT!,
+        entryPoint: SAML_ENTRY_POINT,
         issuer: process.env.SAML_ISSUER!,
         callbackUrl: process.env.SAML_CALLBACK_URL!,
         idpCert: process.env.SAML_IDP_CERT!,
