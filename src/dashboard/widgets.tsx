@@ -10,6 +10,7 @@ import {
   Table as TableIcon,
   BarChart3,
   TrendingUp,
+  ShieldCheck,
 } from 'lucide-react';
 import { CreditCard } from 'lucide-react';
 import { CURRENCY_SYMBOLS } from '../types';
@@ -346,14 +347,36 @@ const SummaryTableWidget = ({ companies, groupBy, title }: { companies: Company[
 };
 
 const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
-  const { rows, grandTotal } = aggregateVerified(companies);
-  if (!rows.length) return <EmptyState label="No verified balances" />;
+  // Optional per-company filter tabs (All + each company) for easier switching.
+  const [tab, setTab] = useState<string>('all');
+  const scoped = tab === 'all' ? companies : companies.filter(c => c.id === tab);
+  const { rows, grandTotal } = aggregateVerified(scoped);
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
         <WalletIcon size={16} className="text-indigo-500" />
         <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
       </div>
+      {companies.length > 1 && (
+        <div className="flex items-center gap-1 px-3 pt-2 border-b border-slate-200 overflow-x-auto shrink-0">
+          <button
+            onClick={() => setTab('all')}
+            className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === 'all' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          >
+            All
+          </button>
+          {companies.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setTab(c.id)}
+              className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {!rows.length ? <EmptyState label="No verified balances" /> : (
       <div className="flex-1 overflow-auto">
         <table className="w-full text-left border-collapse text-xs min-w-[640px]">
           <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0">
@@ -386,6 +409,7 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
           </tfoot>
         </table>
       </div>
+      )}
     </div>
   );
 };
@@ -397,14 +421,18 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
   if (!companies.length) return <EmptyState label="Assign a company" />;
   const idx = Math.min(activeIdx, companies.length - 1);
   const company = companies[idx];
-  const rows: { bank: string; account: string; balance: number; currency: string; usd: number | null }[] = [];
+  // Group by bank: the first wallet of a bank carries the bank name + verified + sync,
+  // subsequent wallets show "↳ Continued" — matching the Companies page detail.
+  const rows: { bankName: string; sync?: string; account: string; balance: number; currency: string; usd: number | null; first: boolean }[] = [];
   (company.banks || []).forEach((bank: any) => {
     if (!bankIsVerified(bank)) return;
     const accounts = (bank.bank_accounts || bank.accounts || []) as any[];
+    let first = true;
     accounts.forEach(acc => walletsOf(acc).forEach(w => {
       const usdVal = w.value_usd ?? w.usd_value ?? w.valueUsd ?? w.usdValue;
       const usd = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0) ? Number(usdVal) : null;
-      rows.push({ bank: bank.name, account: acc.account_number || acc.accountNumber || '', balance: Number(w.balance) || 0, currency: w.currency, usd });
+      rows.push({ bankName: bank.name, sync: bank.last_modified_date, account: acc.account_number || acc.accountNumber || '', balance: Number(w.balance) || 0, currency: w.currency, usd, first });
+      first = false;
     }));
   });
   return (
@@ -432,8 +460,8 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
             <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0">
               <tr>
                 <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-                <th className="px-5 py-3 border-b border-slate-100 text-right">Account</th>
-                <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
+                <th className="px-5 py-3 border-b border-slate-100 text-right">Wallets</th>
+                <th className="px-5 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
                 <th className="px-5 py-3 border-b border-slate-100 text-right">Currency</th>
                 <th className="px-5 py-3 border-b border-slate-100 text-right">USD</th>
               </tr>
@@ -441,7 +469,19 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                  <td className="px-5 py-3 font-medium text-slate-700">{r.bank}</td>
+                  <td className="px-5 py-3">
+                    {r.first ? (
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800">{r.bankName}</span>
+                          <ShieldCheck size={12} className="text-emerald-500 shrink-0" />
+                        </div>
+                        {r.sync && <span className="text-[9px] text-indigo-500 font-bold uppercase mt-0.5 tracking-tight">Sync: {r.sync}</span>}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-right text-slate-500 text-xs font-mono">{r.account}</td>
                   <td className={`px-5 py-3 text-right font-mono ${r.balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[r.currency] || ''}{fmtN(r.balance)}</td>
                   <td className="px-5 py-3 text-right"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
