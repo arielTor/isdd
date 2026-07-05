@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import {
   Plus, X, Settings2, Check, Pencil, LayoutDashboard, GripVertical, Loader2,
+  ChevronDown, Star, Trash2,
 } from 'lucide-react';
 import type { Company, DashboardWidget, DashboardLayout, PortfolioPoint } from '../types';
 import { WidgetView, WIDGET_REGISTRY, widgetMeta } from './widgets';
@@ -36,11 +37,11 @@ function newId() {
   return `w_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`;
 }
 
+// The default dashboard mirrors the Companies "View All" overview: a full-width
+// asset breakdown (donut + crypto/fiat totals) on top, then the full portfolio table.
 const DEFAULT_LAYOUT = (): DashboardLayout => [
-  { i: newId(), type: 'asset-breakdown', companyIds: [], x: 0, y: 0, w: 8, h: 4 },
-  { i: newId(), type: 'summary-by-company', companyIds: [], x: 8, y: 0, w: 4, h: 2 },
-  { i: newId(), type: 'summary-by-currency', companyIds: [], x: 8, y: 2, w: 4, h: 2 },
-  { i: newId(), type: 'portfolio-table', companyIds: [], x: 0, y: 4, w: 12, h: 4 },
+  { i: newId(), type: 'asset-breakdown', companyIds: [], x: 0, y: 0, w: 12, h: 4 },
+  { i: newId(), type: 'portfolio-table', companyIds: [], x: 0, y: 4, w: 12, h: 5 },
 ];
 
 // ── Company sourcing popover ────────────────────────────────────────────────
@@ -121,6 +122,115 @@ function AddWidgetMenu({ onAdd, onClose }: { onAdd: (type: DashboardWidget['type
   );
 }
 
+// ── Dashboard switcher ────────────────────────────────────────────────────
+
+type Dash = { id: string; name: string; isDefault: boolean; layout: DashboardLayout };
+
+function DashboardSwitcher({
+  dashboards, activeId, onSwitch, onCreate, onRename, onMakeMain, onDelete,
+}: {
+  dashboards: Dash[];
+  activeId: string | null;
+  onSwitch: (id: string) => void;
+  onCreate: (name: string) => void;
+  onRename: (id: string, name: string) => void;
+  onMakeMain: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+
+  const active = dashboards.find(d => d.id === activeId) || dashboards[0];
+
+  const submitCreate = () => { if (newName.trim()) { onCreate(newName); setNewName(''); setCreating(false); setOpen(false); } };
+  const submitRename = (id: string) => { if (renameVal.trim()) { onRename(id, renameVal); } setRenamingId(null); };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-bold text-slate-800 hover:bg-slate-50 max-w-[220px]"
+      >
+        <LayoutDashboard size={15} className="text-indigo-500 shrink-0" />
+        <span className="truncate">{active?.name || 'Dashboard'}</span>
+        {active?.isDefault && <Star size={12} className="text-amber-400 fill-amber-400 shrink-0" />}
+        <ChevronDown size={14} className="text-slate-400 shrink-0" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => { setOpen(false); setCreating(false); setRenamingId(null); }} />
+          <div className="absolute left-0 top-12 z-40 w-72 bg-white rounded-xl border border-slate-200 shadow-xl p-2">
+            <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your dashboards</div>
+            <div className="max-h-72 overflow-y-auto">
+              {dashboards.map(d => (
+                <div key={d.id} className={`flex items-center gap-1 rounded-lg px-1 ${d.id === activeId ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                  {renamingId === d.id ? (
+                    <input
+                      autoFocus
+                      value={renameVal}
+                      onChange={e => setRenameVal(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') submitRename(d.id); if (e.key === 'Escape') setRenamingId(null); }}
+                      onBlur={() => submitRename(d.id)}
+                      className="flex-1 min-w-0 px-2 py-1.5 my-0.5 text-sm border border-indigo-300 rounded-md outline-none focus:ring-2 focus:ring-indigo-200"
+                    />
+                  ) : (
+                    <button onClick={() => { onSwitch(d.id); setOpen(false); }} className="flex items-center gap-2 flex-1 min-w-0 px-2 py-2 text-left">
+                      <span className={`text-sm truncate ${d.id === activeId ? 'font-bold text-indigo-700' : 'font-medium text-slate-700'}`}>{d.name}</span>
+                      {d.isDefault && <Star size={11} className="text-amber-400 fill-amber-400 shrink-0" />}
+                      {d.id === activeId && <Check size={13} className="text-indigo-500 ml-auto shrink-0" />}
+                    </button>
+                  )}
+                  {renamingId !== d.id && (
+                    <div className="flex items-center shrink-0">
+                      {!d.isDefault && (
+                        <button onClick={() => onMakeMain(d.id)} title="Make main" className="p-1.5 rounded-md text-slate-400 hover:text-amber-500 hover:bg-amber-50">
+                          <Star size={13} />
+                        </button>
+                      )}
+                      <button onClick={() => { setRenamingId(d.id); setRenameVal(d.name); }} title="Rename" className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50">
+                        <Pencil size={13} />
+                      </button>
+                      {dashboards.length > 1 && (
+                        <button onClick={() => onDelete(d.id)} title="Delete" className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-slate-100 mt-1 pt-1">
+              {creating ? (
+                <div className="flex items-center gap-1 px-1">
+                  <input
+                    autoFocus
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') { setCreating(false); setNewName(''); } }}
+                    placeholder="Dashboard name"
+                    className="flex-1 min-w-0 px-2 py-1.5 my-0.5 text-sm border border-indigo-300 rounded-md outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                  <button onClick={submitCreate} className="p-1.5 rounded-md text-indigo-600 hover:bg-indigo-50"><Check size={15} /></button>
+                </div>
+              ) : (
+                <button onClick={() => setCreating(true)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-indigo-600 hover:bg-indigo-50">
+                  <Plus size={15} /> New dashboard
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Canvas ──────────────────────────────────────────────────────────────────
 
 type DragState =
@@ -130,6 +240,8 @@ type DragState =
 
 export default function WidgetCanvas({ companies, history }: { companies: Company[]; history: PortfolioPoint[] }) {
   const [layout, setLayout] = useState<DashboardLayout | null>(null);
+  const [dashboards, setDashboards] = useState<Dash[] | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showAdd, setShowAdd] = useState(false);
@@ -145,18 +257,37 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
 
-  // Load layout once
+  // Load the user's dashboards once. If they have none, create the default one
+  // (mirrors the Companies overview) so there is always a main dashboard.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/dashboard-layout', { credentials: 'include' });
+        const res = await fetch('/api/dashboards', { credentials: 'include' });
         const data = await res.json();
         if (cancelled) return;
-        const incoming = Array.isArray(data.layout) && data.layout.length ? data.layout as DashboardLayout : DEFAULT_LAYOUT();
-        setLayout(compact(incoming));
+        let list: Dash[] = Array.isArray(data.dashboards) ? data.dashboards : [];
+        if (!list.length) {
+          const def = compact(DEFAULT_LAYOUT());
+          const created = await fetch('/api/dashboards', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+            body: JSON.stringify({ name: 'Main', layout: def, makeDefault: true }),
+          }).then(r => r.json()).catch(() => null);
+          if (cancelled) return;
+          list = [{ id: created?.id || 'local', name: 'Main', isDefault: true, layout: def }];
+        }
+        list = list.map(d => ({ ...d, layout: compact(Array.isArray(d.layout) && d.layout.length ? d.layout : DEFAULT_LAYOUT()) }));
+        const active = list.find(d => d.isDefault) || list[0];
+        setDashboards(list);
+        setActiveId(active.id);
+        setLayout(active.layout);
       } catch {
-        if (!cancelled) setLayout(compact(DEFAULT_LAYOUT()));
+        if (!cancelled) {
+          const def = compact(DEFAULT_LAYOUT());
+          setDashboards([{ id: 'local', name: 'Main', isDefault: true, layout: def }]);
+          setActiveId('local');
+          setLayout(def);
+        }
       } finally {
         loadedRef.current = true;
       }
@@ -193,12 +324,13 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   const hPx = (h: number) => h * ROW_PX + (h - 1) * GAP;
 
   const persist = useCallback((next: DashboardLayout) => {
+    if (!activeId) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveState('saving');
     saveTimer.current = setTimeout(async () => {
       try {
-        await fetch('/api/dashboard-layout', {
-          method: 'POST',
+        await fetch(`/api/dashboards/${activeId}`, {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({ layout: next }),
@@ -209,13 +341,78 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
         setSaveState('idle');
       }
     }, 600);
-  }, []);
+  }, [activeId]);
 
   const commit = useCallback((next: DashboardLayout) => {
     const compacted = compact(next);
     setLayout(compacted);
+    setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: compacted } : d) : ds);
     persist(compacted);
-  }, [persist]);
+  }, [persist, activeId]);
+
+  // ── Dashboard management ────────────────────────────────────────────────
+  const switchDashboard = (id: string) => {
+    if (id === activeId) return;
+    // stash the current working layout back into the list before leaving
+    setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: layout || d.layout } : d) : ds);
+    const target = dashboards?.find(d => d.id === id);
+    setActiveId(id);
+    setLayout(target ? target.layout : compact(DEFAULT_LAYOUT()));
+    setEditing(false); setConfigId(null); setShowAdd(false);
+  };
+
+  const createDashboard = async (name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    const def = compact(DEFAULT_LAYOUT());
+    try {
+      const created = await fetch('/api/dashboards', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ name: clean, layout: def }),
+      }).then(r => r.json());
+      const id = created?.id;
+      if (!id) return;
+      setDashboards(ds => [...(ds || []), { id, name: clean, isDefault: false, layout: def }]);
+      // move into the new dashboard
+      setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: layout || d.layout } : d) : ds);
+      setActiveId(id);
+      setLayout(def);
+      setEditing(true); setConfigId(null); setShowAdd(false);
+    } catch { /* ignore */ }
+  };
+
+  const renameDashboard = async (id: string, name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    setDashboards(ds => ds ? ds.map(d => d.id === id ? { ...d, name: clean } : d) : ds);
+    fetch(`/api/dashboards/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name: clean }),
+    }).catch(() => {});
+  };
+
+  const makeMain = async (id: string) => {
+    setDashboards(ds => ds ? ds.map(d => ({ ...d, isDefault: d.id === id })) : ds);
+    fetch(`/api/dashboards/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ makeDefault: true }),
+    }).catch(() => {});
+  };
+
+  const deleteDashboard = async (id: string) => {
+    const list = dashboards || [];
+    if (list.length <= 1) return; // never delete the last dashboard
+    const wasActive = id === activeId;
+    const remaining = list.filter(d => d.id !== id);
+    setDashboards(remaining);
+    if (wasActive) {
+      const nextActive = remaining.find(d => d.isDefault) || remaining[0];
+      setActiveId(nextActive.id);
+      setLayout(nextActive.layout);
+      setEditing(false); setConfigId(null); setShowAdd(false);
+    }
+    fetch(`/api/dashboards/${id}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+  };
 
   // Drag / resize handlers
   useEffect(() => {
@@ -283,7 +480,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
     return `${w.companyIds.length} companies`;
   };
 
-  if (!layout) {
+  if (!layout || !dashboards) {
     return (
       <div className="flex items-center justify-center py-32 text-slate-400">
         <Loader2 className="animate-spin mr-2" size={18} /> Loading your dashboard…
@@ -312,6 +509,15 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
           <h2 className="text-lg font-bold text-slate-900">My Dashboard</h2>
           <p className="text-xs text-slate-400">Your personal view across companies.</p>
         </div>
+        {dashboards.length > 1 && (
+          <select
+            value={activeId || ''}
+            onChange={e => switchDashboard(e.target.value)}
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 bg-white outline-none"
+          >
+            {dashboards.map(d => <option key={d.id} value={d.id}>{d.name}{d.isDefault ? ' ★' : ''}</option>)}
+          </select>
+        )}
         <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden text-xs font-semibold w-max">
           {([['month', 'Month'], ['7d', '7D'], ['30d', '30D'], ['90d', '90D']] as const).map(([id, label]) => (
             <button key={id} onClick={() => setPeriod(id)} className={`px-3 py-2 ${period === id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{label}</button>
@@ -345,9 +551,17 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
     <div className="w-full px-4 md:px-6 py-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4 gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-bold text-slate-900">My Dashboard</h2>
-          <p className="text-xs text-slate-400">{editing ? 'Drag to move, pull the corner to resize, set each widget’s source companies.' : 'Your personal view across companies.'}</p>
+        <div className="min-w-0 flex items-center gap-3">
+          <DashboardSwitcher
+            dashboards={dashboards}
+            activeId={activeId}
+            onSwitch={switchDashboard}
+            onCreate={createDashboard}
+            onRename={renameDashboard}
+            onMakeMain={makeMain}
+            onDelete={deleteDashboard}
+          />
+          <p className="hidden lg:block text-xs text-slate-400 truncate">{editing ? 'Drag to move, pull the corner to resize, set each widget’s source companies.' : 'Your personal view across companies.'}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {saveState !== 'idle' && (

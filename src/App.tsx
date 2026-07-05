@@ -7,6 +7,7 @@ import {
   Search,
   Bell,
   ChevronRight,
+  ChevronDown,
   Globe,
   Wallet as WalletIcon,
   Plus,
@@ -116,6 +117,9 @@ const Sidebar = ({
   brandLogoBg: string,
   companyLogos: Record<string, string>,
 }) => {
+  // Settings group starts collapsed; expand it if the user is already on a settings page.
+  const settingsIds = ['users', 'alerts', 'upload', 'branding', 'diagnostics'];
+  const [settingsOpen, setSettingsOpen] = useState(() => settingsIds.includes(activePage));
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
@@ -246,11 +250,19 @@ const Sidebar = ({
         </div>
       </nav>
 
-      {/* Settings group — pinned above the user footer */}
+      {/* Settings group — collapsed by default, click the header to expand/collapse */}
       {settingsNav.length > 0 && (
         <div className="px-3 py-3 border-t border-sidebar-border/70 space-y-1">
-          {sectionLabel('Settings')}
-          {settingsNav.map(renderNavItem)}
+          <button
+            onClick={() => setSettingsOpen(v => !v)}
+            className="w-full flex items-center gap-2 px-3 mb-1 text-[10px] font-bold text-slate-500 hover:text-slate-300 uppercase tracking-widest transition-colors"
+          >
+            {settingsOpen ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
+            <span>Settings</span>
+            {/* dot marks a hidden active settings page when collapsed */}
+            {!settingsOpen && settingsIds.includes(activePage) && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 ml-1" />}
+          </button>
+          {settingsOpen && settingsNav.map(renderNavItem)}
         </div>
       )}
 

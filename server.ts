@@ -1261,6 +1261,143 @@ async function startServer() {
     }
   });
 
+  // ── Multiple named dashboards per user ────────────────────────────────────
+  // Each user can keep several dashboards and mark one as their main (default).
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS user_dashboards (
+            id          VARCHAR(64)  NOT NULL PRIMARY KEY,
+            user_id     VARCHAR(64)  NOT NULL,
+            name        VARCHAR(120) NOT NULL,
+            layout_json LONGTEXT     NOT NULL,
+            is_default  TINYINT      NOT NULL DEFAULT 0,
+            sort_order  INT          NOT NULL DEFAULT 0,
+            created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_user (user_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        // One-time migration: seed each user's existing single layout as their default dashboard.
+        try {
+          await conn.execute(`
+            INSERT INTO user_dashboards (id, user_id, name, layout_json, is_default, sort_order)
+            SELECT CONCAT('dash_', udl.user_id), udl.user_id, 'My Dashboard', udl.layout_json, 1, 0
+            FROM user_dashboard_layout udl
+            WHERE NOT EXISTS (SELECT 1 FROM user_dashboards ud WHERE ud.user_id = udl.user_id)
+          `);
+        } catch (e: any) { console.warn("[Dashboards] legacy migration skipped:", e.message); }
+        console.log("[Dashboards] user_dashboards table ready");
+      } catch (e: any) { console.warn("[Dashboards] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Dashboards] DB not reachable on startup (user_dashboards skipped):", e.message);
+    }
+  })();
+
+  const newDashId = () => `dash_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+
+  // GET /api/dashboards — all of the current user's dashboards (ordered; default first).
+  app.get("/api/dashboards", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT id, name, layout_json, is_default, sort_order FROM user_dashboards WHERE user_id = ? ORDER BY is_default DESC, sort_order ASC, created_at ASC",
+        [req.session.user.id]
+      )) as any;
+      const dashboards = (rows as any[]).map(r => {
+        let layout = [];
+        try { layout = JSON.parse(r.layout_json); } catch { layout = []; }
+        return { id: r.id, name: r.name, isDefault: !!r.is_default, sortOrder: r.sort_order, layout };
+      });
+      res.json({ dashboards });
+    } catch (err: any) {
+      console.error("Dashboards load error:", err.message);
+      res.status(500).json({ error: "Failed to load dashboards" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/dashboards — create a dashboard. First one (or makeDefault) becomes the main.
+  app.post("/api/dashboards", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { name, layout, makeDefault } = req.body || {};
+    if (typeof name !== "string" || !name.trim() || name.length > 120) {
+      return res.status(400).json({ error: "Name required (max 120 chars)" });
+    }
+    if (!Array.isArray(layout)) return res.status(400).json({ error: "layout must be an array" });
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const uid = req.session.user.id;
+      const [cntRows] = (await conn.execute("SELECT COUNT(*) AS c FROM user_dashboards WHERE user_id = ?", [uid])) as any;
+      const isFirst = Number(cntRows[0]?.c || 0) === 0;
+      const makeMain = isFirst || !!makeDefault;
+      if (makeMain) await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [uid]);
+      const id = newDashId();
+      await conn.execute(
+        "INSERT INTO user_dashboards (id, user_id, name, layout_json, is_default, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+        [id, uid, name.trim(), JSON.stringify(layout), makeMain ? 1 : 0, Date.now() % 2147483647]
+      );
+      res.json({ id, isDefault: makeMain });
+    } catch (err: any) {
+      console.error("Dashboard create error:", err.message);
+      res.status(500).json({ error: "Failed to create dashboard" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // PUT /api/dashboards/:id — rename, update layout, and/or set as main.
+  app.put("/api/dashboards/:id", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { name, layout, makeDefault } = req.body || {};
+    if (name != null && (typeof name !== "string" || !name.trim() || name.length > 120)) {
+      return res.status(400).json({ error: "Name invalid (max 120 chars)" });
+    }
+    if (layout != null && !Array.isArray(layout)) return res.status(400).json({ error: "layout must be an array" });
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const uid = req.session.user.id;
+      const [own] = (await conn.execute("SELECT id FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid])) as any;
+      if (!own.length) return res.status(404).json({ error: "Dashboard not found" });
+      if (typeof name === "string") await conn.execute("UPDATE user_dashboards SET name = ? WHERE id = ? AND user_id = ?", [name.trim(), req.params.id, uid]);
+      if (Array.isArray(layout)) await conn.execute("UPDATE user_dashboards SET layout_json = ? WHERE id = ? AND user_id = ?", [JSON.stringify(layout), req.params.id, uid]);
+      if (makeDefault) {
+        await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [uid]);
+        await conn.execute("UPDATE user_dashboards SET is_default = 1 WHERE id = ? AND user_id = ?", [req.params.id, uid]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Dashboard update error:", err.message);
+      res.status(500).json({ error: "Failed to update dashboard" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // DELETE /api/dashboards/:id — remove; if it was the main, promote the next one.
+  app.delete("/api/dashboards/:id", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const uid = req.session.user.id;
+      const [rows] = (await conn.execute("SELECT is_default FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid])) as any;
+      if (!rows.length) return res.status(404).json({ error: "Dashboard not found" });
+      const wasDefault = !!rows[0].is_default;
+      await conn.execute("DELETE FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid]);
+      if (wasDefault) {
+        const [next] = (await conn.execute("SELECT id FROM user_dashboards WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC LIMIT 1", [uid])) as any;
+        if (next.length) await conn.execute("UPDATE user_dashboards SET is_default = 1 WHERE id = ?", [next[0].id]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Dashboard delete error:", err.message);
+      res.status(500).json({ error: "Failed to delete dashboard" });
+    } finally {
+      await conn.end();
+    }
+  });
+
   // ── Per-user settings table (theme / personal appearance) ────────────────
   // Appearance splits in two: personal preferences (the portal theme) live here,
   // keyed per user; org-wide branding (logo, site name, company logos) stays in
