@@ -207,7 +207,11 @@ async function startServer() {
         issuer: SAML_ISSUER,
         callbackUrl: SAML_CALLBACK_URL,
         idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
+        // Entra signs the ASSERTION by default, not the Response envelope. @node-saml v5
+        // requires a signed response by default, which caused "Invalid document signature".
+        // Require the assertion signature (which Entra provides) and not the response.
         wantAssertionsSigned: true,
+        wantAuthnResponseSigned: false,
         identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
       },
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false),
