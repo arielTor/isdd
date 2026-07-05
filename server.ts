@@ -9,6 +9,7 @@ import session from "express-session";
 import bcrypt from "bcryptjs";
 import passport from "passport";
 import { Strategy as SamlStrategy, Profile as SamlProfile } from "@node-saml/passport-saml";
+import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -183,6 +184,13 @@ async function startServer() {
     }
   };
   const idpCerts = await resolveIdpCerts();
+  // SHA-1 fingerprints of the loaded cert(s), in Entra "Thumbprint" format — lets us
+  // confirm we pulled the same signing cert the portal shows.
+  const idpCertFingerprints = idpCerts.map(c => {
+    const der = c.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+    try { return crypto.createHash("sha1").update(Buffer.from(der, "base64")).digest("hex").toUpperCase(); }
+    catch { return "?"; }
+  });
   const SAML_ENABLED = idpCerts.length > 0;
   let samlStrategy: SamlStrategy | null = null;
   if (SAML_ENABLED) {
@@ -191,7 +199,7 @@ async function startServer() {
         entryPoint: SAML_ENTRY_POINT,
         issuer: SAML_ISSUER,
         callbackUrl: SAML_CALLBACK_URL,
-        idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
+        idpCert: idpCerts,
         wantAssertionsSigned: true,
         identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
       },
@@ -199,7 +207,7 @@ async function startServer() {
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false)
     );
     passport.use("saml", samlStrategy);
-    console.log(`🔐 SAML SSO: ENABLED (issuer ${SAML_ISSUER}, ${idpCerts.length} cert(s))`);
+    console.log(`🔐 SAML SSO: ENABLED (issuer ${SAML_ISSUER}, certs ${idpCertFingerprints.join(", ") || "none"})`);
   }
   app.use(passport.initialize());
 
@@ -769,7 +777,9 @@ async function startServer() {
         passport.authenticate("saml", { session: false }, (err: any, profile: any) => {
           if (err) {
             console.error("SAML auth error:", err?.message || err, "\n", err?.stack || "");
-            return res.status(500).type("text/plain").send(`SSO error: ${err?.message || err}`);
+            return res.status(500).type("text/plain").send(
+              `SSO error: ${err?.message || err}\n\nLoaded IdP signing cert SHA-1: ${idpCertFingerprints.join(", ") || "none"}\nExpected (Entra portal Thumbprint): compare this to your Token signing certificate.`
+            );
           }
           if (!profile) return res.redirect("/?sso=failed");
           req.user = profile;
