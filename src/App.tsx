@@ -2304,6 +2304,8 @@ export default function App() {
 
   const [activePage, setActivePage] = useState<Page>('companies');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Portfolio Summary per-company filter tabs on the Companies page ('all' = every company).
+  const [portfolioTab, setPortfolioTab] = useState<string>('all');
 
   // ── Historical date picker ────────────────────────────────────────────────
   const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -3142,7 +3144,12 @@ export default function App() {
                     const byCompany: Record<string, number> = {};
                     const byCurrency: Record<string, number> = {};
 
-                    filteredCompanies.forEach(company => {
+                    // Per-company filter tabs (All + each company). Fall back to All if the
+                    // active tab isn't in the current (permission/date) filtered set.
+                    const tabActive = (portfolioTab !== 'all' && filteredCompanies.some(c => c.id === portfolioTab)) ? portfolioTab : 'all';
+                    const scoped = tabActive === 'all' ? filteredCompanies : filteredCompanies.filter(c => c.id === tabActive);
+
+                    scoped.forEach(company => {
                       (company.banks || []).forEach(bank => {
                         const isVerified = bank.is_verified !== undefined
                           ? (bank.is_verified === 1 || bank.is_verified === "1" || bank.is_verified === true)
@@ -3205,6 +3212,27 @@ export default function App() {
 
                     return (
                       <div className="space-y-4">
+                        {/* Per-company filter tabs */}
+                        {filteredCompanies.length > 1 && (
+                          <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+                            <button
+                              onClick={() => setPortfolioTab('all')}
+                              className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === 'all' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                            >
+                              All
+                            </button>
+                            {filteredCompanies.map(c => (
+                              <button
+                                key={c.id}
+                                onClick={() => setPortfolioTab(c.id)}
+                                className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                              >
+                                {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Three mini summary tables */}
                         <div className="flex gap-4 flex-wrap">
                           <MiniTable title="By Bank" data={byBank} />
@@ -3217,7 +3245,7 @@ export default function App() {
                           <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
                             <WalletIcon size={16} className="text-indigo-500" />
                             <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
-                            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">{selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'Company') : 'All Companies'}</span>
+                            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">{tabActive === 'all' ? 'All Companies' : (filteredCompanies.find(c => c.id === tabActive)?.name || 'Company')}</span>
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs min-w-[640px]">
