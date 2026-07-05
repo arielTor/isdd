@@ -1261,6 +1261,74 @@ async function startServer() {
     }
   });
 
+  // ── Per-user settings table (theme / personal appearance) ────────────────
+  // Appearance splits in two: personal preferences (the portal theme) live here,
+  // keyed per user; org-wide branding (logo, site name, company logos) stays in
+  // app_settings below and remains Admin-managed.
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS user_settings (
+            user_id    VARCHAR(64) NOT NULL,
+            k          VARCHAR(64) NOT NULL,
+            v          LONGTEXT    NOT NULL,
+            updated_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, k)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[Settings] user_settings table ready");
+      } catch (e: any) { console.warn("[Settings] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Settings] DB not reachable on startup (user_settings skipped):", e.message);
+    }
+  })();
+
+  // GET /api/my-settings — the current user's personal preferences (theme).
+  app.get("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT k, v FROM user_settings WHERE user_id = ?",
+        [req.session.user.id]
+      )) as any;
+      const map: Record<string, string> = {};
+      for (const r of rows as any[]) map[r.k] = r.v;
+      res.json({ theme: ["dark", "gray", "light"].includes(map.theme) ? map.theme : null });
+    } catch (err: any) {
+      console.error("My-settings load error:", err.message);
+      res.json({ theme: null });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/my-settings — upsert the current user's theme (any authenticated user).
+  app.post("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { theme } = req.body || {};
+    if (theme != null && !["dark", "gray", "light"].includes(theme)) {
+      return res.status(400).json({ error: "Theme invalid" });
+    }
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      if (typeof theme === "string") {
+        await conn.execute(
+          `INSERT INTO user_settings (user_id, k, v) VALUES (?, 'theme', ?)
+           ON DUPLICATE KEY UPDATE v = VALUES(v)`,
+          [req.session.user.id, theme]
+        );
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("My-settings save error:", err.message);
+      res.status(500).json({ error: "Failed to save settings" });
+    } finally {
+      await conn.end();
+    }
+  });
+
   // ── App settings (branding) table ─────────────────────────────────────────
   (async () => {
     try {
@@ -1315,16 +1383,13 @@ async function startServer() {
 
   // POST /api/branding — update logo and/or site name (Admin only)
   app.post("/api/branding", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
-    const { siteName, logo, theme } = req.body || {};
+    const { siteName, logo } = req.body || {};
     // Logo is stored as a data URL; cap size to keep the payload sane (~1MB base64).
     if (logo != null && (typeof logo !== "string" || logo.length > 1_400_000)) {
       return res.status(400).json({ error: "Logo too large or invalid (max ~1MB image)" });
     }
     if (siteName != null && (typeof siteName !== "string" || siteName.length > 120)) {
       return res.status(400).json({ error: "Site name invalid" });
-    }
-    if (theme != null && !["dark", "gray", "light"].includes(theme)) {
-      return res.status(400).json({ error: "Theme invalid" });
     }
     const logoBg = req.body?.logoBg;
     if (logoBg != null && !["light", "dark", "none"].includes(logoBg)) {
@@ -1350,7 +1415,7 @@ async function startServer() {
       );
       if (typeof siteName === "string") await upsert("brand_site_name", siteName);
       if (typeof logo === "string") await upsert("brand_logo", logo);
-      if (typeof theme === "string") await upsert("brand_theme", theme);
+      // Theme is a per-user preference now (see /api/my-settings); not stored here.
       if (typeof logoBg === "string") await upsert("brand_logo_bg", logoBg);
       if (companyLogos) {
         for (const [id, v] of Object.entries(companyLogos)) {

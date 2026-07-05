@@ -126,7 +126,7 @@ const Sidebar = ({
     { id: 'users', icon: Users, label: 'User Management', roles: ['Admin'] },
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
-    { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin'] },
+    { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin', 'Manager', 'Viewer'] },
     { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
 
@@ -1809,14 +1809,19 @@ const BrandingPage = ({
   branding,
   companies,
   onSaved,
+  isAdmin,
+  theme,
+  onThemeChange,
 }: {
   branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> };
   companies: Company[];
   onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> }) => void;
+  isAdmin: boolean;
+  theme: 'dark' | 'gray' | 'light';           // the current user's personal theme
+  onThemeChange: (t: 'dark' | 'gray' | 'light') => void; // persists per-user immediately
 }) => {
   const [siteName, setSiteName] = useState(branding.siteName);
   const [logo, setLogo] = useState<string | null>(branding.logo);
-  const [theme, setTheme] = useState<'dark' | 'gray' | 'light'>(branding.theme);
   const [logoBg, setLogoBg] = useState<'light' | 'dark' | 'none'>(branding.logoBg);
   const [companyLogos, setCompanyLogos] = useState<Record<string, string>>(branding.companyLogos || {});
   const [saving, setSaving] = useState(false);
@@ -1854,14 +1859,14 @@ const BrandingPage = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, theme, logoBg, companyLogos }),
+        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, logoBg, companyLogos }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || 'Save failed');
       }
       const cleanLogos = Object.fromEntries(Object.entries(companyLogos).filter(([, v]) => v));
-      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme, logoBg, companyLogos: cleanLogos };
+      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme: branding.theme, logoBg, companyLogos: cleanLogos };
       onSaved(next);
       setSaved(true);
     } catch (e: any) {
@@ -1875,9 +1880,37 @@ const BrandingPage = ({
     <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
       <div>
         <h2 className="text-lg font-bold text-slate-900">Appearance</h2>
-        <p className="text-sm text-slate-400">Set the logo and name shown across the portal. Visible to everyone in your organization.</p>
+        <p className="text-sm text-slate-400">
+          {isAdmin
+            ? 'Your theme is saved to your account. The logo, name and company logos below apply to everyone in your organization.'
+            : 'Choose the portal theme for your account. Your choice is saved to your profile.'}
+        </p>
       </div>
 
+      {/* Theme — a personal preference, saved per user */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Theme</label>
+        <div className="grid grid-cols-3 gap-3 max-w-lg">
+          {([
+            { id: 'light', label: 'White', swatch: '#ffffff' },
+            { id: 'gray', label: 'Gray', swatch: '#3f4654' },
+            { id: 'dark', label: 'Dark', swatch: '#0b1220' },
+          ] as const).map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => onThemeChange(opt.id)}
+              className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-colors text-left ${theme === opt.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'}`}
+            >
+              <span className="w-9 h-9 rounded-lg shrink-0 ring-1 ring-black/10" style={{ background: opt.swatch }} />
+              <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
+              {theme === opt.id && <Check size={15} className="text-indigo-600 ml-auto" />}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-3">Applies to your view only and is remembered on your next sign-in.</p>
+      </div>
+
+      {isAdmin && (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
         {/* Logo */}
         <div>
@@ -1943,28 +1976,6 @@ const BrandingPage = ({
           />
         </div>
 
-        {/* Theme */}
-        <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Sidebar theme</label>
-          <div className="grid grid-cols-3 gap-3 max-w-lg">
-            {([
-              { id: 'light', label: 'White', swatch: '#ffffff' },
-              { id: 'gray', label: 'Gray', swatch: '#3f4654' },
-              { id: 'dark', label: 'Dark', swatch: '#0b1220' },
-            ] as const).map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => { setTheme(opt.id); setSaved(false); }}
-                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-colors text-left ${theme === opt.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'}`}
-              >
-                <span className="w-9 h-9 rounded-lg shrink-0 ring-1 ring-black/10" style={{ background: opt.swatch }} />
-                <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
-                {theme === opt.id && <Check size={15} className="text-indigo-600 ml-auto" />}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Per-company logos */}
         {companies.length > 0 && (
           <div>
@@ -2002,6 +2013,7 @@ const BrandingPage = ({
           {saved && <span className="text-sm text-emerald-600 font-medium">Saved</span>}
         </div>
       </div>
+      )}
     </div>
   );
 };
@@ -2166,20 +2178,41 @@ export default function App() {
       .catch(() => {});
   }, []);
   useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
+
+  // Theme is a per-user preference (Settings → Appearance), stored server-side
+  // per account. null until loaded; falls back to the org default (branding.theme).
+  const [userTheme, setUserTheme] = useState<'dark' | 'gray' | 'light' | null>(null);
+  useEffect(() => {
+    fetch('/api/my-settings', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && ['dark', 'gray', 'light'].includes(d.theme)) setUserTheme(d.theme); })
+      .catch(() => {});
+  }, []);
+  const effectiveTheme: 'dark' | 'gray' | 'light' = userTheme ?? branding.theme;
+  const handleThemeChange = (t: 'dark' | 'gray' | 'light') => {
+    setUserTheme(t); // apply immediately
+    fetch('/api/my-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ theme: t }),
+    }).catch(() => {});
+  };
+
   // Apply the chosen theme: data-theme drives the portal-wide CSS (see index.css),
   // and we tint the sidebar variables so the rail matches the surface palette.
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = branding.theme;
+    root.dataset.theme = effectiveTheme;
     const palettes = {
       dark: { bg: '#0f172a', border: '#1e293b' },
       gray: { bg: '#2b333f', border: '#3c4655' },
       light: { bg: '#1e293b', border: '#334155' }, // original dark sidebar over a bright portal
     };
-    const p = palettes[branding.theme] || palettes.dark;
+    const p = palettes[effectiveTheme] || palettes.dark;
     root.style.setProperty('--color-sidebar-bg', p.bg);
     root.style.setProperty('--color-sidebar-border', p.border);
-  }, [branding.theme]);
+  }, [effectiveTheme]);
 
   const handleShowBankDetails = (bank: Bank) => {
     setSelectedBankDetails(bank);
@@ -3143,14 +3176,21 @@ export default function App() {
               </motion.div>
             )}
 
-            {activePage === 'branding' && authUser?.role === 'Admin' && (
+            {activePage === 'branding' && (
               <motion.div
                 key="branding"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <BrandingPage branding={branding} companies={companies} onSaved={setBranding} />
+                <BrandingPage
+                  branding={branding}
+                  companies={companies}
+                  onSaved={setBranding}
+                  isAdmin={authUser?.role === 'Admin'}
+                  theme={effectiveTheme}
+                  onThemeChange={handleThemeChange}
+                />
               </motion.div>
             )}
           </AnimatePresence>
