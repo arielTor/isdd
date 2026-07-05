@@ -961,20 +961,20 @@ const UserManagementPage = ({
               <table className="w-full text-left min-w-[680px]">
                 <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   <tr>
-                    <th className="px-6 py-3 border-b border-slate-100">User</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">User</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Role</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Status</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Access</th>
-                    <th className="px-6 py-3 border-b border-slate-100 text-right">Actions</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm divide-y divide-slate-50">
                   {filteredUsers.map(user => (
                     <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 justify-center">
                           <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 border border-slate-200 text-xs shrink-0">{initials(user.name)}</div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 text-left">
                             <p className="font-semibold text-slate-900 leading-none truncate">{user.name}</p>
                             <p className="text-[11px] text-slate-400 mt-1 truncate">{user.email}</p>
                           </div>
@@ -1012,8 +1012,8 @@ const UserManagementPage = ({
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-3">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-center gap-3">
                           {/* SSO indicator + toggle (on = Microsoft SSO, off = local password) */}
                           <div
                             className="flex items-center gap-1.5"
@@ -3118,7 +3118,7 @@ export default function App() {
                         {/* Top row: Fiat + Crypto mini cards */}
                         <div className="grid grid-cols-2 gap-3">
                           {/* Fiat mini card */}
-                          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
                             <div className="flex items-center gap-2">
                               <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
                                 <WalletIcon size={14} className="text-indigo-600" />
@@ -3132,7 +3132,7 @@ export default function App() {
                           </div>
 
                           {/* Crypto mini card */}
-                          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
                             <div className="flex items-center gap-2">
                               <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
                                 <Bitcoin size={14} className="text-sky-500" />

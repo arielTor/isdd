@@ -264,7 +264,7 @@ const AssetBreakdownWidget = ({ companies, history }: { companies: Company[]; hi
 
       <div className="flex flex-col gap-3 p-5 flex-1">
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
                 <WalletIcon size={14} className="text-indigo-600" />
@@ -274,7 +274,7 @@ const AssetBreakdownWidget = ({ companies, history }: { companies: Company[]; hi
             <p className={`text-xl font-bold font-mono leading-none ${fiatTotal < 0 ? 'text-red-500' : 'text-slate-900'}`}>{fmtUsd(fiatTotal)}</p>
             <SparklineChart data={spark.fiat} color="#6366f1" gradId="gradFiatW" height={36} fmtVal={fmtUsd} />
           </div>
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
                 <Bitcoin size={14} className="text-sky-500" />
