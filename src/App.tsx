@@ -952,9 +952,9 @@ const UserManagementPage = ({
                 <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   <tr>
                     <th className="px-6 py-3 border-b border-slate-100">User</th>
-                    <th className="px-6 py-3 border-b border-slate-100">Role</th>
-                    <th className="px-6 py-3 border-b border-slate-100">Status</th>
-                    <th className="px-6 py-3 border-b border-slate-100">Access</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Role</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Status</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Access</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -970,9 +970,9 @@ const UserManagementPage = ({
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         {(user.roleIds && user.roleIds.length > 0) ? (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 justify-center">
                             {user.roleIds.map(rid => {
                               const r = roles.find(x => x.id === rid);
                               const nm = r?.name || rid;
@@ -983,18 +983,18 @@ const UserManagementPage = ({
                           <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span>
                         )}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         {user.role === 'Admin' ? (
                           <span className="text-[11px] font-semibold text-indigo-600">All companies</span>
                         ) : user.permissions.length === 0 ? (
                           <span className="text-[11px] text-slate-400">No access</span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 justify-center">
                             {user.permissions.map(p => {
                               const c = companies.find(c => c.id === p.companyId);
                               return <span key={p.companyId} className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-medium text-slate-600">{c?.name || p.companyId}{p.bankIds.length ? ` (${p.bankIds.length})` : ''}</span>;
