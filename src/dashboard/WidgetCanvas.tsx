@@ -38,7 +38,7 @@ function newId() {
 
 const DEFAULT_LAYOUT = (): DashboardLayout => [
   { i: newId(), type: 'asset-breakdown', companyIds: [], x: 0, y: 0, w: 8, h: 4 },
-  { i: newId(), type: 'total-portfolio', companyIds: [], x: 8, y: 0, w: 4, h: 2 },
+  { i: newId(), type: 'summary-by-company', companyIds: [], x: 8, y: 0, w: 4, h: 2 },
   { i: newId(), type: 'summary-by-currency', companyIds: [], x: 8, y: 2, w: 4, h: 2 },
   { i: newId(), type: 'portfolio-table', companyIds: [], x: 0, y: 4, w: 12, h: 4 },
 ];

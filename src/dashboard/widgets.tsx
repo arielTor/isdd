@@ -651,7 +651,12 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
   { type: 'psp-by-currency', label: 'PSP by Currency', description: 'PSP USD by currency (bar chart)', icon: CreditCard, defaultW: 4, defaultH: 4 },
 ];
 
-export const widgetMeta = (type: WidgetType) => WIDGET_REGISTRY.find(w => w.type === type)!;
+// Null-safe: some saved layouts reference retired widget types (e.g. 'total-portfolio',
+// kept renderable in WidgetView but dropped from the registry). Return a generic fallback
+// meta so edit-mode label/icon lookups never throw and blank the dashboard.
+export const widgetMeta = (type: WidgetType): WidgetMeta =>
+  WIDGET_REGISTRY.find(w => w.type === type) ??
+  { type, label: 'Widget', description: '', icon: LayoutDashboard, defaultW: 4, defaultH: 3 };
 
 export function WidgetView({ type, companies, history }: { type: WidgetType; companies: Company[]; history: PortfolioPoint[] }) {
   switch (type) {
