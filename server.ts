@@ -863,7 +863,12 @@ async function startServer() {
             const [u2] = (await conn.execute("SELECT * FROM users WHERE id = ?", [id])) as any;
             user = u2[0];
           } else {
-            if (user.status && user.status !== "Active") return res.redirect("/?sso=not_authorized");
+            if (user.status && String(user.status).toLowerCase() !== "active") {
+              console.warn(`SAML login denied — account ${user.email} status=${user.status}`);
+              return res.status(403).type("text/plain").send(
+                `SSO not authorized: your account "${user.email}" (id ${user.id}) has status "${user.status}", not Active. An admin can re-activate it in User Management.`
+              );
+            }
             await conn.execute(
               "UPDATE users SET name = ?, email = ?, entra_oid = COALESCE(NULLIF(?, ''), entra_oid), upn = ?, department = ?, job_title = ? WHERE id = ?",
               [name, email, oid, upn || null, department || null, jobTitle || null, user.id]
