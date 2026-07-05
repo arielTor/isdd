@@ -763,8 +763,20 @@ async function startServer() {
     app.post(
       "/api/auth/saml/callback",
       express.urlencoded({ extended: false }),
-      passport.authenticate("saml", { session: false, failureRedirect: "/?sso=failed" }),
-      async (req: any, res) => {
+      // Custom callback so a validation *error* (bad signature, audience mismatch, …)
+      // is logged and surfaced instead of bubbling up as a bare 500.
+      (req: any, res: any, next: any) => {
+        passport.authenticate("saml", { session: false }, (err: any, profile: any) => {
+          if (err) {
+            console.error("SAML auth error:", err?.message || err, "\n", err?.stack || "");
+            return res.status(500).type("text/plain").send(`SSO error: ${err?.message || err}`);
+          }
+          if (!profile) return res.redirect("/?sso=failed");
+          req.user = profile;
+          next();
+        })(req, res, next);
+      },
+      async (req: any, res: any) => {
         const profile: any = req.user;
         if (!profile) return res.redirect("/?sso=failed");
 
