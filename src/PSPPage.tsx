@@ -220,7 +220,7 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
         </div>
       </div>
 
-      {/* Company selector — View All + per company (like the Companies page) */}
+      {/* Company selector - View All + per company (like the Companies page) */}
       {companiesWithPsp.length > 1 && (
         <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200">
           <button
@@ -375,7 +375,7 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
         </p>
       </div>
 
-      {/* Per-company account-level detail — every company under View All, one when a tab is picked */}
+      {/* Per-company account-level detail - every company under View All, one when a tab is picked */}
       <div className="space-y-6">
         {scoped.map(company => (
           <PSPSection key={company.id} company={company} />

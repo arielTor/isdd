@@ -86,7 +86,7 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
 // --- Types ---
 type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
 
-// Backdrop colour for a logo badge — admin picks this in Appearance so logos
+// Backdrop colour for a logo badge - admin picks this in Appearance so logos
 // designed for light *or* dark backgrounds both render correctly.
 const logoBgColor = (bg: string) => (bg === 'dark' ? '#0f172a' : bg === 'none' ? 'transparent' : '#ffffff');
 
@@ -138,7 +138,7 @@ const Sidebar = ({
     { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
 
-  // Deterministic company avatar (initials + colour) — gives each company a consistent "logo"
+  // Deterministic company avatar (initials + colour) - gives each company a consistent "logo"
   const AVATAR_COLORS = [
     'bg-indigo-500/20 text-indigo-300',
     'bg-emerald-500/20 text-emerald-300',
@@ -152,7 +152,7 @@ const Sidebar = ({
   const companyInitials = (name: string) =>
     name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
-  // Shared nav row — one structure for every menu item, so groups stay visually consistent
+  // Shared nav row - one structure for every menu item, so groups stay visually consistent
   const renderNavItem = (item: { id: string; icon: typeof LayoutDashboard; label: string }, onAfter?: () => void) => (
     <button
       key={item.id}
@@ -191,7 +191,7 @@ const Sidebar = ({
             <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Treasury</div>
           </div>
         </div>
-        {/* Close button — mobile only */}
+        {/* Close button - mobile only */}
         <button
           onClick={onClose}
           className="md:hidden p-2 -mr-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
@@ -206,7 +206,7 @@ const Sidebar = ({
           {sectionLabel('Menu')}
           {workspaceNav.filter(item => item.id === 'dashboard').map(renderNavItem)}
 
-          {/* Companies — always expanded, placed before Payment Providers.
+          {/* Companies - always expanded, placed before Payment Providers.
              The header itself acts as "View All Companies". */}
           <button
             onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
@@ -254,7 +254,7 @@ const Sidebar = ({
         </div>
       </nav>
 
-      {/* Settings group — collapsed by default, click the header to expand/collapse */}
+      {/* Settings group - collapsed by default, click the header to expand/collapse */}
       {settingsNav.length > 0 && (
         <div className="px-3 py-3 border-t border-sidebar-border/70 space-y-1">
           <button
@@ -303,12 +303,12 @@ const Sidebar = ({
 
   return (
     <>
-      {/* Desktop sidebar — always visible on md+ */}
+      {/* Desktop sidebar - always visible on md+ */}
       <div className="hidden md:flex h-full shrink-0">
         {sidebarContent}
       </div>
 
-      {/* Mobile sidebar — slide-in drawer */}
+      {/* Mobile sidebar - slide-in drawer */}
       {isOpen && (
         <>
           {/* Backdrop */}
@@ -724,7 +724,7 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
           <h3 className="text-sm font-bold text-slate-900">Entra groups → roles</h3>
           <p className="text-xs text-slate-400 mt-1">
             Groups appear here automatically after a user signs in with Microsoft. Map each group to
-            one or more roles — a user's access is the union of the roles from every group they belong to.
+            one or more roles - a user's access is the union of the roles from every group they belong to.
             Being in at least one mapped group is what grants access.
           </p>
         </div>
@@ -774,7 +774,7 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
                   <div className="text-[11px] font-mono text-slate-400 truncate mt-0.5">{g.groupId}</div>
                 </div>
                 <span className="text-[11px] text-slate-400">
-                  {g.roleIds.length ? `${g.roleIds.length} role${g.roleIds.length > 1 ? 's' : ''}` : 'No roles — no access'}
+                  {g.roleIds.length ? `${g.roleIds.length} role${g.roleIds.length > 1 ? 's' : ''}` : 'No roles - no access'}
                   {savingId === g.groupId && ' · saving…'}
                 </span>
               </div>
@@ -1076,7 +1076,7 @@ const UserManagementPage = ({
           <div className="lg:col-span-2">
             {(() => {
               const role = roles.find(r => r.id === selectedRoleId) || roles[0];
-              if (!role) return <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center text-slate-400 text-sm">No roles yet — create one on the left.</div>;
+              if (!role) return <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center text-slate-400 text-sm">No roles yet - create one on the left.</div>;
               const locked = role.name === 'Admin';
               return (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
@@ -1423,7 +1423,7 @@ const Header = ({
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-16 md:h-20">
-      {/* Left — hamburger + company logo + title */}
+      {/* Left - hamburger + company logo + title */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onMenuClick}
@@ -1440,7 +1440,7 @@ const Header = ({
         <h1 className="text-xl md:text-2xl font-bold text-slate-900 leading-none truncate">{title}</h1>
       </div>
 
-      {/* Right — search (notifications + sign out now live in the sidebar user section) */}
+      {/* Right - search (notifications + sign out now live in the sidebar user section) */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
         {/* Search */}
         <div className="relative hidden sm:block">
@@ -1809,7 +1809,7 @@ const CompanyDetailCard = ({
               // Add active rows (Wallets)
               activeRows.forEach((wallet, idx) => {
                 const usdVal = wallet.value_usd ?? (wallet as any).usd_value ?? (wallet as any).valueUsd ?? (wallet as any).usdValue;
-                // Allow negative values (overdrafts) — only hide when truly absent or exactly zero balance with no DB value
+                // Allow negative values (overdrafts) - only hide when truly absent or exactly zero balance with no DB value
                 const converted = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0)
                   ? { amount: Number(usdVal), estimated: !!(wallet as any).value_usd_estimated }
                   : null;
@@ -1865,7 +1865,7 @@ const CompanyDetailCard = ({
                           </span>
                         );
                       })() : (
-                        <span className="text-slate-300 text-xs">—</span>
+                        <span className="text-slate-300 text-xs">-</span>
                       )}
                     </td>
                   </tr>
@@ -1931,7 +1931,7 @@ const CompanyTabs = ({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Tab bar — one tab per company */}
+      {/* Tab bar - one tab per company */}
       <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50/60 px-2">
         {companies.map(c => {
           const on = c.id === active.id;
@@ -2048,7 +2048,7 @@ const BrandingPage = ({
         </p>
       </div>
 
-      {/* Theme — a personal preference, saved per user */}
+      {/* Theme - a personal preference, saved per user */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Theme</label>
         <div className="grid grid-cols-3 gap-3 max-w-lg">
@@ -2107,7 +2107,7 @@ const BrandingPage = ({
             />
           </div>
 
-          {/* Logo backdrop — pick what suits the logo (light-on-transparent vs dark-on-transparent) */}
+          {/* Logo backdrop - pick what suits the logo (light-on-transparent vs dark-on-transparent) */}
           <div className="mt-4">
             <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Logo background</span>
             <div className="flex items-center gap-2">
@@ -2370,7 +2370,7 @@ export default function App() {
       });
   });
 
-  // User Management State — loaded from DB
+  // User Management State - loaded from DB
   const [users, setUsers] = useState<User[]>([]);
 
   const loadUsers = async () => {
@@ -2385,7 +2385,7 @@ export default function App() {
     }
   };
 
-  // Roles (custom roles + per-role company/bank access) — managed in User Management → Roles.
+  // Roles (custom roles + per-role company/bank access) - managed in User Management → Roles.
   const [roles, setRoles] = useState<RoleDef[]>([]);
   const loadRoles = async () => {
     try {
@@ -2423,7 +2423,7 @@ export default function App() {
   const [selectedBankDetails, setSelectedBankDetails] = useState<Bank | null>(null);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
 
-  // Org branding (logo + site name + theme) — configured in Settings → Appearance.
+  // Org branding (logo + site name + theme) - configured in Settings → Appearance.
   const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark', logoBg: 'light', companyLogos: {} });
   useEffect(() => {
     fetch('/api/branding', { credentials: 'include' })
@@ -2473,7 +2473,7 @@ export default function App() {
     setIsBankDetailsModalOpen(true);
   };
 
-  // Export the current Companies view to Excel — one worksheet per on-screen table.
+  // Export the current Companies view to Excel - one worksheet per on-screen table.
   const handleExportCompaniesCsv = () => {
     const flat: (string | number)[][] = [];
     const detail: (string | number)[][] = [];
@@ -2524,7 +2524,7 @@ export default function App() {
     ]);
   };
 
-  // Users are now stored in DB — no localStorage sync needed
+  // Users are now stored in DB - no localStorage sync needed
 
   // Load alerts from DB on mount
   useEffect(() => {
@@ -2601,7 +2601,7 @@ export default function App() {
     setIsUserModalOpen(false);
   };
 
-  // Direct update (used by the inline permissions matrix) — PUT without touching the modal.
+  // Direct update (used by the inline permissions matrix) - PUT without touching the modal.
   const handleUpdateUser = async (user: User): Promise<void> => {
     const res = await fetch(`/api/users/${user.id}`, {
       method: 'PUT',
@@ -2816,7 +2816,7 @@ export default function App() {
         setLastSynced(syncTime);
         localStorage.setItem('smarttool_last_sync', syncTime);
       } else {
-        console.warn('Sync complete — no data returned (DB may be empty or unreachable).');
+        console.warn('Sync complete - no data returned (DB may be empty or unreachable).');
 
         // Still update the in-memory view with whatever we got
         const fallbackRes = await fetch('/api/liquidity');
@@ -2859,7 +2859,7 @@ export default function App() {
 
   const hasAnyWallets = (c: Company) => (c.banks || []).some(b => (b.accounts || []).some(acc => (acc.wallets || []).length > 0));
 
-  // Mobile sidebar open/close state — must be declared before any early returns
+  // Mobile sidebar open/close state - must be declared before any early returns
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ── Auth gate ────────────────────────────────────────────────────────────
@@ -2928,7 +2928,7 @@ export default function App() {
               >
                 <div className="space-y-6">
 
-                  {/* Top toolbar — date · last sync · sync · export */}
+                  {/* Top toolbar - date · last sync · sync · export */}
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-4 flex-wrap">
                       <div className="flex items-center gap-2">
@@ -2975,7 +2975,7 @@ export default function App() {
                       <div className="flex items-center gap-3">
                         <History size={16} className="text-amber-500 shrink-0" />
                         <p className="text-sm font-bold text-amber-800">
-                          Viewing historical snapshot —&nbsp;
+                          Viewing historical snapshot -&nbsp;
                           {new Date(historyDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
                         {historyEmpty && (
@@ -3036,7 +3036,7 @@ export default function App() {
                     {/* ── Main body ── */}
                     <div className="flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
 
-                      {/* ① LEFT — icon + donut + legend */}
+                      {/* ① LEFT - icon + donut + legend */}
                       <div className="flex flex-col items-center lg:items-start gap-4 p-5 lg:p-6 lg:w-[38%]">
                         {/* Title row */}
                         <div className="flex items-center gap-3">
@@ -3046,20 +3046,20 @@ export default function App() {
                           <div>
                             <h3 className="text-base font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
                             <p className="text-[11px] text-slate-400 font-medium">
-                              {isHistoricalMode ? 'Historical — read only' : 'Aggregated across all accounts'}
+                              {isHistoricalMode ? 'Historical - read only' : 'Aggregated across all accounts'}
                             </p>
                           </div>
                         </div>
 
-                        {/* Donut chart — bigger */}
+                        {/* Donut chart - bigger */}
                         <svg width={200} height={200} viewBox="0 0 200 200" className="mx-auto">
                           <g transform={`rotate(-90 ${cx} ${cy})`}>
                             {/* track */}
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={sw} />
-                            {/* crypto arc — indigo */}
+                            {/* crypto arc - indigo */}
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#6366f1" strokeWidth={sw}
                               strokeDasharray={`${cryptoRatio * circ} ${circ}`} />
-                            {/* fiat arc — sky blue */}
+                            {/* fiat arc - sky blue */}
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#93c5fd" strokeWidth={sw}
                               strokeDasharray={`${fiatRatio * circ} ${circ}`}
                               strokeDashoffset={`${-cryptoRatio * circ}`} />
@@ -3093,7 +3093,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* ② RIGHT — mini cards + total card */}
+                      {/* ② RIGHT - mini cards + total card */}
                       <div className="flex flex-col gap-3 p-5 lg:p-6 flex-1">
 
                         {/* Top row: Fiat + Crypto mini cards */}
@@ -3162,7 +3162,7 @@ export default function App() {
                     // ── build flat rows (all companies; the mini tables always aggregate all) ──
                     type FlatRow = { companyId: string; company: string; bank: string; currency: string; balance: number; fxRate: number; usdValue: number; };
                     const rows: FlatRow[] = [];
-                    // accumulators for mini tables — always across every company, unaffected by the table tabs
+                    // accumulators for mini tables - always across every company, unaffected by the table tabs
                     const byBank: Record<string, number> = {};
                     const byCompany: Record<string, number> = {};
                     const byCurrency: Record<string, number> = {};
@@ -3291,7 +3291,7 @@ export default function App() {
                                       {CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}
                                     </td>
                                     <td className="px-5 py-3 text-right font-mono text-slate-500">
-                                      {row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '—'}
+                                      {row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '-'}
                                     </td>
                                     <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(row.usdValue)}`}>
                                       {fmtUsd(row.usdValue)}

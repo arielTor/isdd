@@ -33,7 +33,7 @@
 /* ── Portal themes (Appearance → theme) ──────────────────────────────────────
    Applied via html[data-theme]. The app is built with light utility classes
    (bg-white, bg-slate-50, text-slate-*, …); these scoped rules retint the
-   common surfaces so the whole portal — not just the sidebar — follows the
+   common surfaces so the whole portal - not just the sidebar - follows the
    chosen theme. "gray" is a mid-tone between the default light and full dark. */
 html[data-theme="dark"] {
   color-scheme: dark;
@@ -75,7 +75,7 @@ html[data-theme="dark"] [class*="bg-slate-200/"], html[data-theme="gray"] [class
 /* Mid-tone borders used on toggles/checkboxes */
 html[data-theme="dark"] .border-slate-300, html[data-theme="gray"] .border-slate-300 { border-color: var(--p-border) !important; }
 
-/* Hover states — hover:bg-* are separate classes, so retint them too
+/* Hover states - hover:bg-* are separate classes, so retint them too
    (e.g. the Add-widget menu rows, edit buttons) instead of flashing light. */
 html[data-theme="dark"] [class*="hover:bg-slate-50"]:hover, html[data-theme="gray"] [class*="hover:bg-slate-50"]:hover,
 html[data-theme="dark"] [class*="hover:bg-slate-100"]:hover, html[data-theme="gray"] [class*="hover:bg-slate-100"]:hover,

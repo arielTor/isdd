@@ -36,7 +36,7 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
       setDone(true);
       setTimeout(onDone, 2000);
     } catch {
-      setError('Network error — is the server running?');
+      setError('Network error - is the server running?');
     } finally {
       setLoading(false);
     }
@@ -194,7 +194,7 @@ function LoginForm({ onLogin, samlEnabled, branding }: { onLogin: (user: any) =>
       onLogin(data.user);
     } catch (err: any) {
       console.error('Login network error:', err);
-      setError(`Network error — is the server running? ${err?.message || ''}`.trim());
+      setError(`Network error - is the server running? ${err?.message || ''}`.trim());
     } finally {
       setLoading(false);
     }

@@ -586,7 +586,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
             onDelete={deleteDashboard}
           />
           <p className="hidden lg:block text-xs text-slate-400 truncate">
-            {activeIsBuiltin ? 'Default overview across all companies — read only. Create your own dashboard to customize.' : editing ? 'Drag to move, pull the corner to resize, set each widget’s source companies.' : 'Your personal view across companies.'}
+            {activeIsBuiltin ? 'Default overview across all companies - read only. Create your own dashboard to customize.' : editing ? 'Drag to move, pull the corner to resize, set each widget’s source companies.' : 'Your personal view across companies.'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -595,7 +595,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
               {saveState === 'saving' ? <><Loader2 size={12} className="animate-spin" /> Saving</> : <><Check size={12} className="text-emerald-500" /> Saved</>}
             </span>
           )}
-          {/* Trend window — defaults to current month */}
+          {/* Trend window - defaults to current month */}
           <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden text-xs font-semibold">
             {([['month', 'This month'], ['7d', '7D'], ['30d', '30D'], ['90d', '90D']] as const).map(([id, label]) => (
               <button key={id} onClick={() => setPeriod(id)} className={`px-2.5 py-2 transition-colors ${period === id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{label}</button>

@@ -35,7 +35,7 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-  // ── CORS — applied only to /api/* routes ─────────────────────────────────
+  // ── CORS - applied only to /api/* routes ─────────────────────────────────
   // Static files and the SPA shell are served same-origin and don't need CORS.
   // Cloudflare adds Origin to every proxied request, so we keep CORS off the
   // static file routes to avoid blocking page loads when APP_URL is unset.
@@ -64,7 +64,7 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-  // ── Custom MySQL session store (pure mysql2 — ESM compatible) ─────────────
+  // ── Custom MySQL session store (pure mysql2 - ESM compatible) ─────────────
   // Stores sessions in the `sessions` DB table so they survive restarts.
   // SAML-ready: only the login mechanism changes when switching to SAML;
   // session.user shape and all downstream middleware stay identical.
@@ -151,7 +151,7 @@ async function startServer() {
     })
   );
 
-  // ── SAML SSO (optional — active only when the SAML_* env vars are set) ────
+  // ── SAML SSO (optional - active only when the SAML_* env vars are set) ────
   // Lets a customer's employees sign in via their Microsoft Entra ID tenant.
   // Runs alongside email/password login (hybrid), never instead of it. All
   // The tenant, our SP entity id (issuer), the reply URL and the IdP login URL are all
@@ -265,16 +265,16 @@ async function startServer() {
   let latestData: any[] = [];
   let lastUpdateTime = Date.now();
 
-  // Delete stale JSON cache on startup — always fetch fresh from DB so
+  // Delete stale JSON cache on startup - always fetch fresh from DB so
   // last_modified_date and balances are never served from a stale file.
   if (fs.existsSync(DATA_FILE)) {
     try { fs.unlinkSync(DATA_FILE); } catch (_) {}
-    console.log("Cleared stale data cache — will fetch fresh from DB.");
+    console.log("Cleared stale data cache - will fetch fresh from DB.");
   }
 
   // ── Live exchange-rate engine ─────────────────────────────────────────────
   // Rates are fetched at most once every 5 minutes and cached in memory.
-  // value_usd from integrations is always authoritative — rates only fill in
+  // value_usd from integrations is always authoritative - rates only fill in
   // wallets where value_usd is NULL / 0 in the database.
 
   // Stablecoins we treat as exactly 1 USD (no API call needed)
@@ -419,7 +419,7 @@ async function startServer() {
     ORDER BY c.id, b.id, ba.id, w.id
   `;
 
-  // ── PSP query — providers / eWallets / live wallet accounts ───────────────
+  // ── PSP query - providers / eWallets / live wallet accounts ───────────────
   const PSP_SQL_QUERY = `
     SELECT
       pe.company_id            AS company_id,
@@ -445,7 +445,7 @@ async function startServer() {
     ORDER BY pe.company_id, pp.id, pe.id, pwa.id
   `;
 
-  // ── PSP query — settlements (next payments + history) ─────────────────────
+  // ── PSP query - settlements (next payments + history) ─────────────────────
   const PSP_SETTLEMENTS_SQL_QUERY = `
     SELECT
       pe.company_id        AS company_id,
@@ -475,7 +475,7 @@ async function startServer() {
       throw new Error(`DB connection failed: ${err.message}`);
     }
     try {
-      // Fetch live rates before building the dataset — wallets without a
+      // Fetch live rates before building the dataset - wallets without a
       // DB-supplied value_usd will get an estimated value from these rates.
       const rates = await getUsdRates();
 
@@ -635,7 +635,7 @@ async function startServer() {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // AUTH ROUTES  (no requireAuth — these are the login endpoints)
+  // AUTH ROUTES  (no requireAuth - these are the login endpoints)
   // ════════════════════════════════════════════════════════════════════════
 
   // Check whether any user has a password set yet (first-time setup)
@@ -648,7 +648,7 @@ async function startServer() {
       )) as [any[], any];
       res.json({ needsSetup: rows[0].cnt === 0 });
     } catch {
-      // DB unreachable — surface setup page so admin can diagnose
+      // DB unreachable - surface setup page so admin can diagnose
       res.json({ needsSetup: true });
     } finally {
       conn?.end();
@@ -687,7 +687,7 @@ async function startServer() {
       res.json({ ok: true, name: users[0].name });
     } catch (err: any) {
       console.error("Setup error:", err.message);
-      res.status(500).json({ error: "Setup failed — check server logs" });
+      res.status(500).json({ error: "Setup failed - check server logs" });
     } finally {
       conn?.end();
     }
@@ -744,13 +744,13 @@ async function startServer() {
       req.session.save((saveErr: any) => {
         if (saveErr) {
           console.error("Session save error:", saveErr.message);
-          return res.status(500).json({ error: "Session error — please try again" });
+          return res.status(500).json({ error: "Session error - please try again" });
         }
         res.json({ user: req.session.user });
       });
     } catch (err: any) {
       console.error("Login error:", err.message);
-      res.status(500).json({ error: "Login failed — check server logs" });
+      res.status(500).json({ error: "Login failed - check server logs" });
     } finally {
       conn?.end();
     }
@@ -774,10 +774,10 @@ async function startServer() {
   });
 
   if (SAML_ENABLED && samlStrategy) {
-    // Initiate SSO — redirect the browser to the customer's Entra login.
+    // Initiate SSO - redirect the browser to the customer's Entra login.
     app.get("/api/auth/saml/login", passport.authenticate("saml", { session: false }));
 
-    // SP metadata — hand this to the Entra admin when registering the app.
+    // SP metadata - hand this to the Entra admin when registering the app.
     app.get("/api/auth/saml/metadata", (_req, res) => {
       res.type("application/xml");
       res.send(samlStrategy!.generateServiceProviderMetadata(null, null));
@@ -829,7 +829,7 @@ async function startServer() {
             );
           }
 
-          // 2) Roles mapped from this user's groups — this is the access gate.
+          // 2) Roles mapped from this user's groups - this is the access gate.
           let mappedRoleIds: string[] = [];
           if (groups.length) {
             const ph = groups.map(() => "?").join(",");
@@ -840,13 +840,13 @@ async function startServer() {
             mappedRoleIds = (mr as any[]).map(r => r.role_id);
           }
           if (!mappedRoleIds.length) {
-            console.warn(`SAML login denied — ${upn || email} groups=[${groups.join(", ")}]`);
+            console.warn(`SAML login denied - ${upn || email} groups=[${groups.join(", ")}]`);
             // Temporary (staging): show what the token actually carried so group mapping
             // can be verified. Remove once SSO is confirmed working.
             const claimKeys = Object.keys(profile || {}).filter(k => k !== "getAssertionXml" && typeof (profile as any)[k] !== "function");
             return res.status(403).type("text/plain").send(
               `SSO not authorized: none of your groups are mapped to a role.\n\n` +
-              `Groups in the token (${groups.length}): ${groups.join(", ") || "(none — the groups claim was not sent)"}\n` +
+              `Groups in the token (${groups.length}): ${groups.join(", ") || "(none - the groups claim was not sent)"}\n` +
               `UPN: ${upn}\nEmail: ${email}\nName: ${name}\n\n` +
               `All claim keys present: ${claimKeys.join(", ")}\n\n` +
               `Map one of the group IDs above to a role in User Management → Entra Groups, then sign in again.`
@@ -869,7 +869,7 @@ async function startServer() {
             user = u2[0];
           } else {
             if (user.status && String(user.status).toLowerCase() !== "active") {
-              console.warn(`SAML login denied — account ${user.email} status=${user.status}`);
+              console.warn(`SAML login denied - account ${user.email} status=${user.status}`);
               return res.status(403).type("text/plain").send(
                 `SSO not authorized: your account "${user.email}" (id ${user.id}) has status "${user.status}", not Active. An admin can re-activate it in User Management.`
               );
@@ -1119,7 +1119,7 @@ async function startServer() {
     }
   });
 
-  // Toggle a user between SSO and local (password) — admin only. Reverting an SSO
+  // Toggle a user between SSO and local (password) - admin only. Reverting an SSO
   // account to 'password' re-enables password login and makes it editable again.
   app.put("/api/users/:id/auth-source", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const { authSource } = req.body || {};
@@ -1139,10 +1139,10 @@ async function startServer() {
   });
 
   // ════════════════════════════════════════════════════════════════════════
-  // DATA ROUTES  (require auth — data filtered by permissions)
+  // DATA ROUTES  (require auth - data filtered by permissions)
   // ════════════════════════════════════════════════════════════════════════
 
-  // Dashboard data — filtered per logged-in user's permissions
+  // Dashboard data - filtered per logged-in user's permissions
   app.get("/api/liquidity", corsMiddleware, requireAuth, (req: any, res) => {
     const user = req.session.user;
     // Admins + users with no explicit permissions see everything
@@ -1406,7 +1406,7 @@ async function startServer() {
       res.json({ status: "Synced", count: latestData.length, timestamp: new Date().toISOString() });
     } catch (err: any) {
       console.error("DB sync error:", err.message);
-      res.status(500).json({ error: "Sync failed — check server logs" });
+      res.status(500).json({ error: "Sync failed - check server logs" });
     }
   });
 
@@ -1431,8 +1431,8 @@ async function startServer() {
     try {
       conn = await mysql.createConnection(dbConfig());
     } catch (err: any) {
-      console.error("Balance update — DB connection failed:", err.message);
-      return res.status(500).json({ error: "Database unavailable — check server logs" });
+      console.error("Balance update - DB connection failed:", err.message);
+      return res.status(500).json({ error: "Database unavailable - check server logs" });
     }
 
     let updated = 0;
@@ -1473,7 +1473,7 @@ async function startServer() {
       res.json({ updated, notFound });
     } catch (err: any) {
       console.error("Balance update error:", err.message);
-      res.status(500).json({ error: "Update failed — check server logs" });
+      res.status(500).json({ error: "Update failed - check server logs" });
     } finally {
       await conn.end();
     }
@@ -1525,7 +1525,7 @@ async function startServer() {
     }
   })();
 
-  // GET /api/dashboard-layout — the current user's saved widget layout (null if none)
+  // GET /api/dashboard-layout - the current user's saved widget layout (null if none)
   app.get("/api/dashboard-layout", corsMiddleware, requireAuth, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1545,7 +1545,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/dashboard-layout — upsert the current user's widget layout
+  // POST /api/dashboard-layout - upsert the current user's widget layout
   app.post("/api/dashboard-layout", corsMiddleware, requireAuth, async (req: any, res) => {
     const layout = req.body?.layout;
     if (!Array.isArray(layout)) {
@@ -1605,7 +1605,7 @@ async function startServer() {
 
   const newDashId = () => `dash_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
-  // GET /api/dashboards — all of the current user's dashboards (ordered; default first).
+  // GET /api/dashboards - all of the current user's dashboards (ordered; default first).
   app.get("/api/dashboards", corsMiddleware, requireAuth, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1627,7 +1627,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/dashboards — create a dashboard. First one (or makeDefault) becomes the main.
+  // POST /api/dashboards - create a dashboard. First one (or makeDefault) becomes the main.
   app.post("/api/dashboards", corsMiddleware, requireAuth, async (req: any, res) => {
     const { name, layout, makeDefault } = req.body || {};
     if (typeof name !== "string" || !name.trim() || name.length > 120) {
@@ -1637,7 +1637,7 @@ async function startServer() {
     const conn = await mysql.createConnection(dbConfig());
     try {
       const uid = req.session.user.id;
-      // A new dashboard only becomes the main view when explicitly requested — the
+      // A new dashboard only becomes the main view when explicitly requested - the
       // built-in "All Companies" dashboard remains the default otherwise.
       const makeMain = !!makeDefault;
       if (makeMain) await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [uid]);
@@ -1655,7 +1655,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/dashboards/clear-default — unset any custom main so the built-in
+  // POST /api/dashboards/clear-default - unset any custom main so the built-in
   // "All Companies" dashboard becomes the landing view again.
   app.post("/api/dashboards/clear-default", corsMiddleware, requireAuth, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
@@ -1670,7 +1670,7 @@ async function startServer() {
     }
   });
 
-  // PUT /api/dashboards/:id — rename, update layout, and/or set as main.
+  // PUT /api/dashboards/:id - rename, update layout, and/or set as main.
   app.put("/api/dashboards/:id", corsMiddleware, requireAuth, async (req: any, res) => {
     const { name, layout, makeDefault } = req.body || {};
     if (name != null && (typeof name !== "string" || !name.trim() || name.length > 120)) {
@@ -1697,7 +1697,7 @@ async function startServer() {
     }
   });
 
-  // DELETE /api/dashboards/:id — remove; if it was the main, promote the next one.
+  // DELETE /api/dashboards/:id - remove; if it was the main, promote the next one.
   app.delete("/api/dashboards/:id", corsMiddleware, requireAuth, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1744,7 +1744,7 @@ async function startServer() {
     }
   })();
 
-  // GET /api/my-settings — the current user's personal preferences (theme + notifications).
+  // GET /api/my-settings - the current user's personal preferences (theme + notifications).
   app.get("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1767,7 +1767,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/my-settings — upsert the current user's preferences (any authenticated user).
+  // POST /api/my-settings - upsert the current user's preferences (any authenticated user).
   app.post("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
     const { theme, notifyPush, notifyEmail } = req.body || {};
     if (theme != null && !["dark", "gray", "light"].includes(theme)) {
@@ -1813,8 +1813,8 @@ async function startServer() {
     }
   })();
 
-  // GET /api/branding — org logo + site name (auth required, any role)
-  // GET /api/branding/public — logo + site name only, no auth (used by the login screen).
+  // GET /api/branding - org logo + site name (auth required, any role)
+  // GET /api/branding/public - logo + site name only, no auth (used by the login screen).
   // Deliberately excludes company logos and any other data.
   app.get("/api/branding/public", corsMiddleware, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
@@ -1867,7 +1867,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/branding — update logo and/or site name (Admin only)
+  // POST /api/branding - update logo and/or site name (Admin only)
   app.post("/api/branding", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const { siteName, logo } = req.body || {};
     // Logo is stored as a data URL; cap size to keep the payload sane (~1MB base64).
@@ -2013,7 +2013,7 @@ async function startServer() {
     }
   })();
 
-  // GET /api/roles — list roles with parsed company/bank access
+  // GET /api/roles - list roles with parsed company/bank access
   app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -2031,7 +2031,7 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // POST /api/roles — create a custom role (Admin only)
+  // POST /api/roles - create a custom role (Admin only)
   app.post("/api/roles", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const name = (req.body?.name || "").trim();
     if (!name) return res.status(400).json({ error: "Role name is required" });
@@ -2047,7 +2047,7 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // PUT /api/roles/:id — update a role's name and/or company/bank access (Admin only)
+  // PUT /api/roles/:id - update a role's name and/or company/bank access (Admin only)
   app.put("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const { name, permissions, pages } = req.body || {};
     if (permissions != null && !Array.isArray(permissions)) {
@@ -2074,7 +2074,7 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // DELETE /api/roles/:id — remove a custom role (built-in roles are protected)
+  // DELETE /api/roles/:id - remove a custom role (built-in roles are protected)
   app.delete("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -2091,7 +2091,7 @@ async function startServer() {
   });
 
   // ── Entra group → role mapping (Admin only) ───────────────────────────────
-  // GET /api/entra/groups — discovered Entra groups with their label + mapped roles.
+  // GET /api/entra/groups - discovered Entra groups with their label + mapped roles.
   app.get("/api/entra/groups", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -2117,7 +2117,7 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // PUT /api/entra/groups/:groupId — set an admin label and/or the mapped roles.
+  // PUT /api/entra/groups/:groupId - set an admin label and/or the mapped roles.
   // Also used to register a group by Object ID before it has been seen at login.
   app.put("/api/entra/groups/:groupId", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const groupId = String(req.params.groupId || "").trim();
@@ -2146,7 +2146,7 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // GET /api/alerts — list all alerts
+  // GET /api/alerts - list all alerts
   app.get("/api/alerts", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -2160,7 +2160,7 @@ async function startServer() {
     finally { conn.end(); }
   });
 
-  // POST /api/alerts — create alert
+  // POST /api/alerts - create alert
   app.post("/api/alerts", corsMiddleware, requireAuth, async (req, res) => {
     const { id, companyId, bankId, walletId, threshold, email, isEnabled } = req.body;
     const conn = await mysql.createConnection(dbConfig());
@@ -2174,7 +2174,7 @@ async function startServer() {
     finally { conn.end(); }
   });
 
-  // DELETE /api/alerts/:id — delete alert
+  // DELETE /api/alerts/:id - delete alert
   app.delete("/api/alerts/:id", corsMiddleware, requireAuth, async (req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -2184,7 +2184,7 @@ async function startServer() {
     finally { conn.end(); }
   });
 
-  // PUT /api/alerts/:id/toggle — enable/disable
+  // PUT /api/alerts/:id/toggle - enable/disable
   app.put("/api/alerts/:id/toggle", corsMiddleware, requireAuth, async (req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -2241,7 +2241,7 @@ async function startServer() {
 
           try {
             const r = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-            console.log(`[Alert] Fired for wallet ${alert.wallet_id} — balance ${balance} ≤ threshold ${alert.threshold} (HTTP ${r.status}). Alert auto-disabled.`);
+            console.log(`[Alert] Fired for wallet ${alert.wallet_id} - balance ${balance} ≤ threshold ${alert.threshold} (HTTP ${r.status}). Alert auto-disabled.`);
           } catch (e: any) {
             console.error(`[Alert] Webhook failed for ${alert.wallet_id}:`, e.message);
           }
@@ -2257,7 +2257,7 @@ async function startServer() {
   // Run alert check every 5 minutes
   setInterval(() => { checkAlerts().catch(e => console.error("[Alerts] checkAlerts error:", e.message)); }, 5 * 60 * 1000);
 
-  // POST /api/alerts/check — manually trigger a check (called after sync)
+  // POST /api/alerts/check - manually trigger a check (called after sync)
   app.post("/api/alerts/check", corsMiddleware, requireAuth, async (_req, res) => {
     checkAlerts().catch(e => console.error("[Alerts] manual check error:", e.message));
     res.json({ ok: true, message: "Alert check triggered" });
@@ -2315,10 +2315,10 @@ async function startServer() {
 
   // Ensure sessions table exists BEFORE the server accepts any requests
   await sessionStore._ensureTable().catch(e =>
-    console.warn("[Session] Could not create sessions table — falling back to in-memory sessions:", e.message)
+    console.warn("[Session] Could not create sessions table - falling back to in-memory sessions:", e.message)
   );
 
-  // Kick off DB data load (non-blocking — server starts immediately)
+  // Kick off DB data load (non-blocking - server starts immediately)
   queryDatabase().catch((err) => {
     const msg = err instanceof AggregateError
       ? err.errors?.map((e: any) => e.message).join(" | ")

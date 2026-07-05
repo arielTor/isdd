@@ -396,7 +396,7 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
                 <td className="px-5 py-3 text-slate-600">{row.bank}</td>
                 <td className="px-5 py-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span></td>
                 <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>{CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}</td>
-                <td className="px-5 py-3 text-right font-mono text-slate-500">{row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '—'}</td>
+                <td className="px-5 py-3 text-right font-mono text-slate-500">{row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '-'}</td>
                 <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(row.usdValue)}`}>{fmtUsd(row.usdValue)}</td>
               </tr>
             ))}
@@ -422,7 +422,7 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
   const idx = Math.min(activeIdx, companies.length - 1);
   const company = companies[idx];
   // Group by bank: the first wallet of a bank carries the bank name + verified + sync,
-  // subsequent wallets show "↳ Continued" — matching the Companies page detail.
+  // subsequent wallets show "↳ Continued" - matching the Companies page detail.
   const rows: { bankName: string; sync?: string; account: string; balance: number; currency: string; usd: number | null; first: boolean }[] = [];
   (company.banks || []).forEach((bank: any) => {
     if (!bankIsVerified(bank)) return;
@@ -485,7 +485,7 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
                   <td className="px-5 py-3 text-right text-slate-500 text-xs font-mono">{r.account}</td>
                   <td className={`px-5 py-3 text-right font-mono ${r.balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[r.currency] || ''}{fmtN(r.balance)}</td>
                   <td className="px-5 py-3 text-right"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
-                  <td className={`px-5 py-3 text-right font-mono font-bold ${r.usd === null ? 'text-slate-300' : usdCls(r.usd)}`}>{r.usd === null ? '—' : fmtUsd(r.usd)}</td>
+                  <td className={`px-5 py-3 text-right font-mono font-bold ${r.usd === null ? 'text-slate-300' : usdCls(r.usd)}`}>{r.usd === null ? '-' : fmtUsd(r.usd)}</td>
                 </tr>
               ))}
             </tbody>
