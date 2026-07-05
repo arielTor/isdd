@@ -7,6 +7,8 @@ import fs from "fs";
 import mysql from "mysql2/promise";
 import session from "express-session";
 import bcrypt from "bcryptjs";
+import passport from "passport";
+import { Strategy as SamlStrategy, Profile as SamlProfile } from "@node-saml/passport-saml";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +22,10 @@ declare module "express-session" {
       email: string;
       role: string;
       permissions: { company_id: string; bank_id: string | null }[];
+      // Optional profile fields populated from Entra SSO claims (password logins omit them).
+      upn?: string;
+      department?: string;
+      jobTitle?: string;
     };
   }
 }
@@ -143,6 +149,56 @@ async function startServer() {
       },
     })
   );
+
+  // ── SAML SSO (optional — active only when the SAML_* env vars are set) ────
+  // Lets a customer's employees sign in via their Microsoft Entra ID tenant.
+  // Runs alongside email/password login (hybrid), never instead of it. All
+  // config (IdP URL, issuer, signing cert) comes from env — nothing hardcoded.
+  const SAML_ENABLED = !!(
+    process.env.SAML_ENTRY_POINT &&
+    process.env.SAML_ISSUER &&
+    process.env.SAML_IDP_CERT &&
+    process.env.SAML_CALLBACK_URL
+  );
+  let samlStrategy: SamlStrategy | null = null;
+  if (SAML_ENABLED) {
+    samlStrategy = new SamlStrategy(
+      {
+        entryPoint: process.env.SAML_ENTRY_POINT!,
+        issuer: process.env.SAML_ISSUER!,
+        callbackUrl: process.env.SAML_CALLBACK_URL!,
+        idpCert: process.env.SAML_IDP_CERT!,
+        wantAssertionsSigned: true,
+        identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      },
+      (profile: SamlProfile | null, done: any) => done(null, profile ?? false),
+      (profile: SamlProfile | null, done: any) => done(null, profile ?? false)
+    );
+    passport.use("saml", samlStrategy);
+    console.log("🔐 SAML SSO: ENABLED");
+  }
+  app.use(passport.initialize());
+
+  // Read a SAML claim by its env-overridable name, falling back to the common
+  // Entra claim URIs. Returns the first non-empty match, or "".
+  const claim = (profile: any, envName: string, ...uris: string[]): string => {
+    const keys = [process.env[envName], ...uris].filter(Boolean) as string[];
+    for (const k of keys) {
+      const v = profile?.[k];
+      if (v != null && v !== "") return Array.isArray(v) ? String(v[0]) : String(v);
+    }
+    return "";
+  };
+  // Groups claim is multi-valued (array of Object IDs); normalize to string[].
+  const claimList = (profile: any, envName: string, ...uris: string[]): string[] => {
+    const keys = [process.env[envName], ...uris].filter(Boolean) as string[];
+    for (const k of keys) {
+      const v = profile?.[k];
+      if (v == null || v === "") continue;
+      return Array.isArray(v) ? v.map(String) : [String(v)];
+    }
+    return [];
+  };
 
   // Request logger
   app.use((req, _res, next) => {
@@ -663,6 +719,157 @@ async function startServer() {
       return res.status(401).json({ error: "Not authenticated" });
     res.json({ user: req.session.user });
   });
+
+  // Login screen uses this to decide whether to show "Sign in with Microsoft".
+  app.get("/api/auth/sso-status", corsMiddleware, (_req, res) => {
+    res.json({ samlEnabled: SAML_ENABLED });
+  });
+
+  if (SAML_ENABLED && samlStrategy) {
+    // Initiate SSO — redirect the browser to the customer's Entra login.
+    app.get("/api/auth/saml/login", passport.authenticate("saml", { session: false }));
+
+    // SP metadata — hand this to the Entra admin when registering the app.
+    app.get("/api/auth/saml/metadata", (_req, res) => {
+      res.type("application/xml");
+      res.send(samlStrategy!.generateServiceProviderMetadata(null, null));
+    });
+
+    // Entra POSTs the signed assertion here after the employee authenticates.
+    app.post(
+      "/api/auth/saml/callback",
+      express.urlencoded({ extended: false }),
+      passport.authenticate("saml", { session: false, failureRedirect: "/?sso=failed" }),
+      async (req: any, res) => {
+        const profile: any = req.user;
+        if (!profile) return res.redirect("/?sso=failed");
+
+        // Extract claims (env-overridable names, common Entra URIs as fallback).
+        const oid = claim(profile, "SAML_CLAIM_OID", "http://schemas.microsoft.com/identity/claims/objectidentifier");
+        const upn = claim(profile, "SAML_CLAIM_UPN", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn", "upn") || profile.nameID || "";
+        const email = claim(profile, "SAML_CLAIM_EMAIL", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress", "mail", "email") || upn;
+        const name = claim(profile, "SAML_CLAIM_NAME", "http://schemas.microsoft.com/identity/claims/displayname", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name", "displayName") || upn || email;
+        const department = claim(profile, "SAML_CLAIM_DEPARTMENT", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/department", "department");
+        const jobTitle = claim(profile, "SAML_CLAIM_JOBTITLE", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/jobtitle", "jobTitle", "title");
+        const groups = claimList(profile, "SAML_CLAIM_GROUPS", "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups", "groups");
+
+        if (!upn && !email) return res.redirect("/?sso=failed");
+
+        let conn: any;
+        try {
+          conn = await mysql.createConnection(dbConfig());
+
+          // 1) Record every group we saw (auto-discovery for the admin UI).
+          for (const g of groups) {
+            await conn.execute(
+              "INSERT INTO entra_groups (group_id) VALUES (?) ON DUPLICATE KEY UPDATE last_seen = CURRENT_TIMESTAMP",
+              [g]
+            );
+          }
+
+          // 2) Roles mapped from this user's groups — this is the access gate.
+          let mappedRoleIds: string[] = [];
+          if (groups.length) {
+            const ph = groups.map(() => "?").join(",");
+            const [mr] = (await conn.execute(
+              `SELECT DISTINCT role_id FROM entra_group_roles WHERE group_id IN (${ph})`,
+              groups
+            )) as any;
+            mappedRoleIds = (mr as any[]).map(r => r.role_id);
+          }
+          if (!mappedRoleIds.length) {
+            console.warn(`SAML login denied — ${upn || email} is in no mapped group`);
+            return res.redirect("/?sso=not_authorized");
+          }
+
+          // 3) Find or create the user (match by oid → upn → email).
+          const [found] = (await conn.execute(
+            "SELECT * FROM users WHERE (? <> '' AND entra_oid = ?) OR upn = ? OR email = ? LIMIT 1",
+            [oid, oid, upn, email]
+          )) as any;
+          let user = found[0];
+          if (!user) {
+            const id = oid ? `entra_${oid}` : `entra_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+            await conn.execute(
+              "INSERT INTO users (id, name, email, role, status, entra_oid, upn, department, job_title, auth_source) VALUES (?, ?, ?, 'Viewer', 'Active', ?, ?, ?, ?, 'sso')",
+              [id, name, email, oid || null, upn || null, department || null, jobTitle || null]
+            );
+            const [u2] = (await conn.execute("SELECT * FROM users WHERE id = ?", [id])) as any;
+            user = u2[0];
+          } else {
+            if (user.status && user.status !== "Active") return res.redirect("/?sso=not_authorized");
+            await conn.execute(
+              "UPDATE users SET name = ?, email = ?, entra_oid = COALESCE(NULLIF(?, ''), entra_oid), upn = ?, department = ?, job_title = ? WHERE id = ?",
+              [name, email, oid, upn || null, department || null, jobTitle || null, user.id]
+            );
+          }
+
+          // 4) Sync group-derived roles; preserve admin-assigned (manual) ones.
+          await conn.execute("DELETE FROM user_roles WHERE user_id = ? AND source = 'group'", [user.id]);
+          for (const rid of mappedRoleIds) {
+            await conn.execute(
+              "INSERT INTO user_roles (user_id, role_id, source) VALUES (?, ?, 'group') ON DUPLICATE KEY UPDATE source = 'group'",
+              [user.id, rid]
+            );
+          }
+
+          // 5) Effective access = union of all assigned roles (group + manual).
+          const [urows] = (await conn.execute(
+            "SELECT ar.id, ar.permissions_json FROM user_roles ur JOIN app_roles ar ON ar.id = ur.role_id WHERE ur.user_id = ?",
+            [user.id]
+          )) as any;
+          const roleIds = (urows as any[]).map(r => String(r.id));
+          // Legacy single role drives requireAdmin + nav gating: admin > manager > viewer.
+          const sessionRole = roleIds.includes("admin") ? "Admin" : roleIds.includes("manager") ? "Manager" : "Viewer";
+
+          // Company/bank scope = union of the roles' permissions. Admin ⇒ all.
+          // A role with empty permissions means "all companies" (app convention),
+          // so union with any such role ⇒ all ([]).
+          let permissions: { company_id: string; bank_id: string | null }[] = [];
+          if (sessionRole !== "Admin") {
+            let grantsAll = false;
+            const perms: { company_id: string; bank_id: string | null }[] = [];
+            for (const r of urows as any[]) {
+              let parsed: any[] = [];
+              try { parsed = JSON.parse(r.permissions_json || "[]"); } catch { parsed = []; }
+              if (!parsed.length) { grantsAll = true; break; }
+              for (const p of parsed) {
+                const cid = p.companyId ?? p.company_id;
+                const banks: string[] = p.bankIds ?? p.bank_ids ?? [];
+                if (!cid) continue;
+                if (!banks.length) perms.push({ company_id: String(cid), bank_id: null });
+                else for (const b of banks) perms.push({ company_id: String(cid), bank_id: String(b) });
+              }
+            }
+            permissions = grantsAll ? [] : perms;
+          }
+
+          // Keep the legacy role column in sync with the derived role.
+          await conn.execute("UPDATE users SET role = ? WHERE id = ?", [sessionRole, user.id]);
+
+          req.session.user = {
+            id: user.id,
+            name,
+            email,
+            role: sessionRole,
+            permissions,
+            upn: upn || undefined,
+            department: department || undefined,
+            jobTitle: jobTitle || undefined,
+          };
+          req.session.save((err: any) => {
+            if (err) { console.error("SAML session save error:", err.message); return res.redirect("/?sso=error"); }
+            res.redirect("/");
+          });
+        } catch (err: any) {
+          console.error("SAML callback error:", err.message);
+          res.redirect("/?sso=error");
+        } finally {
+          conn?.end();
+        }
+      }
+    );
+  }
 
   // ════════════════════════════════════════════════════════════════════════
   // USER MANAGEMENT ROUTES  (require auth + admin)
@@ -1604,6 +1811,10 @@ async function startServer() {
             PRIMARY KEY (user_id, role_id)
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
+        // Track how a role was assigned so SSO can re-sync group-derived roles
+        // ('group') on each login without wiping admin-assigned ('manual') ones.
+        try { await conn.execute("ALTER TABLE user_roles ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'manual'"); }
+        catch { /* column already exists */ }
         // One-time migration: map each existing user to their current enum role and
         // give the built-in roles sensible default page access (preserves behaviour).
         const [ur] = (await conn.execute("SELECT COUNT(*) AS n FROM user_roles")) as any;
@@ -1617,6 +1828,46 @@ async function startServer() {
       finally { conn.end(); }
     } catch (e: any) {
       console.warn("[Roles] DB not reachable on startup (roles table skipped):", e.message);
+    }
+  })();
+
+  // ── Entra SSO: profile columns + discovered groups + group→role mapping ────
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        // Profile columns on the pre-existing users table (each guarded for in-place upgrade).
+        for (const col of [
+          "ADD COLUMN entra_oid VARCHAR(64) NULL",
+          "ADD COLUMN upn VARCHAR(255) NULL",
+          "ADD COLUMN department VARCHAR(255) NULL",
+          "ADD COLUMN job_title VARCHAR(255) NULL",
+          "ADD COLUMN auth_source VARCHAR(16) NOT NULL DEFAULT 'password'",
+        ]) {
+          try { await conn.execute(`ALTER TABLE users ${col}`); } catch { /* exists */ }
+        }
+        // Entra groups seen at login (Object IDs); label is an admin-friendly name.
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS entra_groups (
+            group_id   VARCHAR(64)  NOT NULL PRIMARY KEY,
+            label      VARCHAR(255) NULL,
+            first_seen DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        // Group → role mapping (a group can grant several roles).
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS entra_group_roles (
+            group_id VARCHAR(64) NOT NULL,
+            role_id  VARCHAR(64) NOT NULL,
+            PRIMARY KEY (group_id, role_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[SSO] Entra tables ready");
+      } catch (e: any) { console.warn("[SSO] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[SSO] DB not reachable on startup (Entra tables skipped):", e.message);
     }
   })();
 
@@ -1688,10 +1939,68 @@ async function startServer() {
       const [rows] = (await conn.execute("SELECT builtin FROM app_roles WHERE id = ?", [req.params.id])) as any;
       if (rows.length && rows[0].builtin) return res.status(400).json({ error: "Built-in roles cannot be deleted" });
       await conn.execute("DELETE FROM app_roles WHERE id = ?", [req.params.id]);
+      // clean up any group mappings that referenced this role
+      await conn.execute("DELETE FROM entra_group_roles WHERE role_id = ?", [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) {
       console.error("Role delete error:", err.message);
       res.status(500).json({ error: "Failed to delete role" });
+    } finally { await conn.end(); }
+  });
+
+  // ── Entra group → role mapping (Admin only) ───────────────────────────────
+  // GET /api/entra/groups — discovered Entra groups with their label + mapped roles.
+  app.get("/api/entra/groups", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [groups] = (await conn.execute(
+        "SELECT group_id, label, first_seen, last_seen FROM entra_groups ORDER BY last_seen DESC"
+      )) as any;
+      const [maps] = (await conn.execute("SELECT group_id, role_id FROM entra_group_roles")) as any;
+      const byGroup: Record<string, string[]> = {};
+      for (const m of maps as any[]) (byGroup[m.group_id] ||= []).push(String(m.role_id));
+      res.json({
+        groups: (groups as any[]).map(g => ({
+          groupId: g.group_id,
+          label: g.label || null,
+          firstSeen: g.first_seen,
+          lastSeen: g.last_seen,
+          roleIds: byGroup[g.group_id] || [],
+        })),
+        samlEnabled: SAML_ENABLED,
+      });
+    } catch (err: any) {
+      console.error("Entra groups load error:", err.message);
+      res.status(500).json({ error: "Failed to load groups" });
+    } finally { await conn.end(); }
+  });
+
+  // PUT /api/entra/groups/:groupId — set an admin label and/or the mapped roles.
+  // Also used to register a group by Object ID before it has been seen at login.
+  app.put("/api/entra/groups/:groupId", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const groupId = String(req.params.groupId || "").trim();
+    if (!groupId || groupId.length > 64) return res.status(400).json({ error: "Invalid group id" });
+    const { label, roleIds } = req.body || {};
+    if (label != null && (typeof label !== "string" || label.length > 255)) return res.status(400).json({ error: "Invalid label" });
+    if (roleIds != null && (!Array.isArray(roleIds) || roleIds.some((r: any) => typeof r !== "string"))) {
+      return res.status(400).json({ error: "roleIds must be an array of role ids" });
+    }
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute(
+        "INSERT INTO entra_groups (group_id, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label)",
+        [groupId, typeof label === "string" ? label : null]
+      );
+      if (Array.isArray(roleIds)) {
+        await conn.execute("DELETE FROM entra_group_roles WHERE group_id = ?", [groupId]);
+        for (const rid of roleIds) {
+          await conn.execute("INSERT IGNORE INTO entra_group_roles (group_id, role_id) VALUES (?, ?)", [groupId, rid]);
+        }
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Entra group save error:", err.message);
+      res.status(500).json({ error: "Failed to save group mapping" });
     } finally { await conn.end(); }
   });
 

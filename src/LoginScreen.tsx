@@ -139,14 +139,43 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
   );
 }
 
+// ── SSO helpers ─────────────────────────────────────────────────────────────
+
+// Friendly messages for the ?sso=<code> query param Entra bounces back on failure.
+const SSO_ERROR_MESSAGES: Record<string, string> = {
+  not_authorized: "Your Microsoft account isn't authorized for this app yet. Ask an admin to map one of your Entra groups to a role.",
+  failed: 'Single sign-on failed. Please try again or use email and password.',
+  error: 'Something went wrong completing sign-in. Please try again.',
+};
+
+function MicrosoftLogo() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 21 21" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  );
+}
+
 // ── Login Form ────────────────────────────────────────────────────────────────
 
-function LoginForm({ onLogin }: { onLogin: (user: any) => void }) {
+function LoginForm({ onLogin, samlEnabled }: { onLogin: (user: any) => void; samlEnabled: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Surface any SSO error Entra redirected back with (?sso=...), then clean the URL.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('sso');
+    if (code && SSO_ERROR_MESSAGES[code]) {
+      setError(SSO_ERROR_MESSAGES[code]);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +209,28 @@ function LoginForm({ onLogin }: { onLogin: (user: any) => void }) {
           <p className="text-xs text-slate-500">Sign in to your account</p>
         </div>
       </div>
+
+      {samlEnabled && (
+        <>
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm mb-4">
+              <AlertCircle size={14} className="shrink-0" />
+              {error}
+            </div>
+          )}
+          <a
+            href="/api/auth/saml/login"
+            className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-lg border border-slate-300 bg-white font-semibold text-sm text-slate-700 hover:bg-slate-50 transition-all"
+          >
+            <MicrosoftLogo /> Sign in with Microsoft
+          </a>
+          <div className="flex items-center gap-3 my-5">
+            <span className="flex-1 h-px bg-slate-200" />
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">or</span>
+            <span className="flex-1 h-px bg-slate-200" />
+          </div>
+        </>
+      )}
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div className="space-y-1.5">
@@ -216,7 +267,7 @@ function LoginForm({ onLogin }: { onLogin: (user: any) => void }) {
           </div>
         </div>
 
-        {error && (
+        {!samlEnabled && error && (
           <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm">
             <AlertCircle size={14} />
             {error}
@@ -239,8 +290,9 @@ function LoginForm({ onLogin }: { onLogin: (user: any) => void }) {
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [mode, setMode] = useState<'checking' | 'setup' | 'login'>('checking');
+  const [samlEnabled, setSamlEnabled] = useState(false);
 
-  // On mount, check whether initial setup is needed
+  // On mount, check whether initial setup is needed + whether SSO is configured.
   useEffect(() => {
     fetch('/api/auth/setup-status')
       .then(r => r.json())
@@ -249,6 +301,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         console.error('Setup status fetch failed:', err);
         setMode('login');
       });
+    fetch('/api/auth/sso-status')
+      .then(r => r.json())
+      .then(data => setSamlEnabled(!!data.samlEnabled))
+      .catch(() => setSamlEnabled(false));
   }, []);
 
   return (
@@ -265,7 +321,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <SetupWizard onDone={() => setMode('login')} />
           )}
           {mode === 'login' && (
-            <LoginForm onLogin={onLogin} />
+            <LoginForm onLogin={onLogin} samlEnabled={samlEnabled} />
           )}
         </div>
         <p className="text-center text-xs text-slate-400 mt-4">

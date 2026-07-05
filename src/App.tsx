@@ -56,6 +56,10 @@ interface AuthUser {
   email: string;
   role: string;
   permissions: { company_id: string; bank_id: string | null }[];
+  // Populated from Entra SSO claims (absent for password logins).
+  upn?: string;
+  department?: string;
+  jobTitle?: string;
 }
 
 // --- Exchange Rates Mock ---
@@ -274,7 +278,9 @@ const Sidebar = ({
           </div>
           <div className="text-xs truncate flex-1 min-w-0">
             <div className="font-medium text-slate-200 truncate">{authUser?.name || 'Unknown'}</div>
-            <div className="text-slate-500 truncate">{authUser?.role}</div>
+            <div className="text-slate-500 truncate">
+              {[authUser?.jobTitle, authUser?.department].filter(Boolean).join(' · ') || authUser?.role}
+            </div>
           </div>
           {(!authUser || authUser.role === 'Admin' || authUser.role === 'Manager') && (
             <button
@@ -673,6 +679,129 @@ const PAGE_PERMS: { id: string; label: string }[] = [
   { id: 'upload', label: 'Manual Data Upload' },
 ];
 
+// --- Entra Groups tab: map discovered Entra group Object IDs to roles ---
+type EntraGroup = { groupId: string; label: string | null; lastSeen?: string; roleIds: string[] };
+
+const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
+  const [groups, setGroups] = useState<EntraGroup[] | null>(null);
+  const [samlEnabled, setSamlEnabled] = useState(true);
+  const [addId, setAddId] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const load = () =>
+    fetch('/api/entra/groups', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : { groups: [] }))
+      .then(d => { setGroups(d.groups || []); if (typeof d.samlEnabled === 'boolean') setSamlEnabled(d.samlEnabled); })
+      .catch(() => setGroups([]));
+  useEffect(() => { load(); }, []);
+
+  const save = async (groupId: string, patch: Partial<Pick<EntraGroup, 'label' | 'roleIds'>>) => {
+    setSavingId(groupId);
+    setGroups(gs => gs ? gs.map(g => g.groupId === groupId ? { ...g, ...patch } : g) : gs);
+    try {
+      await fetch(`/api/entra/groups/${encodeURIComponent(groupId)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(patch),
+      });
+    } catch { /* ignore */ } finally { setSavingId(null); }
+  };
+
+  const toggleRole = (g: EntraGroup, rid: string) => {
+    const next = g.roleIds.includes(rid) ? g.roleIds.filter(x => x !== rid) : [...g.roleIds, rid];
+    save(g.groupId, { roleIds: next });
+  };
+
+  const addGroup = async () => {
+    const id = addId.trim();
+    if (!id || groups?.some(g => g.groupId === id)) { setAddId(''); return; }
+    setGroups(gs => [...(gs || []), { groupId: id, label: null, roleIds: [] }]);
+    setAddId('');
+    await save(id, { roleIds: [] });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">Entra groups → roles</h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Groups appear here automatically after a user signs in with Microsoft. Map each group to
+            one or more roles — a user's access is the union of the roles from every group they belong to.
+            Being in at least one mapped group is what grants access.
+          </p>
+        </div>
+
+        {!samlEnabled && (
+          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>SSO is not configured on this environment yet (SAML env vars unset). You can still pre-map group Object IDs here; they take effect once SSO is enabled.</span>
+          </div>
+        )}
+
+        {/* Add a group by Object ID */}
+        <div className="flex items-center gap-2">
+          <input
+            value={addId}
+            onChange={e => setAddId(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addGroup(); }}
+            placeholder="Add a group by Object ID (GUID)"
+            className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+          />
+          <button onClick={addGroup} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 flex items-center gap-1.5">
+            <Plus size={15} /> Add
+          </button>
+        </div>
+      </div>
+
+      {groups === null ? (
+        <div className="text-center text-slate-400 py-10 text-sm">Loading groups…</div>
+      ) : groups.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center text-slate-400">
+          <ShieldCheck size={24} className="mx-auto mb-2 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-500">No groups discovered yet</p>
+          <p className="text-xs mt-1">They appear after someone signs in with Microsoft, or add one by its Object ID above.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {groups.map(g => (
+            <div key={g.groupId} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <input
+                    defaultValue={g.label || ''}
+                    onBlur={e => { const v = e.target.value.trim(); if (v !== (g.label || '')) save(g.groupId, { label: v }); }}
+                    placeholder="Add a friendly name…"
+                    className="text-sm font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-200 focus:border-indigo-400 outline-none w-64 max-w-full"
+                  />
+                  <div className="text-[11px] font-mono text-slate-400 truncate mt-0.5">{g.groupId}</div>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  {g.roleIds.length ? `${g.roleIds.length} role${g.roleIds.length > 1 ? 's' : ''}` : 'No roles — no access'}
+                  {savingId === g.groupId && ' · saving…'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {roles.map(r => {
+                  const on = g.roleIds.includes(r.id);
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => toggleRole(g, r.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}`}
+                    >
+                      {on && <Check size={12} />} {r.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- User Management (Users + Roles tabs) ---
 const UserManagementPage = ({
   users,
@@ -698,7 +827,7 @@ const UserManagementPage = ({
   onDeleteRole: (id: string) => Promise<void>,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [tab, setTab] = useState<'users' | 'roles'>('users');
+  const [tab, setTab] = useState<'users' | 'roles' | 'groups'>('users');
   const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
   const [roleError, setRoleError] = useState('');
@@ -799,8 +928,8 @@ const UserManagementPage = ({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-slate-200">
-        {(['users', 'roles'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px capitalize transition-colors ${tab === t ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{t}</button>
+        {([['users', 'Users'], ['roles', 'Roles'], ['groups', 'Entra Groups']] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{label}</button>
         ))}
       </div>
 
@@ -889,7 +1018,7 @@ const UserManagementPage = ({
             </div>
           </div>
         </>
-      ) : (
+      ) : tab === 'roles' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: create + role list */}
           <div className="lg:col-span-1 space-y-4">
@@ -999,6 +1128,8 @@ const UserManagementPage = ({
             })()}
           </div>
         </div>
+      ) : (
+        <EntraGroupsTab roles={roles} />
       )}
     </div>
   );
