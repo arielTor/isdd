@@ -1753,9 +1753,9 @@ const CompanyDetailCard = ({
           <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             <tr>
               <th className="px-6 py-4 border-b border-slate-100">Bank</th>
-              <th className="px-6 py-4 border-b border-slate-100 text-right">Wallets</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-left">Wallets</th>
               <th className="px-6 py-4 border-b border-slate-100 text-right">Balance (LCY)</th>
-              <th className="px-6 py-4 border-b border-slate-100 text-right">Currency</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-center">Currency</th>
               <th className="px-6 py-4 border-b border-slate-100 text-right">Valuation (USD/T)</th>
             </tr>
           </thead>
@@ -1864,11 +1864,11 @@ const CompanyDetailCard = ({
                         <div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-left text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
                     <td className={`px-6 py-4 border-b border-slate-100 text-right font-mono font-bold ${isAlertRow ? 'text-red-600 animate-pulse' : 'text-slate-900'}`}>
                       {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-right">
+                    <td className="px-6 py-4 border-b border-slate-100 text-center">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wallet.currency === 'USD' || wallet.currency === 'USDT' ? 'bg-emerald-100 text-emerald-700' : wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                         {wallet.currency}
                       </span>
@@ -1907,7 +1907,7 @@ const CompanyDetailCard = ({
                         <div className="text-[10px] text-slate-300 font-medium ml-2">↳ {activeRows.length > 0 ? "Additional Acct" : "Continued"}</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 text-xs font-mono">{acc.accountNumber}</td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-left text-slate-400 text-xs font-mono">{acc.accountNumber}</td>
                     <td colSpan={3} className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 italic text-xs">
                       {/* Hidden */}
                     </td>
