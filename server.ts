@@ -1768,6 +1768,28 @@ async function startServer() {
   })();
 
   // GET /api/branding — org logo + site name (auth required, any role)
+  // GET /api/branding/public — logo + site name only, no auth (used by the login screen).
+  // Deliberately excludes company logos and any other data.
+  app.get("/api/branding/public", corsMiddleware, async (_req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_logo_bg')"
+      )) as any;
+      const map: Record<string, string> = {};
+      for (const r of rows as any[]) map[r.k] = r.v;
+      res.json({
+        siteName: map.brand_site_name || "Liquidity Reports",
+        logo: map.brand_logo || null,
+        logoBg: map.brand_logo_bg || "light",
+      });
+    } catch {
+      res.json({ siteName: "Liquidity Reports", logo: null, logoBg: "light" });
+    } finally {
+      await conn.end();
+    }
+  });
+
   app.get("/api/branding", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {

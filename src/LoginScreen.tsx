@@ -161,7 +161,9 @@ function MicrosoftLogo() {
 
 // ── Login Form ────────────────────────────────────────────────────────────────
 
-function LoginForm({ onLogin, samlEnabled }: { onLogin: (user: any) => void; samlEnabled: boolean }) {
+const logoBgColor = (bg: string) => (bg === 'dark' ? '#0f172a' : bg === 'none' ? 'transparent' : '#ffffff');
+
+function LoginForm({ onLogin, samlEnabled, branding }: { onLogin: (user: any) => void; samlEnabled: boolean; branding: { siteName: string; logo: string | null; logoBg: string } }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -201,11 +203,17 @@ function LoginForm({ onLogin, samlEnabled }: { onLogin: (user: any) => void; sam
   return (
     <>
       <div className="flex items-center gap-3 mb-8">
-        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
-          L
-        </div>
+        {branding.logo ? (
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 p-1.5 ${branding.logoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(branding.logoBg) }}>
+            <img src={branding.logo} alt={branding.siteName} className="max-w-full max-h-full object-contain" />
+          </div>
+        ) : (
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30 shrink-0">
+            {(branding.siteName?.[0] || 'L').toUpperCase()}
+          </div>
+        )}
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Liquidity Reports</h1>
+          <h1 className="text-xl font-bold text-slate-900">{branding.siteName || 'Liquidity Reports'}</h1>
           <p className="text-xs text-slate-500">Sign in to your account</p>
         </div>
       </div>
@@ -291,8 +299,10 @@ function LoginForm({ onLogin, samlEnabled }: { onLogin: (user: any) => void; sam
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [mode, setMode] = useState<'checking' | 'setup' | 'login'>('checking');
   const [samlEnabled, setSamlEnabled] = useState(false);
+  const [branding, setBranding] = useState<{ siteName: string; logo: string | null; logoBg: string }>({ siteName: 'Liquidity Reports', logo: null, logoBg: 'light' });
 
-  // On mount, check whether initial setup is needed + whether SSO is configured.
+  // On mount, check whether initial setup is needed + whether SSO is configured,
+  // and load the portal logo/name so the login screen matches the branding.
   useEffect(() => {
     fetch('/api/auth/setup-status')
       .then(r => r.json())
@@ -305,6 +315,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       .then(r => r.json())
       .then(data => setSamlEnabled(!!data.samlEnabled))
       .catch(() => setSamlEnabled(false));
+    fetch('/api/branding/public')
+      .then(r => (r.ok ? r.json() : null))
+      .then(b => { if (b) setBranding({ siteName: b.siteName || 'Liquidity Reports', logo: b.logo || null, logoBg: b.logoBg || 'light' }); })
+      .catch(() => {});
   }, []);
 
   return (
@@ -321,12 +335,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <SetupWizard onDone={() => setMode('login')} />
           )}
           {mode === 'login' && (
-            <LoginForm onLogin={onLogin} samlEnabled={samlEnabled} />
+            <LoginForm onLogin={onLogin} samlEnabled={samlEnabled} branding={branding} />
           )}
         </div>
-        <p className="text-center text-xs text-slate-400 mt-4">
-          Liquidity Reports · Secure Connection
-        </p>
       </div>
     </div>
   );
