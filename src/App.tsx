@@ -83,6 +83,16 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
   };
 };
 
+// Microsoft 4-square logo (used to mark SSO accounts).
+const MicrosoftLogo = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 21 21" aria-hidden="true" className="shrink-0">
+    <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+    <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+    <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+    <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+  </svg>
+);
+
 // --- Types ---
 type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
 
@@ -1003,24 +1013,32 @@ const UserManagementPage = ({
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {user.authSource === 'sso' ? (
+                        <div className="flex items-center justify-end gap-3">
+                          {/* SSO indicator + toggle (on = Microsoft SSO, off = local password) */}
+                          <div
+                            className="flex items-center gap-1.5"
+                            title={user.authSource === 'sso'
+                              ? 'Microsoft SSO account (managed via Entra groups). Toggle off to make it a local password account.'
+                              : 'Local account (email / password). Toggle on to require Microsoft SSO.'}
+                          >
+                            {user.authSource === 'sso' ? (
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-indigo-600"><MicrosoftLogo size={12} /> SSO</span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-[11px] font-semibold text-slate-400"><Lock size={11} /> Local</span>
+                            )}
                             <button
-                              onClick={() => onSetAuthSource(user, 'password')}
-                              title="Microsoft SSO account (managed via Entra groups). Click to revert to a local password account."
-                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                              role="switch"
+                              aria-checked={user.authSource === 'sso'}
+                              onClick={() => onSetAuthSource(user, user.authSource === 'sso' ? 'password' : 'sso')}
+                              className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${user.authSource === 'sso' ? 'bg-indigo-600' : 'bg-slate-300'}`}
                             >
-                              <ShieldCheck size={13} /> SSO
+                              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${user.authSource === 'sso' ? 'translate-x-4' : ''}`} />
                             </button>
-                          ) : (
-                            <span title="Local account (email / password)" className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-slate-400">
-                              <Lock size={12} /> Local
-                            </span>
-                          )}
+                          </div>
                           <button
                             onClick={() => onEditUser(user)}
                             disabled={user.authSource === 'sso'}
-                            title={user.authSource === 'sso' ? "SSO users are managed in Entra. Revert to local to edit." : undefined}
+                            title={user.authSource === 'sso' ? "SSO users are managed in Entra. Toggle off to edit." : undefined}
                             className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                           ><Edit2 size={14} /> Edit</button>
                           <button onClick={() => onDeleteUser(user.id)} disabled={user.id === currentUserId} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors" title={user.id === currentUserId ? 'You cannot remove yourself' : 'Remove user'}><XCircle size={16} /></button>
@@ -2572,6 +2590,7 @@ export default function App() {
 
   const handleSetAuthSource = async (user: User, source: string) => {
     if (source === 'password' && !window.confirm(`Revert "${user.name}" to a local account? They'll sign in with email/password again (a password may need to be set) instead of Microsoft.`)) return;
+    if (source === 'sso' && !window.confirm(`Require Microsoft SSO for "${user.name}"? Password login will be disabled for this account.`)) return;
     try {
       const res = await fetch(`/api/users/${user.id}/auth-source`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
