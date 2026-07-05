@@ -429,9 +429,11 @@ async function startServer() {
         const currency   = row.wallet_currency as string;
         const rate       = rates[currency];
 
-        // Use DB value when present (non-null); otherwise estimate from live rate.
+        // Use DB value when present (non-null and non-zero with real balance);
+        // value_usd=0 on a non-zero balance means the field was never populated —
+        // fall back to live rate so newly-added wallets price correctly.
         // Negative balances are valid (overdrafts) and must not be discarded.
-        const hasDbValue      = dbValueUsd !== null;
+        const hasDbValue      = dbValueUsd !== null && !(dbValueUsd === 0 && balance !== 0);
         const valueUsd        = hasDbValue ? dbValueUsd! : (rate !== undefined ? balance * rate : null);
         const valueUsdEstimated = !hasDbValue && rate !== undefined && valueUsd !== null;
 
