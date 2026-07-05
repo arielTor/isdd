@@ -3136,20 +3136,15 @@ export default function App() {
                     };
                     const usdCls = (n: number) => n < 0 ? 'text-red-600' : 'text-slate-800';
 
-                    // ── build flat rows ───────────────────────────────────
-                    type FlatRow = { company: string; bank: string; currency: string; balance: number; fxRate: number; usdValue: number; };
+                    // ── build flat rows (all companies; the mini tables always aggregate all) ──
+                    type FlatRow = { companyId: string; company: string; bank: string; currency: string; balance: number; fxRate: number; usdValue: number; };
                     const rows: FlatRow[] = [];
-                    // accumulators for mini tables
+                    // accumulators for mini tables — always across every company, unaffected by the table tabs
                     const byBank: Record<string, number> = {};
                     const byCompany: Record<string, number> = {};
                     const byCurrency: Record<string, number> = {};
 
-                    // Per-company filter tabs (All + each company). Fall back to All if the
-                    // active tab isn't in the current (permission/date) filtered set.
-                    const tabActive = (portfolioTab !== 'all' && filteredCompanies.some(c => c.id === portfolioTab)) ? portfolioTab : 'all';
-                    const scoped = tabActive === 'all' ? filteredCompanies : filteredCompanies.filter(c => c.id === tabActive);
-
-                    scoped.forEach(company => {
+                    filteredCompanies.forEach(company => {
                       (company.banks || []).forEach(bank => {
                         const isVerified = bank.is_verified !== undefined
                           ? (bank.is_verified === 1 || bank.is_verified === "1" || bank.is_verified === true)
@@ -3170,7 +3165,7 @@ export default function App() {
                         });
                         Object.entries(cellMap).forEach(([currency, cell]) => {
                           const fxRate = cell.balance !== 0 ? cell.usd / cell.balance : 0;
-                          rows.push({ company: company.name, bank: bank.name, currency, balance: cell.balance, fxRate, usdValue: cell.usd });
+                          rows.push({ companyId: company.id, company: company.name, bank: bank.name, currency, balance: cell.balance, fxRate, usdValue: cell.usd });
                           byBank[bank.name] = (byBank[bank.name] || 0) + cell.usd;
                           byCompany[company.name] = (byCompany[company.name] || 0) + cell.usd;
                           byCurrency[currency] = (byCurrency[currency] || 0) + cell.usd;
@@ -3178,7 +3173,10 @@ export default function App() {
                       });
                     });
 
-                    const grandTotal = rows.reduce((s, r) => s + r.usdValue, 0);
+                    // The Portfolio Summary table has its OWN tabs; the mini tables above are unaffected.
+                    const tabActive = (portfolioTab !== 'all' && filteredCompanies.some(c => c.id === portfolioTab)) ? portfolioTab : 'all';
+                    const displayRows = tabActive === 'all' ? rows : rows.filter(r => r.companyId === tabActive);
+                    const grandTotal = displayRows.reduce((s, r) => s + r.usdValue, 0);
                     const currencyBadge = (c: string) =>
                       c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
                       c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
@@ -3212,28 +3210,7 @@ export default function App() {
 
                     return (
                       <div className="space-y-4">
-                        {/* Per-company filter tabs */}
-                        {filteredCompanies.length > 1 && (
-                          <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
-                            <button
-                              onClick={() => setPortfolioTab('all')}
-                              className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === 'all' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                            >
-                              All
-                            </button>
-                            {filteredCompanies.map(c => (
-                              <button
-                                key={c.id}
-                                onClick={() => setPortfolioTab(c.id)}
-                                className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                              >
-                                {c.name}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Three mini summary tables */}
+                        {/* Three mini summary tables (always all companies) */}
                         <div className="flex gap-4 flex-wrap">
                           <MiniTable title="By Bank" data={byBank} />
                           <MiniTable title="By Company" data={byCompany} />
@@ -3247,6 +3224,26 @@ export default function App() {
                             <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
                             <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">{tabActive === 'all' ? 'All Companies' : (filteredCompanies.find(c => c.id === tabActive)?.name || 'Company')}</span>
                           </div>
+                          {/* This table's own per-company tabs */}
+                          {filteredCompanies.length > 1 && (
+                            <div className="flex items-center gap-1 px-4 pt-2 border-b border-slate-200 overflow-x-auto bg-white">
+                              <button
+                                onClick={() => setPortfolioTab('all')}
+                                className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === 'all' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                              >
+                                All
+                              </button>
+                              {filteredCompanies.map(c => (
+                                <button
+                                  key={c.id}
+                                  onClick={() => setPortfolioTab(c.id)}
+                                  className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                                >
+                                  {c.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                           <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs min-w-[640px]">
                               <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -3260,7 +3257,7 @@ export default function App() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {rows.map((row, i) => (
+                                {displayRows.map((row, i) => (
                                   <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                     <td className="px-5 py-3 font-medium text-slate-700">{row.company}</td>
                                     <td className="px-5 py-3 text-slate-600">{row.bank}</td>
