@@ -377,7 +377,9 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
         </div>
       )}
       {!rows.length ? <EmptyState label="No verified balances" /> : (
-      <div className="flex-1 overflow-auto">
+      <>
+      {/* Only the rows scroll; the Total below stays pinned. */}
+      <div className="flex-1 min-h-0 overflow-auto">
         <table className="w-full text-left border-collapse text-xs min-w-[640px]">
           <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0">
             <tr>
@@ -401,14 +403,14 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
               </tr>
             ))}
           </tbody>
-          <tfoot>
-            <tr className="bg-indigo-50 border-t-2 border-indigo-100">
-              <td colSpan={5} className="px-5 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</td>
-              <td className={`px-5 py-3 text-right font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</td>
-            </tr>
-          </tfoot>
         </table>
       </div>
+      {/* Pinned total bar (outside the scroll area) */}
+      <div className="shrink-0 flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+        <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+        <span className={`font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</span>
+      </div>
+      </>
       )}
     </div>
   );
