@@ -84,7 +84,7 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
 };
 
 // --- Types ---
-type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics';
+type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
 
 // Backdrop colour for a logo badge — admin picks this in Appearance so logos
 // designed for light *or* dark backgrounds both render correctly.
@@ -153,10 +153,10 @@ const Sidebar = ({
     name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   // Shared nav row — one structure for every menu item, so groups stay visually consistent
-  const renderNavItem = (item: { id: string; icon: typeof LayoutDashboard; label: string }) => (
+  const renderNavItem = (item: { id: string; icon: typeof LayoutDashboard; label: string }, onAfter?: () => void) => (
     <button
       key={item.id}
-      onClick={() => { onNavigate(item.id as Page); onClose(); }}
+      onClick={() => { onNavigate(item.id as Page); onClose(); onAfter?.(); }}
       className={`w-full flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-lg transition-all text-sm font-medium ${
         activePage === item.id
           ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
@@ -266,7 +266,7 @@ const Sidebar = ({
             {/* dot marks a hidden active settings page when collapsed */}
             {!settingsOpen && settingsIds.includes(activePage) && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 ml-1" />}
           </button>
-          {settingsOpen && settingsNav.map(renderNavItem)}
+          {settingsOpen && settingsNav.map(item => renderNavItem(item, () => setSettingsOpen(false)))}
         </div>
       )}
 
@@ -282,15 +282,13 @@ const Sidebar = ({
               {[authUser?.jobTitle, authUser?.department].filter(Boolean).join(' · ') || authUser?.role}
             </div>
           </div>
-          {(!authUser || authUser.role === 'Admin' || authUser.role === 'Manager') && (
-            <button
-              onClick={() => { onNavigate('alerts'); onClose(); }}
-              title="Notifications"
-              className="text-slate-500 hover:text-indigo-300 transition-colors p-1.5 rounded-lg hover:bg-slate-700/40 shrink-0"
-            >
-              <Bell size={15} />
-            </button>
-          )}
+          <button
+            onClick={() => { onNavigate('notifications'); onClose(); }}
+            title="Notification settings"
+            className="text-slate-500 hover:text-indigo-300 transition-colors p-1.5 rounded-lg hover:bg-slate-700/40 shrink-0"
+          >
+            <Bell size={15} />
+          </button>
           <button
             onClick={onLogout}
             title="Sign out"
@@ -2161,6 +2159,97 @@ const BrandingPage = ({
   );
 };
 
+// --- Notification settings (per user: browser push + email) ---
+
+const NotificationSettingsPage = ({ email }: { email?: string }) => {
+  const supported = typeof window !== 'undefined' && 'Notification' in window;
+  const [permission, setPermission] = useState<NotificationPermission>(supported ? Notification.permission : 'denied');
+  const [push, setPush] = useState(false);
+  const [emailOn, setEmailOn] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/my-settings', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : {}))
+      .then(d => { setPush(!!d.notifyPush); setEmailOn(!!d.notifyEmail); })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const persist = (patch: { notifyPush?: boolean; notifyEmail?: boolean }) => {
+    setSaved(false);
+    fetch('/api/my-settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(patch),
+    }).then(() => setSaved(true)).catch(() => {});
+  };
+
+  const togglePush = async () => {
+    if (push) { setPush(false); persist({ notifyPush: false }); return; }
+    if (!supported) return;
+    let perm = Notification.permission;
+    if (perm !== 'granted') perm = await Notification.requestPermission();
+    setPermission(perm);
+    if (perm === 'granted') { setPush(true); persist({ notifyPush: true }); }
+  };
+
+  const toggleEmail = () => { const next = !emailOn; setEmailOn(next); persist({ notifyEmail: next }); };
+
+  const Toggle = ({ on, onClick, disabled }: { on: boolean; onClick: () => void; disabled?: boolean }) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-indigo-600' : 'bg-slate-300'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
+    </button>
+  );
+
+  return (
+    <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-slate-900">Notifications</h2>
+        <p className="text-sm text-slate-400">Choose how you want to be notified about wallet alerts. These settings apply to your account only.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+        {/* Browser push */}
+        <div className="p-5 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><Bell size={17} /></span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-800">Browser notifications</div>
+              <p className="text-xs text-slate-400 mt-0.5">Show desktop notifications in this browser when an alert triggers.</p>
+              {!supported && <p className="text-xs text-amber-600 mt-1">This browser does not support notifications.</p>}
+              {supported && permission === 'denied' && (
+                <p className="text-xs text-amber-600 mt-1">Notifications are blocked for this site. Enable them in your browser's site settings, then turn this on.</p>
+              )}
+            </div>
+          </div>
+          <Toggle on={push} onClick={togglePush} disabled={!supported || !loaded} />
+        </div>
+
+        {/* Email */}
+        <div className="p-5 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><Mail size={17} /></span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-800">Email notifications</div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Receive alert emails{email ? <> at <span className="font-medium text-slate-600">{email}</span></> : ''}.
+              </p>
+            </div>
+          </div>
+          <Toggle on={emailOn} onClick={toggleEmail} disabled={!loaded} />
+        </div>
+      </div>
+
+      {saved && <p className="text-sm text-emerald-600 font-medium">Saved</p>}
+    </div>
+  );
+};
+
 // --- App Component ---
 
 export default function App() {
@@ -2564,6 +2653,7 @@ export default function App() {
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
     if (activePage === 'branding') return 'Appearance';
+    if (activePage === 'notifications') return 'Notifications';
     if (activePage === 'diagnostics') return 'Diagnostics';
     if (!selectedCompanyId) return 'Liquidity Overview';
     return companies.find(c => c.id === selectedCompanyId)?.name || 'Companies';
@@ -3334,6 +3424,17 @@ export default function App() {
                   theme={effectiveTheme}
                   onThemeChange={handleThemeChange}
                 />
+              </motion.div>
+            )}
+
+            {activePage === 'notifications' && (
+              <motion.div
+                key="notifications"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <NotificationSettingsPage email={authUser?.email} />
               </motion.div>
             )}
           </AnimatePresence>

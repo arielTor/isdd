@@ -1645,7 +1645,7 @@ async function startServer() {
     }
   })();
 
-  // GET /api/my-settings — the current user's personal preferences (theme).
+  // GET /api/my-settings — the current user's personal preferences (theme + notifications).
   app.get("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1655,30 +1655,36 @@ async function startServer() {
       )) as any;
       const map: Record<string, string> = {};
       for (const r of rows as any[]) map[r.k] = r.v;
-      res.json({ theme: ["dark", "gray", "light"].includes(map.theme) ? map.theme : null });
+      res.json({
+        theme: ["dark", "gray", "light"].includes(map.theme) ? map.theme : null,
+        notifyPush: map.notify_push === "1",
+        notifyEmail: map.notify_email === "1",
+      });
     } catch (err: any) {
       console.error("My-settings load error:", err.message);
-      res.json({ theme: null });
+      res.json({ theme: null, notifyPush: false, notifyEmail: false });
     } finally {
       await conn.end();
     }
   });
 
-  // POST /api/my-settings — upsert the current user's theme (any authenticated user).
+  // POST /api/my-settings — upsert the current user's preferences (any authenticated user).
   app.post("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
-    const { theme } = req.body || {};
+    const { theme, notifyPush, notifyEmail } = req.body || {};
     if (theme != null && !["dark", "gray", "light"].includes(theme)) {
       return res.status(400).json({ error: "Theme invalid" });
     }
     const conn = await mysql.createConnection(dbConfig());
     try {
-      if (typeof theme === "string") {
-        await conn.execute(
-          `INSERT INTO user_settings (user_id, k, v) VALUES (?, 'theme', ?)
-           ON DUPLICATE KEY UPDATE v = VALUES(v)`,
-          [req.session.user.id, theme]
-        );
-      }
+      const uid = req.session.user.id;
+      const upsert = (k: string, v: string) => conn.execute(
+        `INSERT INTO user_settings (user_id, k, v) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE v = VALUES(v)`,
+        [uid, k, v]
+      );
+      if (typeof theme === "string") await upsert("theme", theme);
+      if (typeof notifyPush === "boolean") await upsert("notify_push", notifyPush ? "1" : "0");
+      if (typeof notifyEmail === "boolean") await upsert("notify_email", notifyEmail ? "1" : "0");
       res.json({ ok: true });
     } catch (err: any) {
       console.error("My-settings save error:", err.message);
