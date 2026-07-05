@@ -3292,7 +3292,7 @@ export default function App() {
                                 <tr>
                                   <th className="px-5 py-3 border-b border-slate-100">Company</th>
                                   <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-                                  <th className="px-5 py-3 border-b border-slate-100">Currency</th>
+                                  <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
                                   <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
                                   <th className="px-5 py-3 border-b border-slate-100 text-right">FX Rate</th>
                                   <th className="px-5 py-3 border-b border-slate-100 text-right">USD Value</th>
@@ -3303,7 +3303,7 @@ export default function App() {
                                   <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                     <td className="px-5 py-3 font-medium text-slate-700">{row.company}</td>
                                     <td className="px-5 py-3 text-slate-600">{row.bank}</td>
-                                    <td className="px-5 py-3">
+                                    <td className="px-5 py-3 text-center">
                                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span>
                                     </td>
                                     <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>

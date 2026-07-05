@@ -385,7 +385,7 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
             <tr>
               <th className="px-5 py-3 border-b border-slate-100">Company</th>
               <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-              <th className="px-5 py-3 border-b border-slate-100">Currency</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">FX Rate</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">USD Value</th>
@@ -396,7 +396,7 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                 <td className="px-5 py-3 font-medium text-slate-700">{row.company}</td>
                 <td className="px-5 py-3 text-slate-600">{row.bank}</td>
-                <td className="px-5 py-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span></td>
+                <td className="px-5 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span></td>
                 <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>{CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}</td>
                 <td className="px-5 py-3 text-right font-mono text-slate-500">{row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '-'}</td>
                 <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(row.usdValue)}`}>{fmtUsd(row.usdValue)}</td>
@@ -462,9 +462,9 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
             <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0">
               <tr>
                 <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-                <th className="px-5 py-3 border-b border-slate-100 text-right">Wallets</th>
+                <th className="px-5 py-3 border-b border-slate-100 text-left">Wallets</th>
                 <th className="px-5 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
-                <th className="px-5 py-3 border-b border-slate-100 text-right">Currency</th>
+                <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
                 <th className="px-5 py-3 border-b border-slate-100 text-right">USD</th>
               </tr>
             </thead>
@@ -484,9 +484,9 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
                       <div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-right text-slate-500 text-xs font-mono">{r.account}</td>
+                  <td className="px-5 py-3 text-left text-slate-500 text-xs font-mono">{r.account}</td>
                   <td className={`px-5 py-3 text-right font-mono ${r.balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[r.currency] || ''}{fmtN(r.balance)}</td>
-                  <td className="px-5 py-3 text-right"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
+                  <td className="px-5 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
                   <td className={`px-5 py-3 text-right font-mono font-bold ${r.usd === null ? 'text-slate-300' : usdCls(r.usd)}`}>{r.usd === null ? '-' : fmtUsd(r.usd)}</td>
                 </tr>
               ))}
@@ -652,7 +652,7 @@ const PspSummaryWidget = ({ companies }: { companies: Company[] }) => {
             <tr>
               <th className="px-5 py-3 border-b border-slate-100">Company</th>
               <th className="px-5 py-3 border-b border-slate-100">Acquirer</th>
-              <th className="px-5 py-3 border-b border-slate-100">Currency</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">Exposure</th>
             </tr>
@@ -662,7 +662,7 @@ const PspSummaryWidget = ({ companies }: { companies: Company[] }) => {
               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
                 <td className="px-5 py-3 font-medium text-slate-700">{r.companyName}</td>
                 <td className="px-5 py-3 text-slate-600">{r.providerName}</td>
-                <td className="px-5 py-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
+                <td className="px-5 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
                 <td className={`px-5 py-3 text-right font-mono ${usdCls(r.balanceUsd)}`}>{fmtUsd(r.balanceUsd)}</td>
                 <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(r.balanceUsd + r.settlementUsd)}`}>{fmtUsd(r.balanceUsd + r.settlementUsd)}</td>
               </tr>
