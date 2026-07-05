@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import {
   Plus, X, Settings2, Check, Pencil, LayoutDashboard, GripVertical, Loader2,
-  ChevronDown, Star, Trash2,
+  ChevronDown, Star, Trash2, Lock,
 } from 'lucide-react';
 import type { Company, DashboardWidget, DashboardLayout, PortfolioPoint } from '../types';
 import { WidgetView, WIDGET_REGISTRY, widgetMeta } from './widgets';
@@ -124,7 +124,16 @@ function AddWidgetMenu({ onAdd, onClose }: { onAdd: (type: DashboardWidget['type
 
 // ── Dashboard switcher ────────────────────────────────────────────────────
 
-type Dash = { id: string; name: string; isDefault: boolean; layout: DashboardLayout };
+type Dash = { id: string; name: string; isDefault: boolean; layout: DashboardLayout; builtin?: boolean };
+
+// The built-in, read-only dashboard every user always has. It mirrors the
+// "All Companies" overview and cannot be edited, renamed, or deleted. It is the
+// default landing view unless the user marks one of their own dashboards as main.
+const BUILTIN_ID = '__all_companies__';
+const BUILTIN_NAME = 'All Companies';
+const makeBuiltin = (isDefault: boolean): Dash => ({
+  id: BUILTIN_ID, name: BUILTIN_NAME, isDefault, builtin: true, layout: compact(DEFAULT_LAYOUT()),
+});
 
 function DashboardSwitcher({
   dashboards, activeId, onSwitch, onCreate, onRename, onMakeMain, onDelete,
@@ -154,7 +163,7 @@ function DashboardSwitcher({
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-bold text-slate-800 hover:bg-slate-50 max-w-[220px]"
       >
-        <LayoutDashboard size={15} className="text-indigo-500 shrink-0" />
+        {active?.builtin ? <Lock size={14} className="text-slate-400 shrink-0" /> : <LayoutDashboard size={15} className="text-indigo-500 shrink-0" />}
         <span className="truncate">{active?.name || 'Dashboard'}</span>
         {active?.isDefault && <Star size={12} className="text-amber-400 fill-amber-400 shrink-0" />}
         <ChevronDown size={14} className="text-slate-400 shrink-0" />
@@ -179,6 +188,7 @@ function DashboardSwitcher({
                     />
                   ) : (
                     <button onClick={() => { onSwitch(d.id); setOpen(false); }} className="flex items-center gap-2 flex-1 min-w-0 px-2 py-2 text-left">
+                      {d.builtin && <Lock size={11} className="text-slate-400 shrink-0" />}
                       <span className={`text-sm truncate ${d.id === activeId ? 'font-bold text-indigo-700' : 'font-medium text-slate-700'}`}>{d.name}</span>
                       {d.isDefault && <Star size={11} className="text-amber-400 fill-amber-400 shrink-0" />}
                       {d.id === activeId && <Check size={13} className="text-indigo-500 ml-auto shrink-0" />}
@@ -187,17 +197,19 @@ function DashboardSwitcher({
                   {renamingId !== d.id && (
                     <div className="flex items-center shrink-0">
                       {!d.isDefault && (
-                        <button onClick={() => onMakeMain(d.id)} title="Make main" className="p-1.5 rounded-md text-slate-400 hover:text-amber-500 hover:bg-amber-50">
+                        <button onClick={() => onMakeMain(d.id)} title={d.builtin ? 'Use as default view' : 'Make main'} className="p-1.5 rounded-md text-slate-400 hover:text-amber-500 hover:bg-amber-50">
                           <Star size={13} />
                         </button>
                       )}
-                      <button onClick={() => { setRenamingId(d.id); setRenameVal(d.name); }} title="Rename" className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50">
-                        <Pencil size={13} />
-                      </button>
-                      {dashboards.length > 1 && (
-                        <button onClick={() => onDelete(d.id)} title="Delete" className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50">
-                          <Trash2 size={13} />
-                        </button>
+                      {!d.builtin && (
+                        <>
+                          <button onClick={() => { setRenamingId(d.id); setRenameVal(d.name); }} title="Rename" className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50">
+                            <Pencil size={13} />
+                          </button>
+                          <button onClick={() => onDelete(d.id)} title="Delete" className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50">
+                            <Trash2 size={13} />
+                          </button>
+                        </>
                       )}
                     </div>
                   )}
@@ -257,8 +269,9 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
 
-  // Load the user's dashboards once. If they have none, create the default one
-  // (mirrors the Companies overview) so there is always a main dashboard.
+  // Load the user's own dashboards. The built-in "All Companies" view is always
+  // prepended and is the default landing unless the user has marked one of their
+  // own dashboards as main. We never auto-create a dashboard here.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -266,27 +279,21 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
         const res = await fetch('/api/dashboards', { credentials: 'include' });
         const data = await res.json();
         if (cancelled) return;
-        let list: Dash[] = Array.isArray(data.dashboards) ? data.dashboards : [];
-        if (!list.length) {
-          const def = compact(DEFAULT_LAYOUT());
-          const created = await fetch('/api/dashboards', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-            body: JSON.stringify({ name: 'Main', layout: def, makeDefault: true }),
-          }).then(r => r.json()).catch(() => null);
-          if (cancelled) return;
-          list = [{ id: created?.id || 'local', name: 'Main', isDefault: true, layout: def }];
-        }
-        list = list.map(d => ({ ...d, layout: compact(Array.isArray(d.layout) && d.layout.length ? d.layout : DEFAULT_LAYOUT()) }));
-        const active = list.find(d => d.isDefault) || list[0];
+        const userList: Dash[] = (Array.isArray(data.dashboards) ? data.dashboards : [])
+          .map((d: Dash) => ({ ...d, builtin: false, layout: compact(Array.isArray(d.layout) && d.layout.length ? d.layout : DEFAULT_LAYOUT()) }));
+        const userDefault = userList.find(d => d.isDefault);
+        const builtin = makeBuiltin(!userDefault); // built-in is default only if the user picked no custom main
+        const list = [builtin, ...userList];
+        const active = userDefault || builtin;
         setDashboards(list);
         setActiveId(active.id);
         setLayout(active.layout);
       } catch {
         if (!cancelled) {
-          const def = compact(DEFAULT_LAYOUT());
-          setDashboards([{ id: 'local', name: 'Main', isDefault: true, layout: def }]);
-          setActiveId('local');
-          setLayout(def);
+          const builtin = makeBuiltin(true);
+          setDashboards([builtin]);
+          setActiveId(builtin.id);
+          setLayout(builtin.layout);
         }
       } finally {
         loadedRef.current = true;
@@ -324,7 +331,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   const hPx = (h: number) => h * ROW_PX + (h - 1) * GAP;
 
   const persist = useCallback((next: DashboardLayout) => {
-    if (!activeId) return;
+    if (!activeId || activeId === BUILTIN_ID) return; // built-in is read-only
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveState('saving');
     saveTimer.current = setTimeout(async () => {
@@ -344,6 +351,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   }, [activeId]);
 
   const commit = useCallback((next: DashboardLayout) => {
+    if (activeId === BUILTIN_ID) return; // built-in cannot be edited
     const compacted = compact(next);
     setLayout(compacted);
     setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: compacted } : d) : ds);
@@ -353,8 +361,10 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   // ── Dashboard management ────────────────────────────────────────────────
   const switchDashboard = (id: string) => {
     if (id === activeId) return;
-    // stash the current working layout back into the list before leaving
-    setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: layout || d.layout } : d) : ds);
+    // stash the current working layout back into the list before leaving (never the read-only built-in)
+    if (activeId && activeId !== BUILTIN_ID) {
+      setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: layout || d.layout } : d) : ds);
+    }
     const target = dashboards?.find(d => d.id === id);
     setActiveId(id);
     setLayout(target ? target.layout : compact(DEFAULT_LAYOUT()));
@@ -372,9 +382,11 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
       }).then(r => r.json());
       const id = created?.id;
       if (!id) return;
-      setDashboards(ds => [...(ds || []), { id, name: clean, isDefault: false, layout: def }]);
-      // move into the new dashboard
-      setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: layout || d.layout } : d) : ds);
+      // stash current (unless leaving the read-only built-in), then move into the new dashboard
+      if (activeId && activeId !== BUILTIN_ID) {
+        setDashboards(ds => ds ? ds.map(d => d.id === activeId ? { ...d, layout: layout || d.layout } : d) : ds);
+      }
+      setDashboards(ds => [...(ds || []), { id, name: clean, isDefault: false, builtin: false, layout: def }]);
       setActiveId(id);
       setLayout(def);
       setEditing(true); setConfigId(null); setShowAdd(false);
@@ -382,6 +394,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   };
 
   const renameDashboard = async (id: string, name: string) => {
+    if (id === BUILTIN_ID) return; // built-in cannot be renamed
     const clean = name.trim();
     if (!clean) return;
     setDashboards(ds => ds ? ds.map(d => d.id === id ? { ...d, name: clean } : d) : ds);
@@ -393,6 +406,11 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
 
   const makeMain = async (id: string) => {
     setDashboards(ds => ds ? ds.map(d => ({ ...d, isDefault: d.id === id })) : ds);
+    if (id === BUILTIN_ID) {
+      // Revert to the built-in as the landing view: clear any custom default.
+      fetch('/api/dashboards/clear-default', { method: 'POST', credentials: 'include' }).catch(() => {});
+      return;
+    }
     fetch(`/api/dashboards/${id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ makeDefault: true }),
@@ -400,13 +418,13 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   };
 
   const deleteDashboard = async (id: string) => {
+    if (id === BUILTIN_ID) return; // built-in cannot be deleted
     const list = dashboards || [];
-    if (list.length <= 1) return; // never delete the last dashboard
     const wasActive = id === activeId;
     const remaining = list.filter(d => d.id !== id);
     setDashboards(remaining);
     if (wasActive) {
-      const nextActive = remaining.find(d => d.isDefault) || remaining[0];
+      const nextActive = remaining.find(d => d.isDefault) || remaining.find(d => d.builtin) || remaining[0];
       setActiveId(nextActive.id);
       setLayout(nextActive.layout);
       setEditing(false); setConfigId(null); setShowAdd(false);
@@ -546,6 +564,7 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
   }
 
   const gridHeight = layout.reduce((m, it) => Math.max(m, it.y + it.h), 0);
+  const activeIsBuiltin = activeId === BUILTIN_ID;
 
   return (
     <div className="w-full px-4 md:px-6 py-4">
@@ -561,7 +580,9 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
             onMakeMain={makeMain}
             onDelete={deleteDashboard}
           />
-          <p className="hidden lg:block text-xs text-slate-400 truncate">{editing ? 'Drag to move, pull the corner to resize, set each widget’s source companies.' : 'Your personal view across companies.'}</p>
+          <p className="hidden lg:block text-xs text-slate-400 truncate">
+            {activeIsBuiltin ? 'Default overview across all companies — read only. Create your own dashboard to customize.' : editing ? 'Drag to move, pull the corner to resize, set each widget’s source companies.' : 'Your personal view across companies.'}
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {saveState !== 'idle' && (
@@ -575,20 +596,28 @@ export default function WidgetCanvas({ companies, history }: { companies: Compan
               <button key={id} onClick={() => setPeriod(id)} className={`px-2.5 py-2 transition-colors ${period === id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{label}</button>
             ))}
           </div>
-          {editing && (
-            <div className="relative">
-              <button onClick={() => setShowAdd(v => !v)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                <Plus size={15} /> Add widget
+          {activeIsBuiltin ? (
+            <span className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-500 text-sm font-semibold" title="This default dashboard can't be edited">
+              <Lock size={14} /> Default view
+            </span>
+          ) : (
+            <>
+              {editing && (
+                <div className="relative">
+                  <button onClick={() => setShowAdd(v => !v)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    <Plus size={15} /> Add widget
+                  </button>
+                  {showAdd && <AddWidgetMenu onAdd={addWidget} onClose={() => setShowAdd(false)} />}
+                </div>
+              )}
+              <button
+                onClick={() => { setEditing(v => !v); setConfigId(null); setShowAdd(false); }}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${editing ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+              >
+                {editing ? <><Check size={15} /> Done</> : <><Pencil size={15} /> Edit layout</>}
               </button>
-              {showAdd && <AddWidgetMenu onAdd={addWidget} onClose={() => setShowAdd(false)} />}
-            </div>
+            </>
           )}
-          <button
-            onClick={() => { setEditing(v => !v); setConfigId(null); setShowAdd(false); }}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${editing ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
-          >
-            {editing ? <><Check size={15} /> Done</> : <><Pencil size={15} /> Edit layout</>}
-          </button>
         </div>
       </div>
 

@@ -1538,9 +1538,9 @@ async function startServer() {
     const conn = await mysql.createConnection(dbConfig());
     try {
       const uid = req.session.user.id;
-      const [cntRows] = (await conn.execute("SELECT COUNT(*) AS c FROM user_dashboards WHERE user_id = ?", [uid])) as any;
-      const isFirst = Number(cntRows[0]?.c || 0) === 0;
-      const makeMain = isFirst || !!makeDefault;
+      // A new dashboard only becomes the main view when explicitly requested — the
+      // built-in "All Companies" dashboard remains the default otherwise.
+      const makeMain = !!makeDefault;
       if (makeMain) await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [uid]);
       const id = newDashId();
       await conn.execute(
@@ -1551,6 +1551,21 @@ async function startServer() {
     } catch (err: any) {
       console.error("Dashboard create error:", err.message);
       res.status(500).json({ error: "Failed to create dashboard" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/dashboards/clear-default — unset any custom main so the built-in
+  // "All Companies" dashboard becomes the landing view again.
+  app.post("/api/dashboards/clear-default", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [req.session.user.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Dashboard clear-default error:", err.message);
+      res.status(500).json({ error: "Failed to update dashboards" });
     } finally {
       await conn.end();
     }
