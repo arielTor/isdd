@@ -806,6 +806,7 @@ const UserManagementPage = ({
   onAddUser,
   onEditUser,
   onDeleteUser,
+  onSetAuthSource,
   companies,
   currentUserId,
   roles,
@@ -817,6 +818,7 @@ const UserManagementPage = ({
   onAddUser: () => void,
   onEditUser: (user: User) => void,
   onDeleteUser: (id: string) => void,
+  onSetAuthSource: (user: User, source: string) => void,
   companies: Company[],
   currentUserId?: string,
   roles: RoleDef[],
@@ -1001,16 +1003,24 @@ const UserManagementPage = ({
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-2">
                           {user.authSource === 'sso' ? (
-                            <span title="Entra SSO account — managed via group roles, not editable here" className="text-indigo-400 flex items-center"><ShieldCheck size={15} /></span>
+                            <button
+                              onClick={() => onSetAuthSource(user, 'password')}
+                              title="Microsoft SSO account (managed via Entra groups). Click to revert to a local password account."
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                            >
+                              <ShieldCheck size={13} /> SSO
+                            </button>
                           ) : (
-                            <span title="Local account (email / password)" className="text-slate-300 flex items-center"><Lock size={13} /></span>
+                            <span title="Local account (email / password)" className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-slate-400">
+                              <Lock size={12} /> Local
+                            </span>
                           )}
                           <button
                             onClick={() => onEditUser(user)}
                             disabled={user.authSource === 'sso'}
-                            title={user.authSource === 'sso' ? "SSO users are managed in Entra and can't be edited here" : undefined}
+                            title={user.authSource === 'sso' ? "SSO users are managed in Entra. Revert to local to edit." : undefined}
                             className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                           ><Edit2 size={14} /> Edit</button>
                           <button onClick={() => onDeleteUser(user.id)} disabled={user.id === currentUserId} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors" title={user.id === currentUserId ? 'You cannot remove yourself' : 'Remove user'}><XCircle size={16} /></button>
@@ -2560,6 +2570,19 @@ export default function App() {
     }
   };
 
+  const handleSetAuthSource = async (user: User, source: string) => {
+    if (source === 'password' && !window.confirm(`Revert "${user.name}" to a local account? They'll sign in with email/password again (a password may need to be set) instead of Microsoft.`)) return;
+    try {
+      const res = await fetch(`/api/users/${user.id}/auth-source`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authSource: source }),
+      });
+      if (res.ok) await loadUsers();
+    } catch (e) {
+      console.error('Failed to change account type:', e);
+    }
+  };
+
   const handleSaveUser = async (user: User): Promise<void> => {
     const isEdit = !!editingUser;
     const res = await fetch(
@@ -3406,6 +3429,7 @@ export default function App() {
                   onAddUser={handleAddUser}
                   onEditUser={handleEditUser}
                   onDeleteUser={handleDeleteUser}
+                  onSetAuthSource={handleSetAuthSource}
                   companies={companies}
                   currentUserId={authUser?.id}
                   roles={roles}

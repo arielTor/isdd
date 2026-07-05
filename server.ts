@@ -711,6 +711,11 @@ async function startServer() {
         return res.status(401).json({ error: "Invalid email or password" });
 
       const user = users[0];
+      // SSO-merged accounts sign in with Microsoft only until an admin reverts them.
+      if (user.auth_source === "sso")
+        return res
+          .status(403)
+          .json({ error: "This account uses Microsoft sign-in. Please use \"Sign in with Microsoft\"." });
       if (!user.password_hash)
         return res
           .status(401)
@@ -869,8 +874,11 @@ async function startServer() {
                 `SSO not authorized: your account "${user.email}" (id ${user.id}) has status "${user.status}", not Active. An admin can re-activate it in User Management.`
               );
             }
+            // First SAML login merges a local account into SSO: from now on this user
+            // signs in with Microsoft only (password login is blocked) until an admin
+            // reverts them to a local account.
             await conn.execute(
-              "UPDATE users SET name = ?, email = ?, entra_oid = COALESCE(NULLIF(?, ''), entra_oid), upn = ?, department = ?, job_title = ? WHERE id = ?",
+              "UPDATE users SET name = ?, email = ?, entra_oid = COALESCE(NULLIF(?, ''), entra_oid), upn = ?, department = ?, job_title = ?, auth_source = 'sso' WHERE id = ?",
               [name, email, oid, upn || null, department || null, jobTitle || null, user.id]
             );
           }
@@ -1106,6 +1114,25 @@ async function startServer() {
     } catch (err: any) {
       console.error("DELETE /api/users/:id error:", err.message);
       res.status(500).json({ error: "Failed to delete user" });
+    } finally {
+      conn?.end();
+    }
+  });
+
+  // Toggle a user between SSO and local (password) — admin only. Reverting an SSO
+  // account to 'password' re-enables password login and makes it editable again.
+  app.put("/api/users/:id/auth-source", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const { authSource } = req.body || {};
+    if (!["password", "sso"].includes(authSource))
+      return res.status(400).json({ error: "authSource must be 'password' or 'sso'" });
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      await conn.execute("UPDATE users SET auth_source = ? WHERE id = ?", [authSource, req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("PUT /api/users/:id/auth-source error:", err.message);
+      res.status(500).json({ error: "Failed to update account type" });
     } finally {
       conn?.end();
     }
