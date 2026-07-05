@@ -183,10 +183,17 @@ async function startServer() {
       return [];
     }
   };
-  const idpCerts = await resolveIdpCerts();
-  // SHA-1 fingerprints of the loaded cert(s), in Entra "Thumbprint" format — lets us
-  // confirm we pulled the same signing cert the portal shows.
-  const idpCertFingerprints = idpCerts.map(c => {
+  const rawCerts = await resolveIdpCerts();
+  // Normalize each cert to a well-formed PEM (headers + 64-char-wrapped body). node-saml's
+  // signature check fails ("Invalid document signature") if the key is malformed PEM, even
+  // when the certificate itself is the correct one.
+  const toPem = (raw: string): string => {
+    const body = (raw.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "").match(/.{1,64}/g) || []).join("\n");
+    return `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----`;
+  };
+  const idpCerts = rawCerts.map(toPem);
+  // SHA-1 fingerprints (Entra "Thumbprint" format) to confirm the loaded signing cert.
+  const idpCertFingerprints = rawCerts.map(c => {
     const der = c.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
     try { return crypto.createHash("sha1").update(Buffer.from(der, "base64")).digest("hex").toUpperCase(); }
     catch { return "?"; }
@@ -199,7 +206,7 @@ async function startServer() {
         entryPoint: SAML_ENTRY_POINT,
         issuer: SAML_ISSUER,
         callbackUrl: SAML_CALLBACK_URL,
-        idpCert: idpCerts,
+        idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
         wantAssertionsSigned: true,
         identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
       },
