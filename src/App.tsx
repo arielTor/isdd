@@ -2459,7 +2459,7 @@ export default function App() {
     const root = document.documentElement;
     root.dataset.theme = effectiveTheme;
     const palettes = {
-      dark: { bg: '#0f172a', border: '#1e293b' },
+      dark: { bg: '#18191b', border: '#272a2d' },   // Chatwoot slate-2 rail, slate-4 border
       gray: { bg: '#2b333f', border: '#3c4655' },
       light: { bg: '#1e293b', border: '#334155' }, // original dark sidebar over a bright portal
     };
