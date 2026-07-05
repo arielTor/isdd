@@ -1001,8 +1001,18 @@ const UserManagementPage = ({
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => onEditUser(user)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {user.authSource === 'sso' ? (
+                            <span title="Entra SSO account — managed via group roles, not editable here" className="text-indigo-400 flex items-center"><ShieldCheck size={15} /></span>
+                          ) : (
+                            <span title="Local account (email / password)" className="text-slate-300 flex items-center"><Lock size={13} /></span>
+                          )}
+                          <button
+                            onClick={() => onEditUser(user)}
+                            disabled={user.authSource === 'sso'}
+                            title={user.authSource === 'sso' ? "SSO users are managed in Entra and can't be edited here" : undefined}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          ><Edit2 size={14} /> Edit</button>
                           <button onClick={() => onDeleteUser(user.id)} disabled={user.id === currentUserId} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors" title={user.id === currentUserId ? 'You cannot remove yourself' : 'Remove user'}><XCircle size={16} /></button>
                         </div>
                       </td>

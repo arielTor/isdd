@@ -952,7 +952,7 @@ async function startServer() {
     try {
       conn = await mysql.createConnection(dbConfig());
       const [users] = (await conn.execute(
-        "SELECT id, name, email, role, status FROM users ORDER BY name"
+        "SELECT id, name, email, role, status, auth_source FROM users ORDER BY name"
       )) as [any[], any];
       const [perms] = (await conn.execute(
         "SELECT user_id, company_id, bank_id FROM user_permissions"
@@ -963,6 +963,7 @@ async function startServer() {
 
       const result = users.map((u: any) => ({
         ...u,
+        authSource: u.auth_source || "password",
         permissions: (perms as any[])
           .filter((p: any) => p.user_id === u.id)
           .map((p: any) => ({

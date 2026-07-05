@@ -202,20 +202,20 @@ function LoginForm({ onLogin, samlEnabled, branding }: { onLogin: (user: any) =>
 
   return (
     <>
-      <div className="flex items-center gap-3 mb-8">
+      <div className="flex flex-col items-center text-center mb-8">
         {branding.logo ? (
-          <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 p-1.5 ${branding.logoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(branding.logoBg) }}>
+          <div className={`w-36 h-36 rounded-2xl flex items-center justify-center p-3 ${branding.logoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(branding.logoBg) }}>
             <img src={branding.logo} alt={branding.siteName} className="max-w-full max-h-full object-contain" />
           </div>
         ) : (
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30 shrink-0">
-            {(branding.siteName?.[0] || 'L').toUpperCase()}
-          </div>
+          <>
+            <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center font-bold text-white text-3xl shadow-lg shadow-indigo-600/30">
+              {(branding.siteName?.[0] || 'L').toUpperCase()}
+            </div>
+            <h1 className="text-xl font-bold text-slate-900 mt-4">{branding.siteName || 'Liquidity Reports'}</h1>
+            <p className="text-xs text-slate-500 mt-1">Sign in to your account</p>
+          </>
         )}
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">{branding.siteName || 'Liquidity Reports'}</h1>
-          <p className="text-xs text-slate-500">Sign in to your account</p>
-        </div>
       </div>
 
       {samlEnabled && (

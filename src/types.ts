@@ -91,6 +91,7 @@ export interface User {
   permissions: UserPermission[];
   roleIds?: string[]; // assigned roles (a user can hold several)
   password?: string; // only used when creating/updating — never returned by API
+  authSource?: string; // 'sso' for Entra-provisioned users, else 'password'
 }
 
 // A role with page access + company/bank access (managed in User Management → Roles).
