@@ -153,24 +153,45 @@ async function startServer() {
   // ── SAML SSO (optional — active only when the SAML_* env vars are set) ────
   // Lets a customer's employees sign in via their Microsoft Entra ID tenant.
   // Runs alongside email/password login (hybrid), never instead of it. All
-  // config (signing cert, issuer, callback) comes from env. The Entra tenant is a
-  // non-secret identifier (it appears in every login URL/token), so it is baked in
-  // here and the IdP login URL is derived from it — no SAML_ENTRY_POINT needed.
+  // The tenant, our SP entity id (issuer), the reply URL and the IdP login URL are all
+  // non-secret and stable, so they are baked in below (each still overridable via env).
+  // The ONLY thing to configure is the IdP signing certificate: set SAML_METADATA_URL to
+  // the "App Federation Metadata Url" from Entra and we fetch the cert from it at startup
+  // (SAML_IDP_CERT can still be used to paste a raw cert instead).
   const ENTRA_TENANT_ID = "318030de-752f-42b3-9848-abd6ec3809e3";
+  const APP_BASE_URL = process.env.APP_URL || "https://stage-finboard.corp-domain.com";
   const SAML_ENTRY_POINT = process.env.SAML_ENTRY_POINT || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/saml2`;
-  const SAML_ENABLED = !!(
-    process.env.SAML_ISSUER &&
-    process.env.SAML_IDP_CERT &&
-    process.env.SAML_CALLBACK_URL
-  );
+  const SAML_ISSUER = process.env.SAML_ISSUER || APP_BASE_URL;
+  const SAML_CALLBACK_URL = process.env.SAML_CALLBACK_URL || `${APP_BASE_URL}/api/auth/saml/callback`;
+  const SAML_METADATA_URL = process.env.SAML_METADATA_URL || "";
+
+  // Resolve the IdP signing certificate(s): an explicit SAML_IDP_CERT wins; otherwise
+  // fetch the App Federation Metadata XML and pull out the <X509Certificate> value(s)
+  // (Entra can publish more than one during a signing-cert rollover).
+  const resolveIdpCerts = async (): Promise<string[]> => {
+    if (process.env.SAML_IDP_CERT) return [process.env.SAML_IDP_CERT];
+    if (!SAML_METADATA_URL) return [];
+    try {
+      const xml = await fetch(SAML_METADATA_URL).then(r => r.text());
+      const certs = [...xml.matchAll(/<(?:\w+:)?X509Certificate>([\s\S]*?)<\/(?:\w+:)?X509Certificate>/g)]
+        .map(m => m[1].replace(/\s+/g, ""))
+        .filter(Boolean);
+      return [...new Set(certs)];
+    } catch (e: any) {
+      console.warn("[SAML] federation metadata fetch failed:", e.message);
+      return [];
+    }
+  };
+  const idpCerts = await resolveIdpCerts();
+  const SAML_ENABLED = idpCerts.length > 0;
   let samlStrategy: SamlStrategy | null = null;
   if (SAML_ENABLED) {
     samlStrategy = new SamlStrategy(
       {
         entryPoint: SAML_ENTRY_POINT,
-        issuer: process.env.SAML_ISSUER!,
-        callbackUrl: process.env.SAML_CALLBACK_URL!,
-        idpCert: process.env.SAML_IDP_CERT!,
+        issuer: SAML_ISSUER,
+        callbackUrl: SAML_CALLBACK_URL,
+        idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
         wantAssertionsSigned: true,
         identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
       },
@@ -178,7 +199,7 @@ async function startServer() {
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false)
     );
     passport.use("saml", samlStrategy);
-    console.log("🔐 SAML SSO: ENABLED");
+    console.log(`🔐 SAML SSO: ENABLED (issuer ${SAML_ISSUER}, ${idpCerts.length} cert(s))`);
   }
   app.use(passport.initialize());
 
