@@ -1717,9 +1717,10 @@ const CompanyDetailCard = ({
 }) => {
   return (
     <div>
-      <div className="overflow-x-auto">
+      {/* Fixed ~15-row height so switching company tabs never reflows the page; rows scroll, header stays. */}
+      <div className="overflow-auto h-[640px]">
         <table className="w-full text-left border-collapse min-w-[600px]">
-          <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
             <tr>
               <th className="px-6 py-4 border-b border-slate-100">Bank</th>
               <th className="px-6 py-4 border-b border-slate-100 text-left">Wallets</th>
