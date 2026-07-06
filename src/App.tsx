@@ -216,49 +216,18 @@ const Sidebar = ({
           {sectionLabel('Menu')}
           {workspaceNav.filter(item => item.id === 'dashboard').map(renderNavItem)}
 
-          {/* Companies - always expanded, placed before Payment Providers.
-             The header itself acts as "View All Companies". */}
+          {/* Bank Balance - opens the all-companies balance overview. */}
           <button
             onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
             className={`w-full flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-lg transition-all text-sm font-medium ${
-              activePage === 'companies' && selectedCompanyId === null
+              activePage === 'companies'
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-700/40'
             }`}
           >
             <Building2 size={17} className="shrink-0" />
-            <span className="truncate flex-1 text-left">Companies</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded ${activePage === 'companies' && selectedCompanyId === null ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
+            <span className="truncate flex-1 text-left">Bank Balance</span>
           </button>
-
-          <div className="ml-3 pl-3 border-l border-sidebar-border/70 space-y-1">
-            {companies.map((company) => {
-              const active = selectedCompanyId === company.id && activePage === 'companies';
-              return (
-                <button
-                  key={company.id}
-                  onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 md:py-2 rounded-lg transition-all cursor-pointer ${
-                    active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
-                  }`}
-                >
-                  {companyLogos[company.id] ? (
-                    <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 p-0.5" style={{ backgroundColor: '#ffffff' }}>
-                      <img src={companyLogos[company.id]} alt={company.name} className="max-w-full max-h-full object-contain" />
-                    </span>
-                  ) : (
-                    <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 ${active ? 'bg-white/20 text-white' : companyColor(company.name)}`}>
-                      {companyInitials(company.name)}
-                    </span>
-                  )}
-                  <span className="text-sm font-medium flex-1 text-left truncate">{company.name}</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${active ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>
-                    {company.banks.length}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
 
           {workspaceNav.filter(item => item.id !== 'dashboard').map(renderNavItem)}
         </div>
