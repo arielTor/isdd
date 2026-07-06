@@ -1938,14 +1938,7 @@ const CompanyTabs = ({
         })}
       </div>
 
-      {/* Active company header + detail */}
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
-        <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
-        <h3 className="text-xl font-bold text-slate-800 tracking-tight">{active.name}</h3>
-        {active.status === 'Onboarding' && (
-          <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase animate-pulse">Onboarding</span>
-        )}
-      </div>
+      {/* The active company name is already shown on the tab, so no separate heading here. */}
       <CompanyDetailCard company={active} alerts={alerts} onShowBankDetails={onShowBankDetails} />
     </div>
   );
@@ -3304,8 +3297,8 @@ export default function App() {
                               ))}
                             </div>
                           )}
-                          {/* Cap the view to ~15 rows; the rest scrolls, the header stays. */}
-                          <div className="overflow-auto max-h-[640px]">
+                          {/* Fixed ~15-row height so switching tabs never reflows the page; rows scroll, header stays. */}
+                          <div className="overflow-auto h-[640px]">
                             <table className="w-full text-left border-collapse text-xs min-w-[640px]">
                               <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
                                 <tr>
