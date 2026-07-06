@@ -452,10 +452,13 @@ const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
           ))}
         </div>
       )}
-      <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
-        <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
-        <h3 className="text-base font-bold text-slate-800 tracking-tight truncate">{company.name}</h3>
-      </div>
+      {/* Company name heading is redundant when the tab bar already shows it. */}
+      {companies.length <= 1 && (
+        <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
+          <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
+          <h3 className="text-base font-bold text-slate-800 tracking-tight truncate">{company.name}</h3>
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         {rows.length === 0 ? <EmptyState label="No verified balances" /> : (
           <table className="w-full text-left border-collapse min-w-[480px] text-sm">
