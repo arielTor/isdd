@@ -2303,6 +2303,12 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Portfolio Summary per-company filter tabs on the Companies page ('all' = every company).
   const [portfolioTab, setPortfolioTab] = useState<string>('all');
+  // Export-to-Excel section picker.
+  const EXPORT_SHEETS = ['Portfolio Summary', 'Bank Detail', 'By Bank', 'By Company', 'By Currency'];
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSel, setExportSel] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(EXPORT_SHEETS.map(s => [s, true]))
+  );
 
   // ── Historical date picker ────────────────────────────────────────────────
   const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -2502,13 +2508,18 @@ export default function App() {
     });
     const toRows = (m: Record<string, number>) => Object.entries(m).map(([k, v]) => [k, Math.round(v)]);
     const who = selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'company') : 'all-companies';
-    downloadExcel(`portfolio-${who}.xls`, [
+    const allSheets = [
       { name: 'Portfolio Summary', headers: ['Company', 'Bank', 'Currency', 'Balance', 'FX Rate', 'USD Value'], rows: flat },
       { name: 'Bank Detail', headers: ['Company', 'Bank', 'Account', 'Currency', 'Balance (LCY)', 'USD Value', 'Last Sync'], rows: detail },
       { name: 'By Bank', headers: ['Bank', 'USD Value'], rows: toRows(byBank) },
       { name: 'By Company', headers: ['Company', 'USD Value'], rows: toRows(byCompany) },
       { name: 'By Currency', headers: ['Currency', 'USD Value'], rows: toRows(byCurrency) },
-    ]);
+    ];
+    // Only export the sections the user ticked in the export menu.
+    const selected = allSheets.filter(s => exportSel[s.name]);
+    if (!selected.length) return;
+    downloadExcel(`portfolio-${who}.xls`, selected);
+    setExportOpen(false);
   };
 
   // Users are now stored in DB - no localStorage sync needed
@@ -2948,12 +2959,50 @@ export default function App() {
                           {isRefreshing ? 'Syncing…' : 'Sync All'}
                         </button>
                       )}
-                      <button
-                        onClick={handleExportCompaniesCsv}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                      >
-                        <Download size={15} /> Export Excel
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setExportOpen(v => !v)}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <Download size={15} /> Export Excel <ChevronDown size={13} className="text-slate-400" />
+                        </button>
+                        {exportOpen && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
+                            <div className="absolute right-0 top-11 z-40 w-64 bg-white rounded-xl border border-slate-200 shadow-xl p-2">
+                              <div className="flex items-center justify-between px-2 py-1.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sections to export</span>
+                                <button
+                                  onClick={() => { const all = EXPORT_SHEETS.every(s => exportSel[s]); setExportSel(Object.fromEntries(EXPORT_SHEETS.map(s => [s, !all]))); }}
+                                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                                >
+                                  {EXPORT_SHEETS.every(s => exportSel[s]) ? 'Clear all' : 'Select all'}
+                                </button>
+                              </div>
+                              <div className="max-h-56 overflow-y-auto">
+                                {EXPORT_SHEETS.map(s => (
+                                  <label key={s} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!exportSel[s]}
+                                      onChange={() => setExportSel(prev => ({ ...prev, [s]: !prev[s] }))}
+                                      className="accent-indigo-600 w-4 h-4"
+                                    />
+                                    {s}
+                                  </label>
+                                ))}
+                              </div>
+                              <button
+                                onClick={handleExportCompaniesCsv}
+                                disabled={!EXPORT_SHEETS.some(s => exportSel[s])}
+                                className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Download size={14} /> Export
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -3255,9 +3304,10 @@ export default function App() {
                               ))}
                             </div>
                           )}
-                          <div className="overflow-x-auto">
+                          {/* Cap the view to ~15 rows; the rest scrolls, the header stays. */}
+                          <div className="overflow-auto max-h-[640px]">
                             <table className="w-full text-left border-collapse text-xs min-w-[640px]">
-                              <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
                                 <tr>
                                   <th className="px-5 py-3 border-b border-slate-100">Company</th>
                                   <th className="px-5 py-3 border-b border-slate-100">Bank</th>
@@ -3287,13 +3337,12 @@ export default function App() {
                                   </tr>
                                 ))}
                               </tbody>
-                              <tfoot>
-                                <tr className="bg-indigo-50 border-t-2 border-indigo-100">
-                                  <td colSpan={5} className="px-5 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</td>
-                                  <td className={`px-5 py-3 text-right font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</td>
-                                </tr>
-                              </tfoot>
                             </table>
+                          </div>
+                          {/* Pinned total (stays in place while the rows scroll) */}
+                          <div className="flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+                            <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+                            <span className={`font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</span>
                           </div>
                         </div>
                       </div>
