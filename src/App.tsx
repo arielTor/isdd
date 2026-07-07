@@ -1919,25 +1919,27 @@ const CompanyTabs = ({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Tab bar - one tab per company */}
-      <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50/60 px-2">
-        {companies.map(c => {
-          const on = c.id === active.id;
-          return (
-            <button
-              key={c.id}
-              onClick={() => setActiveId(c.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-            >
-              <span>{c.name}</span>
-              {c.industry && (
-                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>{c.industry}</span>
-              )}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Internal tabs only when scope is all companies; a page tab already picks one. */}
+      {companies.length > 1 && (
+        <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50/60 px-2">
+          {companies.map(c => {
+            const on = c.id === active.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setActiveId(c.id)}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              >
+                <span>{c.name}</span>
+                {c.industry && (
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>{c.industry}</span>
+                )}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* The active company name is already shown on the tab, so no separate heading here. */}
       <CompanyDetailCard company={active} alerts={alerts} onShowBankDetails={onShowBankDetails} />
@@ -2295,8 +2297,6 @@ export default function App() {
 
   const [activePage, setActivePage] = useState<Page>('companies');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  // Portfolio Summary per-company filter tabs on the Companies page ('all' = every company).
-  const [portfolioTab, setPortfolioTab] = useState<string>('all');
   // Export-to-Excel section picker.
   const EXPORT_SHEETS = ['Portfolio Summary', 'Bank Detail', 'By Bank', 'By Company', 'By Currency'];
   const [exportOpen, setExportOpen] = useState(false);
@@ -3000,6 +3000,28 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Page-level company tabs - filter the ENTIRE page to the selected company */}
+                  {companies.length > 1 && (
+                    <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+                      <button
+                        onClick={() => setSelectedCompanyId(null)}
+                        className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!selectedCompanyId ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                      >
+                        All
+                      </button>
+                      {companies.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => setSelectedCompanyId(c.id)}
+                          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${selectedCompanyId === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                        >
+                          {c.name}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCompanyId === c.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Historical mode banner */}
                   {isHistoricalMode && !historyLoading && (
                     <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-5 py-3">
@@ -3228,8 +3250,8 @@ export default function App() {
                     });
 
                     // The Portfolio Summary table has its OWN tabs; the mini tables above are unaffected.
-                    const tabActive = (portfolioTab !== 'all' && filteredCompanies.some(c => c.id === portfolioTab)) ? portfolioTab : 'all';
-                    const displayRows = tabActive === 'all' ? rows : rows.filter(r => r.companyId === tabActive);
+                    // The page-level company tabs already scope filteredCompanies, so show all rows.
+                    const displayRows = rows;
                     const grandTotal = displayRows.reduce((s, r) => s + r.usdValue, 0);
                     const currencyBadge = (c: string) =>
                       c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
@@ -3276,28 +3298,8 @@ export default function App() {
                           <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
                             <WalletIcon size={16} className="text-indigo-500" />
                             <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
-                            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">{tabActive === 'all' ? 'All Companies' : (filteredCompanies.find(c => c.id === tabActive)?.name || 'Company')}</span>
+                            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">{selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'Company') : 'All Companies'}</span>
                           </div>
-                          {/* This table's own per-company tabs */}
-                          {filteredCompanies.length > 1 && (
-                            <div className="flex items-center gap-1 px-4 pt-2 border-b border-slate-200 overflow-x-auto bg-white">
-                              <button
-                                onClick={() => setPortfolioTab('all')}
-                                className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === 'all' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                              >
-                                All
-                              </button>
-                              {filteredCompanies.map(c => (
-                                <button
-                                  key={c.id}
-                                  onClick={() => setPortfolioTab(c.id)}
-                                  className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tabActive === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                                >
-                                  {c.name}
-                                </button>
-                              ))}
-                            </div>
-                          )}
                           {/* Fixed ~15-row height so switching tabs never reflows the page; rows scroll, header stays. */}
                           <div className="overflow-auto h-[640px]">
                             <table className="w-full text-left border-collapse text-xs min-w-[640px]">

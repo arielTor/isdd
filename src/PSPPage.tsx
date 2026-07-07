@@ -332,7 +332,7 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100">
           <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">PSP Summary</span>
-          <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider ml-2">All Companies</span>
+          <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider ml-2">{activeValid ? (companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'Company') : 'All Companies'}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[720px]">
