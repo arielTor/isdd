@@ -1911,6 +1911,7 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
     c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
     c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
   const rows: any[] = [];
+  let grandTotal = 0;
   companies.forEach(company => {
     let firstOfCompany = true;
     (company.banks || []).forEach((bank: any) => {
@@ -1928,6 +1929,7 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
       wallets.forEach((w, idx) => {
         const usdVal = w.value_usd ?? w.usd_value ?? w.valueUsd ?? w.usdValue;
         const usd = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0) ? Number(usdVal) : null;
+        if (usd !== null) grandTotal += usd;
         const alert = alerts.find(a => a.bankId === bank.id && a.walletId === w.id && a.isEnabled);
         const isAlertRow = alert ? (w.balance || 0) <= alert.threshold : false;
         const fmtUsdCell = usd === null ? '-' : ((usd < 0 ? '-$' : '$') + Math.abs(usd).toLocaleString(undefined, { maximumFractionDigits: 0 }));
@@ -1968,6 +1970,11 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
           </thead>
           <tbody>{rows.length ? rows : (<tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">No verified balances</td></tr>)}</tbody>
         </table>
+      </div>
+      {/* Pinned total (sum of all USD valuations) - stays put while rows scroll */}
+      <div className="flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+        <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+        <span className={`font-mono font-bold text-sm ${grandTotal < 0 ? 'text-red-600' : 'text-slate-800'}`}>{(grandTotal < 0 ? '-$' : '$') + Math.abs(grandTotal).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
       </div>
     </div>
   );
