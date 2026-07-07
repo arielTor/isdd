@@ -188,11 +188,11 @@ const Sidebar = ({
       <div className="px-4 py-4 md:px-5 md:py-5 flex items-center justify-between border-b border-sidebar-border/70">
         <div className="flex items-center gap-3 min-w-0">
           {brandLogo ? (
-            <div className={`w-12 h-12 md:w-[72px] md:h-[72px] rounded-xl flex items-center justify-center shrink-0 p-1 md:p-1.5 ${brandLogoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(brandLogoBg) }}>
+            <div className={`w-[58px] h-[58px] md:w-[86px] md:h-[86px] rounded-xl flex items-center justify-center shrink-0 p-1 md:p-1.5 ${brandLogoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(brandLogoBg) }}>
               <img src={brandLogo} alt={brandName} className="max-w-full max-h-full object-contain" />
             </div>
           ) : (
-            <div className="w-12 h-12 md:w-[72px] md:h-[72px] bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white text-lg md:text-2xl shadow-lg shadow-indigo-900/40 shrink-0">
+            <div className="w-[58px] h-[58px] md:w-[86px] md:h-[86px] bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white text-lg md:text-2xl shadow-lg shadow-indigo-900/40 shrink-0">
               {(brandName?.[0] || 'L').toUpperCase()}
             </div>
           )}
