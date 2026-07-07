@@ -3381,7 +3381,22 @@ export default function App() {
                         </button>
                       </div>
                     ) : (
-                      <CompanyTabs companies={filteredCompanies} alerts={alerts} onShowBankDetails={handleShowBankDetails} />
+                      /* No internal tabs - the page-level company tabs drive this.
+                         Under "All" every company's detail stacks (each with a heading);
+                         when one company is selected it's just that one. */
+                      <div className="space-y-6">
+                        {filteredCompanies.map(company => (
+                          <div key={company.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                            {filteredCompanies.length > 1 && (
+                              <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+                                <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
+                                <h3 className="text-lg font-bold text-slate-800 tracking-tight">{company.name}</h3>
+                              </div>
+                            )}
+                            <CompanyDetailCard company={company} alerts={alerts} onShowBankDetails={handleShowBankDetails} />
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
