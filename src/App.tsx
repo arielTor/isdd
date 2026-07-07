@@ -3412,7 +3412,16 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
                 className="w-full max-w-[2000px] mx-auto p-4 md:p-8"
               >
-                <PSPPage companies={companies} onSync={handleRefresh} isSyncing={isRefreshing} />
+                <PSPPage
+                  companies={isHistoricalMode && historyData ? historyData : companies}
+                  onSync={handleRefresh}
+                  isSyncing={isRefreshing}
+                  historyDate={historyDate}
+                  isHistoricalMode={isHistoricalMode}
+                  lastSynced={lastSynced}
+                  onDateChange={handleDateChange}
+                  todayStr={todayStr}
+                />
               </motion.div>
             )}
 

@@ -131,7 +131,19 @@ const BreakdownTable = ({ title, data }: { title: string; data: Record<string, {
   );
 };
 
-const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSync?: () => void; isSyncing?: boolean }) => {
+const PSPPage = ({
+  companies, onSync, isSyncing,
+  historyDate = '', isHistoricalMode = false, lastSynced = '', onDateChange, todayStr = '',
+}: {
+  companies: Company[];
+  onSync?: () => void;
+  isSyncing?: boolean;
+  historyDate?: string;
+  isHistoricalMode?: boolean;
+  lastSynced?: string;
+  onDateChange?: (date: string) => void;
+  todayStr?: string;
+}) => {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const companiesWithPsp = companies.filter(c => (c.psp_providers || []).length > 0);
 
@@ -219,6 +231,31 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
           )}
         </div>
       </div>
+
+      {/* Date + last sync (matches the Bank Balance page) */}
+      {onDateChange && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</span>
+            <input
+              type="date"
+              max={todayStr}
+              value={historyDate || todayStr}
+              onChange={e => { const val = e.target.value; onDateChange(val === todayStr ? '' : val); }}
+              className="text-xs font-mono border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
+            />
+          </div>
+          {isHistoricalMode ? (
+            <button onClick={() => onDateChange('')} className="text-xs font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2">← Back to Live</button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last Global Sync</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-mono font-bold text-slate-700">{lastSynced}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Company selector - View All + per company (like the Companies page) */}
       {companiesWithPsp.length > 1 && (
