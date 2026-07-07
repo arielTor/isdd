@@ -213,7 +213,6 @@ const Sidebar = ({
       {/* Scrollable: workspace nav + company switcher */}
       <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
         <div className="space-y-1">
-          {sectionLabel('Menu')}
           {workspaceNav.filter(item => item.id === 'dashboard').map(renderNavItem)}
 
           {/* Bank Balance - opens the all-companies balance overview. */}
