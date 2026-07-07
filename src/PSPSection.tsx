@@ -263,7 +263,7 @@ const ProviderRow = ({ provider, settlements }: { provider: PspProvider; settlem
   );
 };
 
-const PSPSection = ({ company }: { company: Company }) => {
+const PSPSection = ({ company, showName = true }: { company: Company; showName?: boolean }) => {
   const providers = company.psp_providers || [];
   if (providers.length === 0) return null;
 
@@ -275,7 +275,7 @@ const PSPSection = ({ company }: { company: Company }) => {
         <div className="flex items-center gap-3">
           <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
           <CreditCard size={18} className="text-indigo-600" />
-          <h3 className="text-xl font-bold text-slate-800 tracking-tight">{company.name}</h3>
+          {showName && <h3 className="text-xl font-bold text-slate-800 tracking-tight">{company.name}</h3>}
           {company.industry && (
             <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
               {company.industry}

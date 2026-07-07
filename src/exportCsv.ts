@@ -1,5 +1,5 @@
 // Minimal client-side CSV export. Builds a CSV from already-loaded, on-screen
-// data and triggers a download — no data leaves the browser.
+// data and triggers a download - no data leaves the browser.
 export function downloadCsv(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
   const esc = (v: string | number | null | undefined) => {
     const s = v === null || v === undefined ? '' : String(v);
@@ -23,7 +23,7 @@ export interface Sheet {
   rows: (string | number | null | undefined)[][];
 }
 
-// ── Real .xlsx (OOXML) export — no dependency ───────────────────────────────
+// ── Real .xlsx (OOXML) export - no dependency ───────────────────────────────
 // An .xlsx is a ZIP of XML parts. We build the parts and pack them with a tiny
 // stored-mode (uncompressed) ZIP writer + CRC32. Every table = its own sheet.
 

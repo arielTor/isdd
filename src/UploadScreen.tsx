@@ -233,7 +233,7 @@ export default function UploadScreen() {
                             isPending ? 'bg-indigo-50/30' :
                             'hover:bg-slate-50/60'}`}
                       >
-                        {/* Bank — rowspan */}
+                        {/* Bank - rowspan */}
                         {idx === 0 && (
                           <td rowSpan={bankRows.length} className="px-6 py-4 border-r border-slate-100 align-top">
                             <div className="font-semibold text-slate-800 pt-0.5">{bankName}</div>
@@ -274,7 +274,7 @@ export default function UploadScreen() {
                             step="any"
                             value={row.new_balance}
                             onChange={e => handleChange(row.wallet_id, 'new_balance', e.target.value)}
-                            placeholder="—"
+                            placeholder="-"
                             className={`w-36 border rounded-lg px-3 py-1.5 text-right text-sm font-mono outline-none
                               focus:ring-2 transition-all placeholder:text-slate-300
                               ${isInvalid
@@ -294,7 +294,7 @@ export default function UploadScreen() {
                             step="any"
                             value={row.new_value_usd}
                             onChange={e => handleChange(row.wallet_id, 'new_value_usd', e.target.value)}
-                            placeholder="—"
+                            placeholder="-"
                             className={`w-36 border rounded-lg px-3 py-1.5 text-right text-sm font-mono outline-none
                               focus:ring-2 transition-all placeholder:text-slate-300
                               ${isPending && row.new_value_usd !== ''

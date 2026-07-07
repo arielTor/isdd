@@ -10,6 +10,7 @@ import {
   Table as TableIcon,
   BarChart3,
   TrendingUp,
+  ShieldCheck,
 } from 'lucide-react';
 import { CreditCard } from 'lucide-react';
 import { CURRENCY_SYMBOLS } from '../types';
@@ -263,7 +264,7 @@ const AssetBreakdownWidget = ({ companies, history }: { companies: Company[]; hi
 
       <div className="flex flex-col gap-3 p-5 flex-1">
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
                 <WalletIcon size={14} className="text-indigo-600" />
@@ -273,7 +274,7 @@ const AssetBreakdownWidget = ({ companies, history }: { companies: Company[]; hi
             <p className={`text-xl font-bold font-mono leading-none ${fiatTotal < 0 ? 'text-red-500' : 'text-slate-900'}`}>{fmtUsd(fiatTotal)}</p>
             <SparklineChart data={spark.fiat} color="#6366f1" gradId="gradFiatW" height={36} fmtVal={fmtUsd} />
           </div>
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
                 <Bitcoin size={14} className="text-sky-500" />
@@ -346,21 +347,45 @@ const SummaryTableWidget = ({ companies, groupBy, title }: { companies: Company[
 };
 
 const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
-  const { rows, grandTotal } = aggregateVerified(companies);
-  if (!rows.length) return <EmptyState label="No verified balances" />;
+  // Optional per-company filter tabs (All + each company) for easier switching.
+  const [tab, setTab] = useState<string>('all');
+  const scoped = tab === 'all' ? companies : companies.filter(c => c.id === tab);
+  const { rows, grandTotal } = aggregateVerified(scoped);
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
         <WalletIcon size={16} className="text-indigo-500" />
         <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
       </div>
-      <div className="flex-1 overflow-auto">
+      {companies.length > 1 && (
+        <div className="flex items-center gap-1 px-3 pt-2 border-b border-slate-200 overflow-x-auto shrink-0">
+          <button
+            onClick={() => setTab('all')}
+            className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === 'all' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          >
+            All
+          </button>
+          {companies.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setTab(c.id)}
+              className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {!rows.length ? <EmptyState label="No verified balances" /> : (
+      <>
+      {/* Only the rows scroll; the Total below stays pinned. */}
+      <div className="flex-1 min-h-0 overflow-auto">
         <table className="w-full text-left border-collapse text-xs min-w-[640px]">
           <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0">
             <tr>
               <th className="px-5 py-3 border-b border-slate-100">Company</th>
               <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-              <th className="px-5 py-3 border-b border-slate-100">Currency</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">FX Rate</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">USD Value</th>
@@ -371,65 +396,101 @@ const PortfolioTableWidget = ({ companies }: { companies: Company[] }) => {
               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                 <td className="px-5 py-3 font-medium text-slate-700">{row.company}</td>
                 <td className="px-5 py-3 text-slate-600">{row.bank}</td>
-                <td className="px-5 py-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span></td>
+                <td className="px-5 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span></td>
                 <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>{CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}</td>
-                <td className="px-5 py-3 text-right font-mono text-slate-500">{row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '—'}</td>
+                <td className="px-5 py-3 text-right font-mono text-slate-500">{row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '-'}</td>
                 <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(row.usdValue)}`}>{fmtUsd(row.usdValue)}</td>
               </tr>
             ))}
           </tbody>
-          <tfoot>
-            <tr className="bg-indigo-50 border-t-2 border-indigo-100">
-              <td colSpan={5} className="px-5 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</td>
-              <td className={`px-5 py-3 text-right font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</td>
-            </tr>
-          </tfoot>
         </table>
       </div>
+      {/* Pinned total bar (outside the scroll area) */}
+      <div className="shrink-0 flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+        <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+        <span className={`font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</span>
+      </div>
+      </>
+      )}
     </div>
   );
 };
 
 const CompanyDetailWidget = ({ companies }: { companies: Company[] }) => {
-  // A detail widget is scoped to a single company; show the first assigned one.
-  const company = companies[0];
-  if (!company) return <EmptyState label="Assign a company" />;
-  const rows: { bank: string; account: string; balance: number; currency: string; usd: number | null }[] = [];
+  // When several companies are in scope, show a tab bar (like the Companies page);
+  // when only one, it's just that company.
+  const [activeIdx, setActiveIdx] = useState(0);
+  if (!companies.length) return <EmptyState label="Assign a company" />;
+  const idx = Math.min(activeIdx, companies.length - 1);
+  const company = companies[idx];
+  // Group by bank: the first wallet of a bank carries the bank name + verified + sync,
+  // subsequent wallets show "↳ Continued" - matching the Companies page detail.
+  const rows: { bankName: string; sync?: string; account: string; balance: number; currency: string; usd: number | null; first: boolean }[] = [];
   (company.banks || []).forEach((bank: any) => {
     if (!bankIsVerified(bank)) return;
     const accounts = (bank.bank_accounts || bank.accounts || []) as any[];
+    let first = true;
     accounts.forEach(acc => walletsOf(acc).forEach(w => {
       const usdVal = w.value_usd ?? w.usd_value ?? w.valueUsd ?? w.usdValue;
       const usd = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0) ? Number(usdVal) : null;
-      rows.push({ bank: bank.name, account: acc.account_number || acc.accountNumber || '', balance: Number(w.balance) || 0, currency: w.currency, usd });
+      rows.push({ bankName: bank.name, sync: bank.last_modified_date, account: acc.account_number || acc.accountNumber || '', balance: Number(w.balance) || 0, currency: w.currency, usd, first });
+      first = false;
     }));
   });
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
-        <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
-        <h3 className="text-base font-bold text-slate-800 tracking-tight truncate">{company.name}</h3>
-      </div>
+      {companies.length > 1 && (
+        <div className="flex items-center gap-1 px-3 pt-2 border-b border-slate-200 overflow-x-auto shrink-0">
+          {companies.map((c, i) => (
+            <button
+              key={c.id}
+              onClick={() => setActiveIdx(i)}
+              className={`px-3 py-2 text-xs font-semibold rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors ${i === idx ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Company name heading is redundant when the tab bar already shows it. */}
+      {companies.length <= 1 && (
+        <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
+          <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
+          <h3 className="text-base font-bold text-slate-800 tracking-tight truncate">{company.name}</h3>
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         {rows.length === 0 ? <EmptyState label="No verified balances" /> : (
           <table className="w-full text-left border-collapse min-w-[480px] text-sm">
             <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0">
               <tr>
                 <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-                <th className="px-5 py-3 border-b border-slate-100 text-right">Account</th>
-                <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
-                <th className="px-5 py-3 border-b border-slate-100 text-right">Currency</th>
+                <th className="px-5 py-3 border-b border-slate-100 text-left">Wallets</th>
+                <th className="px-5 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
+                <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
                 <th className="px-5 py-3 border-b border-slate-100 text-right">USD</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                  <td className="px-5 py-3 font-medium text-slate-700">{r.bank}</td>
-                  <td className="px-5 py-3 text-right text-slate-500 text-xs font-mono">{r.account}</td>
+                  <td className="px-5 py-3">
+                    {r.first ? (
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800">{r.bankName}</span>
+                          <ShieldCheck size={12} className="text-emerald-500 shrink-0" />
+                        </div>
+                        {r.sync && <span className="text-[9px] text-indigo-500 font-bold uppercase mt-0.5 tracking-tight">Sync: {r.sync}</span>}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-left text-slate-500 text-xs font-mono">{r.account}</td>
                   <td className={`px-5 py-3 text-right font-mono ${r.balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[r.currency] || ''}{fmtN(r.balance)}</td>
-                  <td className="px-5 py-3 text-right"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
-                  <td className={`px-5 py-3 text-right font-mono font-bold ${r.usd === null ? 'text-slate-300' : usdCls(r.usd)}`}>{r.usd === null ? '—' : fmtUsd(r.usd)}</td>
+                  <td className="px-5 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
+                  <td className={`px-5 py-3 text-right font-mono font-bold ${r.usd === null ? 'text-slate-300' : usdCls(r.usd)}`}>{r.usd === null ? '-' : fmtUsd(r.usd)}</td>
                 </tr>
               ))}
             </tbody>
@@ -594,7 +655,7 @@ const PspSummaryWidget = ({ companies }: { companies: Company[] }) => {
             <tr>
               <th className="px-5 py-3 border-b border-slate-100">Company</th>
               <th className="px-5 py-3 border-b border-slate-100">Acquirer</th>
-              <th className="px-5 py-3 border-b border-slate-100">Currency</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
               <th className="px-5 py-3 border-b border-slate-100 text-right">Exposure</th>
             </tr>
@@ -604,7 +665,7 @@ const PspSummaryWidget = ({ companies }: { companies: Company[] }) => {
               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
                 <td className="px-5 py-3 font-medium text-slate-700">{r.companyName}</td>
                 <td className="px-5 py-3 text-slate-600">{r.providerName}</td>
-                <td className="px-5 py-3"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
+                <td className="px-5 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(r.currency)}`}>{r.currency}</span></td>
                 <td className={`px-5 py-3 text-right font-mono ${usdCls(r.balanceUsd)}`}>{fmtUsd(r.balanceUsd)}</td>
                 <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(r.balanceUsd + r.settlementUsd)}`}>{fmtUsd(r.balanceUsd + r.settlementUsd)}</td>
               </tr>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, Info, RefreshCcw, Globe, Download } from 'lucide-react';
+import { CreditCard, Info, RefreshCcw, Globe, Download, ChevronDown } from 'lucide-react';
 import { Company } from './types';
 import { downloadExcel } from './exportCsv';
 import PSPSection, {
@@ -90,49 +90,67 @@ const BreakdownTable = ({ title, data }: { title: string; data: Record<string, {
     settlementUsd: acc.settlementUsd + v.settlementUsd,
   }), { transactionsUsd: 0, reserveUsd: 0, balanceUsd: 0, settlementUsd: 0 });
 
+  // CSS-grid layout (not a <table>) so header, rows and the pinned Total share one
+  // column template; with the card as a flex column and the rows area flex-1, the
+  // Total sits at the very bottom - so all three cards' Totals line up on one row.
+  const cols = 'grid grid-cols-[1.3fr_1fr_1fr_1fr_0.8fr_1fr] gap-2 px-4';
+  const numCls = (n: number, extra = '') => `text-right font-mono ${n < 0 ? 'text-red-600' : extra}`;
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-w-[260px]">
-      <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">{title}</div>
-      <table className="w-full text-xs">
-        <thead className="text-slate-400">
-          <tr>
-            <th className="text-left px-4 py-2 font-bold">{title.replace('By ', '')}</th>
-            <th className="text-right px-2 py-2 font-bold">Transactions</th>
-            <th className="text-right px-2 py-2 font-bold">Reserve</th>
-            <th className="text-right px-2 py-2 font-bold">Total</th>
-            <th className="text-right px-2 py-2 font-bold">Settl.</th>
-            <th className="text-right px-4 py-2 font-bold">Exposure</th>
-          </tr>
-        </thead>
-        <tbody className="text-slate-700">
-          {entries.map(([name, v]) => (
-            <tr key={name} className="border-t border-slate-50">
-              <td className="px-4 py-2 font-medium whitespace-nowrap">{name}</td>
-              <td className={`text-right px-2 py-2 font-mono ${v.transactionsUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.transactionsUsd)}</td>
-              <td className="text-right px-2 py-2 font-mono">{fmtUsd(v.reserveUsd)}</td>
-              <td className={`text-right px-2 py-2 font-mono ${v.balanceUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd)}</td>
-              <td className={`text-right px-2 py-2 font-mono ${v.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(v.settlementUsd)}</td>
-              <td className={`text-right px-4 py-2 font-mono font-bold ${(v.balanceUsd + v.settlementUsd) < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd + v.settlementUsd)}</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700">
-            <td className="px-4 py-2">Total</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.transactionsUsd)}</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.reserveUsd)}</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.balanceUsd)}</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.settlementUsd)}</td>
-            <td className="text-right px-4 py-2 font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</td>
-          </tr>
-        </tfoot>
-      </table>
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-w-[280px] flex flex-col">
+      <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide shrink-0">{title}</div>
+      <div className={`${cols} py-2 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100 shrink-0`}>
+        <span>{title.replace('By ', '')}</span>
+        <span className="text-right">Transactions</span>
+        <span className="text-right">Reserve</span>
+        <span className="text-right">Total</span>
+        <span className="text-right">Settl.</span>
+        <span className="text-right">Exposure</span>
+      </div>
+      {/* Rows scroll past ~10; the Total below stays pinned at the bottom. */}
+      <div className="flex-1 min-h-0 overflow-auto max-h-[360px] text-xs text-slate-700">
+        {entries.map(([name, v]) => (
+          <div key={name} className={`${cols} py-2 border-b border-slate-50`}>
+            <span className="font-medium truncate">{name}</span>
+            <span className={numCls(v.transactionsUsd)}>{fmtUsd(v.transactionsUsd)}</span>
+            <span className="text-right font-mono">{fmtUsd(v.reserveUsd)}</span>
+            <span className={numCls(v.balanceUsd)}>{fmtUsd(v.balanceUsd)}</span>
+            <span className={`text-right font-mono ${v.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(v.settlementUsd)}</span>
+            <span className={numCls(v.balanceUsd + v.settlementUsd, 'font-bold')}>{fmtUsd(v.balanceUsd + v.settlementUsd)}</span>
+          </div>
+        ))}
+      </div>
+      <div className={`${cols} py-2.5 text-xs font-bold text-indigo-700 border-t-2 border-indigo-300 shrink-0`}>
+        <span>Total</span>
+        <span className="text-right font-mono">{fmtUsd(totals.transactionsUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.reserveUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.balanceUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.settlementUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</span>
+      </div>
     </div>
   );
 };
 
-const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSync?: () => void; isSyncing?: boolean }) => {
+const PSPPage = ({
+  companies, onSync, isSyncing,
+  historyDate = '', isHistoricalMode = false, lastSynced = '', onDateChange, todayStr = '',
+}: {
+  companies: Company[];
+  onSync?: () => void;
+  isSyncing?: boolean;
+  historyDate?: string;
+  isHistoricalMode?: boolean;
+  lastSynced?: string;
+  onDateChange?: (date: string) => void;
+  todayStr?: string;
+}) => {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  // Export-to-Excel section picker.
+  const EXPORT_SHEETS = ['PSP Summary', 'By Acquirer', 'By Company', 'By Currency'];
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSel, setExportSel] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(EXPORT_SHEETS.map(s => [s, true]))
+  );
   const companiesWithPsp = companies.filter(c => (c.psp_providers || []).length > 0);
 
   if (companiesWithPsp.length === 0) {
@@ -185,12 +203,16 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
       ]);
     const bh = ['Transactions (USD)', 'Reserve (USD)', 'Balance (USD)', 'Settlement (USD)', 'Exposure (USD)'];
     const name = activeValid ? `psp-${(companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'company')}` : 'psp-all-companies';
-    downloadExcel(`${name}.xls`, [
+    const allSheets = [
       { name: 'PSP Summary', headers: ['Company', 'Acquirer', 'Currency', ...bh], rows: summary },
       { name: 'By Acquirer', headers: ['Acquirer', ...bh], rows: breakdownRows(byAcquirer) },
       { name: 'By Company', headers: ['Company', ...bh], rows: breakdownRows(byCompany) },
       { name: 'By Currency', headers: ['Currency', ...bh], rows: breakdownRows(byCurrency) },
-    ]);
+    ];
+    const selected = allSheets.filter(s => exportSel[s.name]);
+    if (!selected.length) return;
+    downloadExcel(`${name}.xls`, selected);
+    setExportOpen(false);
   };
 
   return (
@@ -201,12 +223,50 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
           <p className="text-sm text-slate-500">Real-time overview of PSP balances, settlements and expected cash</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={exportCsv}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Download size={14} /> Export Excel
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen(v => !v)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Download size={14} /> Export Excel <ChevronDown size={13} className="text-slate-400" />
+            </button>
+            {exportOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
+                <div className="absolute right-0 top-11 z-40 w-64 bg-white rounded-xl border border-slate-200 shadow-xl p-2">
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sections to export</span>
+                    <button
+                      onClick={() => { const all = EXPORT_SHEETS.every(s => exportSel[s]); setExportSel(Object.fromEntries(EXPORT_SHEETS.map(s => [s, !all]))); }}
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      {EXPORT_SHEETS.every(s => exportSel[s]) ? 'Clear all' : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {EXPORT_SHEETS.map(s => (
+                      <label key={s} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={!!exportSel[s]}
+                          onChange={() => setExportSel(prev => ({ ...prev, [s]: !prev[s] }))}
+                          className="accent-indigo-600 w-4 h-4"
+                        />
+                        {s}
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    onClick={exportCsv}
+                    disabled={!EXPORT_SHEETS.some(s => exportSel[s])}
+                    className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Download size={14} /> Export
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           {onSync && (
             <button
               onClick={onSync}
@@ -220,8 +280,33 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
         </div>
       </div>
 
-      {/* Company selector — View All + per company (like the Companies page) */}
-      {companiesWithPsp.length > 1 && (
+      {/* Date + last sync (matches the Bank Balance page) */}
+      {onDateChange && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</span>
+            <input
+              type="date"
+              max={todayStr}
+              value={historyDate || todayStr}
+              onChange={e => { const val = e.target.value; onDateChange(val === todayStr ? '' : val); }}
+              className="text-xs font-mono border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
+            />
+          </div>
+          {isHistoricalMode ? (
+            <button onClick={() => onDateChange('')} className="text-xs font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2">← Back to Live</button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last Global Sync</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-mono font-bold text-slate-700">{lastSynced}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Company selector - View All + per company (always shown, even for a single company) */}
+      {companiesWithPsp.length >= 1 && (
         <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200">
           <button
             onClick={() => setActiveCompanyId(null)}
@@ -322,7 +407,7 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
       </div>
 
       {/* Three breakdown tables */}
-      <div className="flex flex-col lg:flex-row gap-4">
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch">
         <BreakdownTable title="By Acquirer" data={byAcquirer} />
         <BreakdownTable title="By Company" data={byCompany} />
         <BreakdownTable title="By Currency" data={byCurrency} />
@@ -332,7 +417,7 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100">
           <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">PSP Summary</span>
-          <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider ml-2">All Companies</span>
+          <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider ml-2">{activeValid ? (companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'Company') : 'All Companies'}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[720px]">
@@ -375,10 +460,10 @@ const PSPPage = ({ companies, onSync, isSyncing }: { companies: Company[]; onSyn
         </p>
       </div>
 
-      {/* Per-company account-level detail — every company under View All, one when a tab is picked */}
+      {/* Per-company account-level detail - every company under View All, one when a tab is picked */}
       <div className="space-y-6">
         {scoped.map(company => (
-          <PSPSection key={company.id} company={company} />
+          <PSPSection key={company.id} company={company} showName={!activeValid} />
         ))}
       </div>
     </div>

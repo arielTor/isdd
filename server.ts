@@ -7,6 +7,9 @@ import fs from "fs";
 import mysql from "mysql2/promise";
 import session from "express-session";
 import bcrypt from "bcryptjs";
+import passport from "passport";
+import { Strategy as SamlStrategy, Profile as SamlProfile } from "@node-saml/passport-saml";
+import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +23,10 @@ declare module "express-session" {
       email: string;
       role: string;
       permissions: { company_id: string; bank_id: string | null }[];
+      // Optional profile fields populated from Entra SSO claims (password logins omit them).
+      upn?: string;
+      department?: string;
+      jobTitle?: string;
     };
   }
 }
@@ -28,7 +35,7 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-  // ── CORS — applied only to /api/* routes ─────────────────────────────────
+  // ── CORS - applied only to /api/* routes ─────────────────────────────────
   // Static files and the SPA shell are served same-origin and don't need CORS.
   // Cloudflare adds Origin to every proxied request, so we keep CORS off the
   // static file routes to avoid blocking page loads when APP_URL is unset.
@@ -57,7 +64,7 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-  // ── Custom MySQL session store (pure mysql2 — ESM compatible) ─────────────
+  // ── Custom MySQL session store (pure mysql2 - ESM compatible) ─────────────
   // Stores sessions in the `sessions` DB table so they survive restarts.
   // SAML-ready: only the login mechanism changes when switching to SAML;
   // session.user shape and all downstream middleware stay identical.
@@ -144,6 +151,98 @@ async function startServer() {
     })
   );
 
+  // ── SAML SSO (optional - active only when the SAML_* env vars are set) ────
+  // Lets a customer's employees sign in via their Microsoft Entra ID tenant.
+  // Runs alongside email/password login (hybrid), never instead of it. All
+  // The tenant, our SP entity id (issuer), the reply URL and the IdP login URL are all
+  // non-secret and stable, so they are baked in below (each still overridable via env).
+  // The ONLY thing to configure is the IdP signing certificate: set SAML_METADATA_URL to
+  // the "App Federation Metadata Url" from Entra and we fetch the cert from it at startup
+  // (SAML_IDP_CERT can still be used to paste a raw cert instead).
+  const ENTRA_TENANT_ID = "318030de-752f-42b3-9848-abd6ec3809e3";
+  const APP_BASE_URL = process.env.APP_URL || "https://stage-finboard.corp-domain.com";
+  const SAML_ENTRY_POINT = process.env.SAML_ENTRY_POINT || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/saml2`;
+  const SAML_ISSUER = process.env.SAML_ISSUER || APP_BASE_URL;
+  const SAML_CALLBACK_URL = process.env.SAML_CALLBACK_URL || `${APP_BASE_URL}/api/auth/saml/callback`;
+  const SAML_METADATA_URL = process.env.SAML_METADATA_URL || "";
+
+  // Resolve the IdP signing certificate(s): an explicit SAML_IDP_CERT wins; otherwise
+  // fetch the App Federation Metadata XML and pull out the <X509Certificate> value(s)
+  // (Entra can publish more than one during a signing-cert rollover).
+  const resolveIdpCerts = async (): Promise<string[]> => {
+    if (process.env.SAML_IDP_CERT) return [process.env.SAML_IDP_CERT];
+    if (!SAML_METADATA_URL) return [];
+    try {
+      const xml = await fetch(SAML_METADATA_URL).then(r => r.text());
+      const certs = [...xml.matchAll(/<(?:\w+:)?X509Certificate>([\s\S]*?)<\/(?:\w+:)?X509Certificate>/g)]
+        .map(m => m[1].replace(/\s+/g, ""))
+        .filter(Boolean);
+      return [...new Set(certs)];
+    } catch (e: any) {
+      console.warn("[SAML] federation metadata fetch failed:", e.message);
+      return [];
+    }
+  };
+  const rawCerts = await resolveIdpCerts();
+  // Normalize each cert to a well-formed PEM (headers + 64-char-wrapped body). node-saml's
+  // signature check fails ("Invalid document signature") if the key is malformed PEM, even
+  // when the certificate itself is the correct one.
+  const toPem = (raw: string): string => {
+    const body = (raw.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "").match(/.{1,64}/g) || []).join("\n");
+    return `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----`;
+  };
+  const idpCerts = rawCerts.map(toPem);
+  // SHA-1 fingerprints (Entra "Thumbprint" format) to confirm the loaded signing cert.
+  const idpCertFingerprints = rawCerts.map(c => {
+    const der = c.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+    try { return crypto.createHash("sha1").update(Buffer.from(der, "base64")).digest("hex").toUpperCase(); }
+    catch { return "?"; }
+  });
+  const SAML_ENABLED = idpCerts.length > 0;
+  let samlStrategy: SamlStrategy | null = null;
+  if (SAML_ENABLED) {
+    samlStrategy = new SamlStrategy(
+      {
+        entryPoint: SAML_ENTRY_POINT,
+        issuer: SAML_ISSUER,
+        callbackUrl: SAML_CALLBACK_URL,
+        idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
+        // Entra signs the ASSERTION by default, not the Response envelope. @node-saml v5
+        // requires a signed response by default, which caused "Invalid document signature".
+        // Require the assertion signature (which Entra provides) and not the response.
+        wantAssertionsSigned: true,
+        wantAuthnResponseSigned: false,
+        identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      },
+      (profile: SamlProfile | null, done: any) => done(null, profile ?? false),
+      (profile: SamlProfile | null, done: any) => done(null, profile ?? false)
+    );
+    passport.use("saml", samlStrategy);
+    console.log(`🔐 SAML SSO: ENABLED (issuer ${SAML_ISSUER}, certs ${idpCertFingerprints.join(", ") || "none"})`);
+  }
+  app.use(passport.initialize());
+
+  // Read a SAML claim by its env-overridable name, falling back to the common
+  // Entra claim URIs. Returns the first non-empty match, or "".
+  const claim = (profile: any, envName: string, ...uris: string[]): string => {
+    const keys = [process.env[envName], ...uris].filter(Boolean) as string[];
+    for (const k of keys) {
+      const v = profile?.[k];
+      if (v != null && v !== "") return Array.isArray(v) ? String(v[0]) : String(v);
+    }
+    return "";
+  };
+  // Groups claim is multi-valued (array of Object IDs); normalize to string[].
+  const claimList = (profile: any, envName: string, ...uris: string[]): string[] => {
+    const keys = [process.env[envName], ...uris].filter(Boolean) as string[];
+    for (const k of keys) {
+      const v = profile?.[k];
+      if (v == null || v === "") continue;
+      return Array.isArray(v) ? v.map(String) : [String(v)];
+    }
+    return [];
+  };
+
   // Request logger
   app.use((req, _res, next) => {
     console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
@@ -166,16 +265,16 @@ async function startServer() {
   let latestData: any[] = [];
   let lastUpdateTime = Date.now();
 
-  // Delete stale JSON cache on startup — always fetch fresh from DB so
+  // Delete stale JSON cache on startup - always fetch fresh from DB so
   // last_modified_date and balances are never served from a stale file.
   if (fs.existsSync(DATA_FILE)) {
     try { fs.unlinkSync(DATA_FILE); } catch (_) {}
-    console.log("Cleared stale data cache — will fetch fresh from DB.");
+    console.log("Cleared stale data cache - will fetch fresh from DB.");
   }
 
   // ── Live exchange-rate engine ─────────────────────────────────────────────
   // Rates are fetched at most once every 5 minutes and cached in memory.
-  // value_usd from integrations is always authoritative — rates only fill in
+  // value_usd from integrations is always authoritative - rates only fill in
   // wallets where value_usd is NULL / 0 in the database.
 
   // Stablecoins we treat as exactly 1 USD (no API call needed)
@@ -320,7 +419,7 @@ async function startServer() {
     ORDER BY c.id, b.id, ba.id, w.id
   `;
 
-  // ── PSP query — providers / eWallets / live wallet accounts ───────────────
+  // ── PSP query - providers / eWallets / live wallet accounts ───────────────
   const PSP_SQL_QUERY = `
     SELECT
       pe.company_id            AS company_id,
@@ -346,7 +445,7 @@ async function startServer() {
     ORDER BY pe.company_id, pp.id, pe.id, pwa.id
   `;
 
-  // ── PSP query — settlements (next payments + history) ─────────────────────
+  // ── PSP query - settlements (next payments + history) ─────────────────────
   const PSP_SETTLEMENTS_SQL_QUERY = `
     SELECT
       pe.company_id        AS company_id,
@@ -376,7 +475,7 @@ async function startServer() {
       throw new Error(`DB connection failed: ${err.message}`);
     }
     try {
-      // Fetch live rates before building the dataset — wallets without a
+      // Fetch live rates before building the dataset - wallets without a
       // DB-supplied value_usd will get an estimated value from these rates.
       const rates = await getUsdRates();
 
@@ -538,7 +637,7 @@ async function startServer() {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // AUTH ROUTES  (no requireAuth — these are the login endpoints)
+  // AUTH ROUTES  (no requireAuth - these are the login endpoints)
   // ════════════════════════════════════════════════════════════════════════
 
   // Check whether any user has a password set yet (first-time setup)
@@ -551,7 +650,7 @@ async function startServer() {
       )) as [any[], any];
       res.json({ needsSetup: rows[0].cnt === 0 });
     } catch {
-      // DB unreachable — surface setup page so admin can diagnose
+      // DB unreachable - surface setup page so admin can diagnose
       res.json({ needsSetup: true });
     } finally {
       conn?.end();
@@ -590,7 +689,7 @@ async function startServer() {
       res.json({ ok: true, name: users[0].name });
     } catch (err: any) {
       console.error("Setup error:", err.message);
-      res.status(500).json({ error: "Setup failed — check server logs" });
+      res.status(500).json({ error: "Setup failed - check server logs" });
     } finally {
       conn?.end();
     }
@@ -614,6 +713,11 @@ async function startServer() {
         return res.status(401).json({ error: "Invalid email or password" });
 
       const user = users[0];
+      // SSO-merged accounts sign in with Microsoft only until an admin reverts them.
+      if (user.auth_source === "sso")
+        return res
+          .status(403)
+          .json({ error: "This account uses Microsoft sign-in. Please use \"Sign in with Microsoft\"." });
       if (!user.password_hash)
         return res
           .status(401)
@@ -642,13 +746,13 @@ async function startServer() {
       req.session.save((saveErr: any) => {
         if (saveErr) {
           console.error("Session save error:", saveErr.message);
-          return res.status(500).json({ error: "Session error — please try again" });
+          return res.status(500).json({ error: "Session error - please try again" });
         }
         res.json({ user: req.session.user });
       });
     } catch (err: any) {
       console.error("Login error:", err.message);
-      res.status(500).json({ error: "Login failed — check server logs" });
+      res.status(500).json({ error: "Login failed - check server logs" });
     } finally {
       conn?.end();
     }
@@ -666,6 +770,188 @@ async function startServer() {
     res.json({ user: req.session.user });
   });
 
+  // Login screen uses this to decide whether to show "Sign in with Microsoft".
+  app.get("/api/auth/sso-status", corsMiddleware, (_req, res) => {
+    res.json({ samlEnabled: SAML_ENABLED });
+  });
+
+  if (SAML_ENABLED && samlStrategy) {
+    // Initiate SSO - redirect the browser to the customer's Entra login.
+    app.get("/api/auth/saml/login", passport.authenticate("saml", { session: false }));
+
+    // SP metadata - hand this to the Entra admin when registering the app.
+    app.get("/api/auth/saml/metadata", (_req, res) => {
+      res.type("application/xml");
+      res.send(samlStrategy!.generateServiceProviderMetadata(null, null));
+    });
+
+    // Entra POSTs the signed assertion here after the employee authenticates.
+    app.post(
+      "/api/auth/saml/callback",
+      express.urlencoded({ extended: false }),
+      // Custom callback so a validation *error* (bad signature, audience mismatch, …)
+      // is logged and surfaced instead of bubbling up as a bare 500.
+      (req: any, res: any, next: any) => {
+        passport.authenticate("saml", { session: false }, (err: any, profile: any) => {
+          if (err) {
+            console.error("SAML auth error:", err?.message || err, "\n", err?.stack || "");
+            return res.status(500).type("text/plain").send(
+              `SSO error: ${err?.message || err}\n\nLoaded IdP signing cert SHA-1: ${idpCertFingerprints.join(", ") || "none"}\nExpected (Entra portal Thumbprint): compare this to your Token signing certificate.`
+            );
+          }
+          if (!profile) return res.redirect("/?sso=failed");
+          req.user = profile;
+          next();
+        })(req, res, next);
+      },
+      async (req: any, res: any) => {
+        const profile: any = req.user;
+        if (!profile) return res.redirect("/?sso=failed");
+
+        // Extract claims (env-overridable names, common Entra URIs as fallback).
+        const oid = claim(profile, "SAML_CLAIM_OID", "http://schemas.microsoft.com/identity/claims/objectidentifier");
+        const upn = claim(profile, "SAML_CLAIM_UPN", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn", "upn") || profile.nameID || "";
+        const email = claim(profile, "SAML_CLAIM_EMAIL", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress", "mail", "email") || upn;
+        const name = claim(profile, "SAML_CLAIM_NAME", "http://schemas.microsoft.com/identity/claims/displayname", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name", "displayName") || upn || email;
+        const department = claim(profile, "SAML_CLAIM_DEPARTMENT", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/department", "department");
+        const jobTitle = claim(profile, "SAML_CLAIM_JOBTITLE", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/jobtitle", "jobTitle", "title");
+        const groups = claimList(profile, "SAML_CLAIM_GROUPS", "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups", "groups");
+
+        if (!upn && !email) return res.redirect("/?sso=failed");
+
+        let conn: any;
+        try {
+          conn = await mysql.createConnection(dbConfig());
+
+          // 1) Record every group we saw (auto-discovery for the admin UI).
+          for (const g of groups) {
+            await conn.execute(
+              "INSERT INTO entra_groups (group_id) VALUES (?) ON DUPLICATE KEY UPDATE last_seen = CURRENT_TIMESTAMP",
+              [g]
+            );
+          }
+
+          // 2) Roles mapped from this user's groups - this is the access gate.
+          let mappedRoleIds: string[] = [];
+          if (groups.length) {
+            const ph = groups.map(() => "?").join(",");
+            const [mr] = (await conn.execute(
+              `SELECT DISTINCT role_id FROM entra_group_roles WHERE group_id IN (${ph})`,
+              groups
+            )) as any;
+            mappedRoleIds = (mr as any[]).map(r => r.role_id);
+          }
+          if (!mappedRoleIds.length) {
+            console.warn(`SAML login denied - ${upn || email} groups=[${groups.join(", ")}]`);
+            // Temporary (staging): show what the token actually carried so group mapping
+            // can be verified. Remove once SSO is confirmed working.
+            const claimKeys = Object.keys(profile || {}).filter(k => k !== "getAssertionXml" && typeof (profile as any)[k] !== "function");
+            return res.status(403).type("text/plain").send(
+              `SSO not authorized: none of your groups are mapped to a role.\n\n` +
+              `Groups in the token (${groups.length}): ${groups.join(", ") || "(none - the groups claim was not sent)"}\n` +
+              `UPN: ${upn}\nEmail: ${email}\nName: ${name}\n\n` +
+              `All claim keys present: ${claimKeys.join(", ")}\n\n` +
+              `Map one of the group IDs above to a role in User Management → Entra Groups, then sign in again.`
+            );
+          }
+
+          // 3) Find or create the user (match by oid → upn → email).
+          const [found] = (await conn.execute(
+            "SELECT * FROM users WHERE (? <> '' AND entra_oid = ?) OR upn = ? OR email = ? LIMIT 1",
+            [oid, oid, upn, email]
+          )) as any;
+          let user = found[0];
+          if (!user) {
+            const id = oid ? `entra_${oid}` : `entra_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+            await conn.execute(
+              "INSERT INTO users (id, name, email, role, status, entra_oid, upn, department, job_title, auth_source) VALUES (?, ?, ?, 'Viewer', 'Active', ?, ?, ?, ?, 'sso')",
+              [id, name, email, oid || null, upn || null, department || null, jobTitle || null]
+            );
+            const [u2] = (await conn.execute("SELECT * FROM users WHERE id = ?", [id])) as any;
+            user = u2[0];
+          } else {
+            if (user.status && String(user.status).toLowerCase() !== "active") {
+              console.warn(`SAML login denied - account ${user.email} status=${user.status}`);
+              return res.status(403).type("text/plain").send(
+                `SSO not authorized: your account "${user.email}" (id ${user.id}) has status "${user.status}", not Active. An admin can re-activate it in User Management.`
+              );
+            }
+            // First SAML login merges a local account into SSO: from now on this user
+            // signs in with Microsoft only (password login is blocked) until an admin
+            // reverts them to a local account.
+            await conn.execute(
+              "UPDATE users SET name = ?, email = ?, entra_oid = COALESCE(NULLIF(?, ''), entra_oid), upn = ?, department = ?, job_title = ?, auth_source = 'sso' WHERE id = ?",
+              [name, email, oid, upn || null, department || null, jobTitle || null, user.id]
+            );
+          }
+
+          // 4) Sync group-derived roles; preserve admin-assigned (manual) ones.
+          await conn.execute("DELETE FROM user_roles WHERE user_id = ? AND source = 'group'", [user.id]);
+          for (const rid of mappedRoleIds) {
+            await conn.execute(
+              "INSERT INTO user_roles (user_id, role_id, source) VALUES (?, ?, 'group') ON DUPLICATE KEY UPDATE source = 'group'",
+              [user.id, rid]
+            );
+          }
+
+          // 5) Effective access = union of all assigned roles (group + manual).
+          const [urows] = (await conn.execute(
+            "SELECT ar.id, ar.permissions_json FROM user_roles ur JOIN app_roles ar ON ar.id = ur.role_id WHERE ur.user_id = ?",
+            [user.id]
+          )) as any;
+          const roleIds = (urows as any[]).map(r => String(r.id));
+          // Legacy single role drives requireAdmin + nav gating: admin > manager > viewer.
+          const sessionRole = roleIds.includes("admin") ? "Admin" : roleIds.includes("manager") ? "Manager" : "Viewer";
+
+          // Company/bank scope = union of the roles' permissions. Admin ⇒ all.
+          // A role with empty permissions means "all companies" (app convention),
+          // so union with any such role ⇒ all ([]).
+          let permissions: { company_id: string; bank_id: string | null }[] = [];
+          if (sessionRole !== "Admin") {
+            let grantsAll = false;
+            const perms: { company_id: string; bank_id: string | null }[] = [];
+            for (const r of urows as any[]) {
+              let parsed: any[] = [];
+              try { parsed = JSON.parse(r.permissions_json || "[]"); } catch { parsed = []; }
+              if (!parsed.length) { grantsAll = true; break; }
+              for (const p of parsed) {
+                const cid = p.companyId ?? p.company_id;
+                const banks: string[] = p.bankIds ?? p.bank_ids ?? [];
+                if (!cid) continue;
+                if (!banks.length) perms.push({ company_id: String(cid), bank_id: null });
+                else for (const b of banks) perms.push({ company_id: String(cid), bank_id: String(b) });
+              }
+            }
+            permissions = grantsAll ? [] : perms;
+          }
+
+          // Keep the legacy role column in sync with the derived role.
+          await conn.execute("UPDATE users SET role = ? WHERE id = ?", [sessionRole, user.id]);
+
+          req.session.user = {
+            id: user.id,
+            name,
+            email,
+            role: sessionRole,
+            permissions,
+            upn: upn || undefined,
+            department: department || undefined,
+            jobTitle: jobTitle || undefined,
+          };
+          req.session.save((err: any) => {
+            if (err) { console.error("SAML session save error:", err.message); return res.redirect("/?sso=error"); }
+            res.redirect("/");
+          });
+        } catch (err: any) {
+          console.error("SAML callback error:", err.message);
+          res.redirect("/?sso=error");
+        } finally {
+          conn?.end();
+        }
+      }
+    );
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // USER MANAGEMENT ROUTES  (require auth + admin)
   // ════════════════════════════════════════════════════════════════════════
@@ -676,7 +962,7 @@ async function startServer() {
     try {
       conn = await mysql.createConnection(dbConfig());
       const [users] = (await conn.execute(
-        "SELECT id, name, email, role, status FROM users ORDER BY name"
+        "SELECT id, name, email, role, status, auth_source FROM users ORDER BY name"
       )) as [any[], any];
       const [perms] = (await conn.execute(
         "SELECT user_id, company_id, bank_id FROM user_permissions"
@@ -687,6 +973,7 @@ async function startServer() {
 
       const result = users.map((u: any) => ({
         ...u,
+        authSource: u.auth_source || "password",
         permissions: (perms as any[])
           .filter((p: any) => p.user_id === u.id)
           .map((p: any) => ({
@@ -834,11 +1121,30 @@ async function startServer() {
     }
   });
 
+  // Toggle a user between SSO and local (password) - admin only. Reverting an SSO
+  // account to 'password' re-enables password login and makes it editable again.
+  app.put("/api/users/:id/auth-source", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const { authSource } = req.body || {};
+    if (!["password", "sso"].includes(authSource))
+      return res.status(400).json({ error: "authSource must be 'password' or 'sso'" });
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      await conn.execute("UPDATE users SET auth_source = ? WHERE id = ?", [authSource, req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("PUT /api/users/:id/auth-source error:", err.message);
+      res.status(500).json({ error: "Failed to update account type" });
+    } finally {
+      conn?.end();
+    }
+  });
+
   // ════════════════════════════════════════════════════════════════════════
-  // DATA ROUTES  (require auth — data filtered by permissions)
+  // DATA ROUTES  (require auth - data filtered by permissions)
   // ════════════════════════════════════════════════════════════════════════
 
-  // Dashboard data — filtered per logged-in user's permissions
+  // Dashboard data - filtered per logged-in user's permissions
   app.get("/api/liquidity", corsMiddleware, requireAuth, (req: any, res) => {
     const user = req.session.user;
     // Admins + users with no explicit permissions see everything
@@ -1102,7 +1408,7 @@ async function startServer() {
       res.json({ status: "Synced", count: latestData.length, timestamp: new Date().toISOString() });
     } catch (err: any) {
       console.error("DB sync error:", err.message);
-      res.status(500).json({ error: "Sync failed — check server logs" });
+      res.status(500).json({ error: "Sync failed - check server logs" });
     }
   });
 
@@ -1127,8 +1433,8 @@ async function startServer() {
     try {
       conn = await mysql.createConnection(dbConfig());
     } catch (err: any) {
-      console.error("Balance update — DB connection failed:", err.message);
-      return res.status(500).json({ error: "Database unavailable — check server logs" });
+      console.error("Balance update - DB connection failed:", err.message);
+      return res.status(500).json({ error: "Database unavailable - check server logs" });
     }
 
     let updated = 0;
@@ -1169,7 +1475,7 @@ async function startServer() {
       res.json({ updated, notFound });
     } catch (err: any) {
       console.error("Balance update error:", err.message);
-      res.status(500).json({ error: "Update failed — check server logs" });
+      res.status(500).json({ error: "Update failed - check server logs" });
     } finally {
       await conn.end();
     }
@@ -1221,7 +1527,7 @@ async function startServer() {
     }
   })();
 
-  // GET /api/dashboard-layout — the current user's saved widget layout (null if none)
+  // GET /api/dashboard-layout - the current user's saved widget layout (null if none)
   app.get("/api/dashboard-layout", corsMiddleware, requireAuth, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1241,7 +1547,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/dashboard-layout — upsert the current user's widget layout
+  // POST /api/dashboard-layout - upsert the current user's widget layout
   app.post("/api/dashboard-layout", corsMiddleware, requireAuth, async (req: any, res) => {
     const layout = req.body?.layout;
     if (!Array.isArray(layout)) {
@@ -1258,6 +1564,232 @@ async function startServer() {
     } catch (err: any) {
       console.error("Dashboard layout save error:", err.message);
       res.status(500).json({ error: "Failed to save layout" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // ── Multiple named dashboards per user ────────────────────────────────────
+  // Each user can keep several dashboards and mark one as their main (default).
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS user_dashboards (
+            id          VARCHAR(64)  NOT NULL PRIMARY KEY,
+            user_id     VARCHAR(64)  NOT NULL,
+            name        VARCHAR(120) NOT NULL,
+            layout_json LONGTEXT     NOT NULL,
+            is_default  TINYINT      NOT NULL DEFAULT 0,
+            sort_order  INT          NOT NULL DEFAULT 0,
+            created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_user (user_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        // One-time migration: seed each user's existing single layout as their default dashboard.
+        try {
+          await conn.execute(`
+            INSERT INTO user_dashboards (id, user_id, name, layout_json, is_default, sort_order)
+            SELECT CONCAT('dash_', udl.user_id), udl.user_id, 'My Dashboard', udl.layout_json, 1, 0
+            FROM user_dashboard_layout udl
+            WHERE NOT EXISTS (SELECT 1 FROM user_dashboards ud WHERE ud.user_id = udl.user_id)
+          `);
+        } catch (e: any) { console.warn("[Dashboards] legacy migration skipped:", e.message); }
+        console.log("[Dashboards] user_dashboards table ready");
+      } catch (e: any) { console.warn("[Dashboards] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Dashboards] DB not reachable on startup (user_dashboards skipped):", e.message);
+    }
+  })();
+
+  const newDashId = () => `dash_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+
+  // GET /api/dashboards - all of the current user's dashboards (ordered; default first).
+  app.get("/api/dashboards", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT id, name, layout_json, is_default, sort_order FROM user_dashboards WHERE user_id = ? ORDER BY is_default DESC, sort_order ASC, created_at ASC",
+        [req.session.user.id]
+      )) as any;
+      const dashboards = (rows as any[]).map(r => {
+        let layout = [];
+        try { layout = JSON.parse(r.layout_json); } catch { layout = []; }
+        return { id: r.id, name: r.name, isDefault: !!r.is_default, sortOrder: r.sort_order, layout };
+      });
+      res.json({ dashboards });
+    } catch (err: any) {
+      console.error("Dashboards load error:", err.message);
+      res.status(500).json({ error: "Failed to load dashboards" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/dashboards - create a dashboard. First one (or makeDefault) becomes the main.
+  app.post("/api/dashboards", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { name, layout, makeDefault } = req.body || {};
+    if (typeof name !== "string" || !name.trim() || name.length > 120) {
+      return res.status(400).json({ error: "Name required (max 120 chars)" });
+    }
+    if (!Array.isArray(layout)) return res.status(400).json({ error: "layout must be an array" });
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const uid = req.session.user.id;
+      // A new dashboard only becomes the main view when explicitly requested - the
+      // built-in "All Companies" dashboard remains the default otherwise.
+      const makeMain = !!makeDefault;
+      if (makeMain) await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [uid]);
+      const id = newDashId();
+      await conn.execute(
+        "INSERT INTO user_dashboards (id, user_id, name, layout_json, is_default, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+        [id, uid, name.trim(), JSON.stringify(layout), makeMain ? 1 : 0, Date.now() % 2147483647]
+      );
+      res.json({ id, isDefault: makeMain });
+    } catch (err: any) {
+      console.error("Dashboard create error:", err.message);
+      res.status(500).json({ error: "Failed to create dashboard" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/dashboards/clear-default - unset any custom main so the built-in
+  // "All Companies" dashboard becomes the landing view again.
+  app.post("/api/dashboards/clear-default", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [req.session.user.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Dashboard clear-default error:", err.message);
+      res.status(500).json({ error: "Failed to update dashboards" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // PUT /api/dashboards/:id - rename, update layout, and/or set as main.
+  app.put("/api/dashboards/:id", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { name, layout, makeDefault } = req.body || {};
+    if (name != null && (typeof name !== "string" || !name.trim() || name.length > 120)) {
+      return res.status(400).json({ error: "Name invalid (max 120 chars)" });
+    }
+    if (layout != null && !Array.isArray(layout)) return res.status(400).json({ error: "layout must be an array" });
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const uid = req.session.user.id;
+      const [own] = (await conn.execute("SELECT id FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid])) as any;
+      if (!own.length) return res.status(404).json({ error: "Dashboard not found" });
+      if (typeof name === "string") await conn.execute("UPDATE user_dashboards SET name = ? WHERE id = ? AND user_id = ?", [name.trim(), req.params.id, uid]);
+      if (Array.isArray(layout)) await conn.execute("UPDATE user_dashboards SET layout_json = ? WHERE id = ? AND user_id = ?", [JSON.stringify(layout), req.params.id, uid]);
+      if (makeDefault) {
+        await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [uid]);
+        await conn.execute("UPDATE user_dashboards SET is_default = 1 WHERE id = ? AND user_id = ?", [req.params.id, uid]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Dashboard update error:", err.message);
+      res.status(500).json({ error: "Failed to update dashboard" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // DELETE /api/dashboards/:id - remove; if it was the main, promote the next one.
+  app.delete("/api/dashboards/:id", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const uid = req.session.user.id;
+      const [rows] = (await conn.execute("SELECT is_default FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid])) as any;
+      if (!rows.length) return res.status(404).json({ error: "Dashboard not found" });
+      const wasDefault = !!rows[0].is_default;
+      await conn.execute("DELETE FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid]);
+      if (wasDefault) {
+        const [next] = (await conn.execute("SELECT id FROM user_dashboards WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC LIMIT 1", [uid])) as any;
+        if (next.length) await conn.execute("UPDATE user_dashboards SET is_default = 1 WHERE id = ?", [next[0].id]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Dashboard delete error:", err.message);
+      res.status(500).json({ error: "Failed to delete dashboard" });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // ── Per-user settings table (theme / personal appearance) ────────────────
+  // Appearance splits in two: personal preferences (the portal theme) live here,
+  // keyed per user; org-wide branding (logo, site name, company logos) stays in
+  // app_settings below and remains Admin-managed.
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS user_settings (
+            user_id    VARCHAR(64) NOT NULL,
+            k          VARCHAR(64) NOT NULL,
+            v          LONGTEXT    NOT NULL,
+            updated_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, k)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[Settings] user_settings table ready");
+      } catch (e: any) { console.warn("[Settings] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[Settings] DB not reachable on startup (user_settings skipped):", e.message);
+    }
+  })();
+
+  // GET /api/my-settings - the current user's personal preferences (theme + notifications).
+  app.get("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT k, v FROM user_settings WHERE user_id = ?",
+        [req.session.user.id]
+      )) as any;
+      const map: Record<string, string> = {};
+      for (const r of rows as any[]) map[r.k] = r.v;
+      res.json({
+        theme: ["dark", "gray", "light"].includes(map.theme) ? map.theme : null,
+        notifyPush: map.notify_push === "1",
+        notifyEmail: map.notify_email === "1",
+      });
+    } catch (err: any) {
+      console.error("My-settings load error:", err.message);
+      res.json({ theme: null, notifyPush: false, notifyEmail: false });
+    } finally {
+      await conn.end();
+    }
+  });
+
+  // POST /api/my-settings - upsert the current user's preferences (any authenticated user).
+  app.post("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { theme, notifyPush, notifyEmail } = req.body || {};
+    if (theme != null && !["dark", "gray", "light"].includes(theme)) {
+      return res.status(400).json({ error: "Theme invalid" });
+    }
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const uid = req.session.user.id;
+      const upsert = (k: string, v: string) => conn.execute(
+        `INSERT INTO user_settings (user_id, k, v) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE v = VALUES(v)`,
+        [uid, k, v]
+      );
+      if (typeof theme === "string") await upsert("theme", theme);
+      if (typeof notifyPush === "boolean") await upsert("notify_push", notifyPush ? "1" : "0");
+      if (typeof notifyEmail === "boolean") await upsert("notify_email", notifyEmail ? "1" : "0");
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("My-settings save error:", err.message);
+      res.status(500).json({ error: "Failed to save settings" });
     } finally {
       await conn.end();
     }
@@ -1283,7 +1815,29 @@ async function startServer() {
     }
   })();
 
-  // GET /api/branding — org logo + site name (auth required, any role)
+  // GET /api/branding - org logo + site name (auth required, any role)
+  // GET /api/branding/public - logo + site name only, no auth (used by the login screen).
+  // Deliberately excludes company logos and any other data.
+  app.get("/api/branding/public", corsMiddleware, async (_req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_logo_bg')"
+      )) as any;
+      const map: Record<string, string> = {};
+      for (const r of rows as any[]) map[r.k] = r.v;
+      res.json({
+        siteName: map.brand_site_name || "Liquidity Reports",
+        logo: map.brand_logo || null,
+        logoBg: map.brand_logo_bg || "light",
+      });
+    } catch {
+      res.json({ siteName: "Liquidity Reports", logo: null, logoBg: "light" });
+    } finally {
+      await conn.end();
+    }
+  });
+
   app.get("/api/branding", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1315,18 +1869,15 @@ async function startServer() {
     }
   });
 
-  // POST /api/branding — update logo and/or site name (Admin only)
+  // POST /api/branding - update logo and/or site name (Admin only)
   app.post("/api/branding", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
-    const { siteName, logo, theme } = req.body || {};
+    const { siteName, logo } = req.body || {};
     // Logo is stored as a data URL; cap size to keep the payload sane (~1MB base64).
     if (logo != null && (typeof logo !== "string" || logo.length > 1_400_000)) {
       return res.status(400).json({ error: "Logo too large or invalid (max ~1MB image)" });
     }
     if (siteName != null && (typeof siteName !== "string" || siteName.length > 120)) {
       return res.status(400).json({ error: "Site name invalid" });
-    }
-    if (theme != null && !["dark", "gray", "light"].includes(theme)) {
-      return res.status(400).json({ error: "Theme invalid" });
     }
     const logoBg = req.body?.logoBg;
     if (logoBg != null && !["light", "dark", "none"].includes(logoBg)) {
@@ -1352,7 +1903,7 @@ async function startServer() {
       );
       if (typeof siteName === "string") await upsert("brand_site_name", siteName);
       if (typeof logo === "string") await upsert("brand_logo", logo);
-      if (typeof theme === "string") await upsert("brand_theme", theme);
+      // Theme is a per-user preference now (see /api/my-settings); not stored here.
       if (typeof logoBg === "string") await upsert("brand_logo_bg", logoBg);
       if (companyLogos) {
         for (const [id, v] of Object.entries(companyLogos)) {
@@ -1404,6 +1955,10 @@ async function startServer() {
             PRIMARY KEY (user_id, role_id)
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
+        // Track how a role was assigned so SSO can re-sync group-derived roles
+        // ('group') on each login without wiping admin-assigned ('manual') ones.
+        try { await conn.execute("ALTER TABLE user_roles ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'manual'"); }
+        catch { /* column already exists */ }
         // One-time migration: map each existing user to their current enum role and
         // give the built-in roles sensible default page access (preserves behaviour).
         const [ur] = (await conn.execute("SELECT COUNT(*) AS n FROM user_roles")) as any;
@@ -1420,7 +1975,47 @@ async function startServer() {
     }
   })();
 
-  // GET /api/roles — list roles with parsed company/bank access
+  // ── Entra SSO: profile columns + discovered groups + group→role mapping ────
+  (async () => {
+    try {
+      const conn = await mysql.createConnection(dbConfig());
+      try {
+        // Profile columns on the pre-existing users table (each guarded for in-place upgrade).
+        for (const col of [
+          "ADD COLUMN entra_oid VARCHAR(64) NULL",
+          "ADD COLUMN upn VARCHAR(255) NULL",
+          "ADD COLUMN department VARCHAR(255) NULL",
+          "ADD COLUMN job_title VARCHAR(255) NULL",
+          "ADD COLUMN auth_source VARCHAR(16) NOT NULL DEFAULT 'password'",
+        ]) {
+          try { await conn.execute(`ALTER TABLE users ${col}`); } catch { /* exists */ }
+        }
+        // Entra groups seen at login (Object IDs); label is an admin-friendly name.
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS entra_groups (
+            group_id   VARCHAR(64)  NOT NULL PRIMARY KEY,
+            label      VARCHAR(255) NULL,
+            first_seen DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        // Group → role mapping (a group can grant several roles).
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS entra_group_roles (
+            group_id VARCHAR(64) NOT NULL,
+            role_id  VARCHAR(64) NOT NULL,
+            PRIMARY KEY (group_id, role_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[SSO] Entra tables ready");
+      } catch (e: any) { console.warn("[SSO] table init:", e.message); }
+      finally { conn.end(); }
+    } catch (e: any) {
+      console.warn("[SSO] DB not reachable on startup (Entra tables skipped):", e.message);
+    }
+  })();
+
+  // GET /api/roles - list roles with parsed company/bank access
   app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1438,7 +2033,7 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // POST /api/roles — create a custom role (Admin only)
+  // POST /api/roles - create a custom role (Admin only)
   app.post("/api/roles", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const name = (req.body?.name || "").trim();
     if (!name) return res.status(400).json({ error: "Role name is required" });
@@ -1454,7 +2049,7 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // PUT /api/roles/:id — update a role's name and/or company/bank access (Admin only)
+  // PUT /api/roles/:id - update a role's name and/or company/bank access (Admin only)
   app.put("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const { name, permissions, pages } = req.body || {};
     if (permissions != null && !Array.isArray(permissions)) {
@@ -1481,13 +2076,15 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // DELETE /api/roles/:id — remove a custom role (built-in roles are protected)
+  // DELETE /api/roles/:id - remove a custom role (built-in roles are protected)
   app.delete("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
       const [rows] = (await conn.execute("SELECT builtin FROM app_roles WHERE id = ?", [req.params.id])) as any;
       if (rows.length && rows[0].builtin) return res.status(400).json({ error: "Built-in roles cannot be deleted" });
       await conn.execute("DELETE FROM app_roles WHERE id = ?", [req.params.id]);
+      // clean up any group mappings that referenced this role
+      await conn.execute("DELETE FROM entra_group_roles WHERE role_id = ?", [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) {
       console.error("Role delete error:", err.message);
@@ -1495,7 +2092,63 @@ async function startServer() {
     } finally { await conn.end(); }
   });
 
-  // GET /api/alerts — list all alerts
+  // ── Entra group → role mapping (Admin only) ───────────────────────────────
+  // GET /api/entra/groups - discovered Entra groups with their label + mapped roles.
+  app.get("/api/entra/groups", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [groups] = (await conn.execute(
+        "SELECT group_id, label, first_seen, last_seen FROM entra_groups ORDER BY last_seen DESC"
+      )) as any;
+      const [maps] = (await conn.execute("SELECT group_id, role_id FROM entra_group_roles")) as any;
+      const byGroup: Record<string, string[]> = {};
+      for (const m of maps as any[]) (byGroup[m.group_id] ||= []).push(String(m.role_id));
+      res.json({
+        groups: (groups as any[]).map(g => ({
+          groupId: g.group_id,
+          label: g.label || null,
+          firstSeen: g.first_seen,
+          lastSeen: g.last_seen,
+          roleIds: byGroup[g.group_id] || [],
+        })),
+        samlEnabled: SAML_ENABLED,
+      });
+    } catch (err: any) {
+      console.error("Entra groups load error:", err.message);
+      res.status(500).json({ error: "Failed to load groups" });
+    } finally { await conn.end(); }
+  });
+
+  // PUT /api/entra/groups/:groupId - set an admin label and/or the mapped roles.
+  // Also used to register a group by Object ID before it has been seen at login.
+  app.put("/api/entra/groups/:groupId", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const groupId = String(req.params.groupId || "").trim();
+    if (!groupId || groupId.length > 64) return res.status(400).json({ error: "Invalid group id" });
+    const { label, roleIds } = req.body || {};
+    if (label != null && (typeof label !== "string" || label.length > 255)) return res.status(400).json({ error: "Invalid label" });
+    if (roleIds != null && (!Array.isArray(roleIds) || roleIds.some((r: any) => typeof r !== "string"))) {
+      return res.status(400).json({ error: "roleIds must be an array of role ids" });
+    }
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute(
+        "INSERT INTO entra_groups (group_id, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label)",
+        [groupId, typeof label === "string" ? label : null]
+      );
+      if (Array.isArray(roleIds)) {
+        await conn.execute("DELETE FROM entra_group_roles WHERE group_id = ?", [groupId]);
+        for (const rid of roleIds) {
+          await conn.execute("INSERT IGNORE INTO entra_group_roles (group_id, role_id) VALUES (?, ?)", [groupId, rid]);
+        }
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Entra group save error:", err.message);
+      res.status(500).json({ error: "Failed to save group mapping" });
+    } finally { await conn.end(); }
+  });
+
+  // GET /api/alerts - list all alerts
   app.get("/api/alerts", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1509,7 +2162,7 @@ async function startServer() {
     finally { conn.end(); }
   });
 
-  // POST /api/alerts — create alert
+  // POST /api/alerts - create alert
   app.post("/api/alerts", corsMiddleware, requireAuth, async (req, res) => {
     const { id, companyId, bankId, walletId, threshold, email, isEnabled } = req.body;
     const conn = await mysql.createConnection(dbConfig());
@@ -1523,7 +2176,7 @@ async function startServer() {
     finally { conn.end(); }
   });
 
-  // DELETE /api/alerts/:id — delete alert
+  // DELETE /api/alerts/:id - delete alert
   app.delete("/api/alerts/:id", corsMiddleware, requireAuth, async (req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1533,7 +2186,7 @@ async function startServer() {
     finally { conn.end(); }
   });
 
-  // PUT /api/alerts/:id/toggle — enable/disable
+  // PUT /api/alerts/:id/toggle - enable/disable
   app.put("/api/alerts/:id/toggle", corsMiddleware, requireAuth, async (req, res) => {
     const conn = await mysql.createConnection(dbConfig());
     try {
@@ -1590,7 +2243,7 @@ async function startServer() {
 
           try {
             const r = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-            console.log(`[Alert] Fired for wallet ${alert.wallet_id} — balance ${balance} ≤ threshold ${alert.threshold} (HTTP ${r.status}). Alert auto-disabled.`);
+            console.log(`[Alert] Fired for wallet ${alert.wallet_id} - balance ${balance} ≤ threshold ${alert.threshold} (HTTP ${r.status}). Alert auto-disabled.`);
           } catch (e: any) {
             console.error(`[Alert] Webhook failed for ${alert.wallet_id}:`, e.message);
           }
@@ -1606,7 +2259,7 @@ async function startServer() {
   // Run alert check every 5 minutes
   setInterval(() => { checkAlerts().catch(e => console.error("[Alerts] checkAlerts error:", e.message)); }, 5 * 60 * 1000);
 
-  // POST /api/alerts/check — manually trigger a check (called after sync)
+  // POST /api/alerts/check - manually trigger a check (called after sync)
   app.post("/api/alerts/check", corsMiddleware, requireAuth, async (_req, res) => {
     checkAlerts().catch(e => console.error("[Alerts] manual check error:", e.message));
     res.json({ ok: true, message: "Alert check triggered" });
@@ -1664,10 +2317,10 @@ async function startServer() {
 
   // Ensure sessions table exists BEFORE the server accepts any requests
   await sessionStore._ensureTable().catch(e =>
-    console.warn("[Session] Could not create sessions table — falling back to in-memory sessions:", e.message)
+    console.warn("[Session] Could not create sessions table - falling back to in-memory sessions:", e.message)
   );
 
-  // Kick off DB data load (non-blocking — server starts immediately)
+  // Kick off DB data load (non-blocking - server starts immediately)
   queryDatabase().catch((err) => {
     const msg = err instanceof AggregateError
       ? err.errors?.map((e: any) => e.message).join(" | ")

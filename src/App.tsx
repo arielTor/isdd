@@ -7,6 +7,7 @@ import {
   Search,
   Bell,
   ChevronRight,
+  ChevronDown,
   Globe,
   Wallet as WalletIcon,
   Plus,
@@ -55,6 +56,10 @@ interface AuthUser {
   email: string;
   role: string;
   permissions: { company_id: string; bank_id: string | null }[];
+  // Populated from Entra SSO claims (absent for password logins).
+  upn?: string;
+  department?: string;
+  jobTitle?: string;
 }
 
 // --- Exchange Rates Mock ---
@@ -78,10 +83,20 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
   };
 };
 
-// --- Types ---
-type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics';
+// Microsoft 4-square logo (used to mark SSO accounts).
+const MicrosoftLogo = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 21 21" aria-hidden="true" className="shrink-0">
+    <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+    <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+    <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+    <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+  </svg>
+);
 
-// Backdrop colour for a logo badge — admin picks this in Appearance so logos
+// --- Types ---
+type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
+
+// Backdrop colour for a logo badge - admin picks this in Appearance so logos
 // designed for light *or* dark backgrounds both render correctly.
 const logoBgColor = (bg: string) => (bg === 'dark' ? '#0f172a' : bg === 'none' ? 'transparent' : '#ffffff');
 
@@ -116,6 +131,9 @@ const Sidebar = ({
   brandLogoBg: string,
   companyLogos: Record<string, string>,
 }) => {
+  // Settings group starts collapsed; expand it if the user is already on a settings page.
+  const settingsIds = ['users', 'alerts', 'upload', 'branding', 'diagnostics'];
+  const [settingsOpen, setSettingsOpen] = useState(() => settingsIds.includes(activePage));
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
@@ -126,11 +144,11 @@ const Sidebar = ({
     { id: 'users', icon: Users, label: 'User Management', roles: ['Admin'] },
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
-    { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin'] },
+    { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin', 'Manager', 'Viewer'] },
     { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
 
-  // Deterministic company avatar (initials + colour) — gives each company a consistent "logo"
+  // Deterministic company avatar (initials + colour) - gives each company a consistent "logo"
   const AVATAR_COLORS = [
     'bg-indigo-500/20 text-indigo-300',
     'bg-emerald-500/20 text-emerald-300',
@@ -144,11 +162,11 @@ const Sidebar = ({
   const companyInitials = (name: string) =>
     name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
-  // Shared nav row — one structure for every menu item, so groups stay visually consistent
-  const renderNavItem = (item: { id: string; icon: typeof LayoutDashboard; label: string }) => (
+  // Shared nav row - one structure for every menu item, so groups stay visually consistent
+  const renderNavItem = (item: { id: string; icon: typeof LayoutDashboard; label: string }, onAfter?: () => void) => (
     <button
       key={item.id}
-      onClick={() => { onNavigate(item.id as Page); onClose(); }}
+      onClick={() => { onNavigate(item.id as Page); onClose(); onAfter?.(); }}
       className={`w-full flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-lg transition-all text-sm font-medium ${
         activePage === item.id
           ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
@@ -183,7 +201,7 @@ const Sidebar = ({
             <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Treasury</div>
           </div>
         </div>
-        {/* Close button — mobile only */}
+        {/* Close button - mobile only */}
         <button
           onClick={onClose}
           className="md:hidden p-2 -mr-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
@@ -198,59 +216,36 @@ const Sidebar = ({
           {sectionLabel('Menu')}
           {workspaceNav.filter(item => item.id === 'dashboard').map(renderNavItem)}
 
-          {/* Companies — always expanded, placed before Payment Providers.
-             The header itself acts as "View All Companies". */}
+          {/* Bank Balance - opens the all-companies balance overview. */}
           <button
             onClick={() => { onSelectCompany(null); onNavigate('companies'); onClose(); }}
             className={`w-full flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-lg transition-all text-sm font-medium ${
-              activePage === 'companies' && selectedCompanyId === null
+              activePage === 'companies'
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-700/40'
             }`}
           >
             <Building2 size={17} className="shrink-0" />
-            <span className="truncate flex-1 text-left">Companies</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded ${activePage === 'companies' && selectedCompanyId === null ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>ALL</span>
+            <span className="truncate flex-1 text-left">Bank Balance</span>
           </button>
-
-          <div className="ml-3 pl-3 border-l border-sidebar-border/70 space-y-1">
-            {companies.map((company) => {
-              const active = selectedCompanyId === company.id && activePage === 'companies';
-              return (
-                <button
-                  key={company.id}
-                  onClick={() => { onSelectCompany(company.id); onNavigate('companies'); onClose(); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 md:py-2 rounded-lg transition-all cursor-pointer ${
-                    active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-300 hover:bg-slate-700/40'
-                  }`}
-                >
-                  {companyLogos[company.id] ? (
-                    <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 p-0.5" style={{ backgroundColor: '#ffffff' }}>
-                      <img src={companyLogos[company.id]} alt={company.name} className="max-w-full max-h-full object-contain" />
-                    </span>
-                  ) : (
-                    <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 ${active ? 'bg-white/20 text-white' : companyColor(company.name)}`}>
-                      {companyInitials(company.name)}
-                    </span>
-                  )}
-                  <span className="text-sm font-medium flex-1 text-left truncate">{company.name}</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${active ? 'bg-white/20' : 'bg-slate-700 text-slate-400'}`}>
-                    {company.banks.length}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
 
           {workspaceNav.filter(item => item.id !== 'dashboard').map(renderNavItem)}
         </div>
       </nav>
 
-      {/* Settings group — pinned above the user footer */}
+      {/* Settings group - collapsed by default, click the header to expand/collapse */}
       {settingsNav.length > 0 && (
         <div className="px-3 py-3 border-t border-sidebar-border/70 space-y-1">
-          {sectionLabel('Settings')}
-          {settingsNav.map(renderNavItem)}
+          <button
+            onClick={() => setSettingsOpen(v => !v)}
+            className="w-full flex items-center gap-2 px-3 mb-1 text-[10px] font-bold text-slate-500 hover:text-slate-300 uppercase tracking-widest transition-colors"
+          >
+            {settingsOpen ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
+            <span>Settings</span>
+            {/* dot marks a hidden active settings page when collapsed */}
+            {!settingsOpen && settingsIds.includes(activePage) && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 ml-1" />}
+          </button>
+          {settingsOpen && settingsNav.map(item => renderNavItem(item, () => setSettingsOpen(false)))}
         </div>
       )}
 
@@ -262,17 +257,17 @@ const Sidebar = ({
           </div>
           <div className="text-xs truncate flex-1 min-w-0">
             <div className="font-medium text-slate-200 truncate">{authUser?.name || 'Unknown'}</div>
-            <div className="text-slate-500 truncate">{authUser?.role}</div>
+            <div className="text-slate-500 truncate">
+              {[authUser?.jobTitle, authUser?.department].filter(Boolean).join(' · ') || authUser?.role}
+            </div>
           </div>
-          {(!authUser || authUser.role === 'Admin' || authUser.role === 'Manager') && (
-            <button
-              onClick={() => { onNavigate('alerts'); onClose(); }}
-              title="Notifications"
-              className="text-slate-500 hover:text-indigo-300 transition-colors p-1.5 rounded-lg hover:bg-slate-700/40 shrink-0"
-            >
-              <Bell size={15} />
-            </button>
-          )}
+          <button
+            onClick={() => { onNavigate('notifications'); onClose(); }}
+            title="Notification settings"
+            className="text-slate-500 hover:text-indigo-300 transition-colors p-1.5 rounded-lg hover:bg-slate-700/40 shrink-0"
+          >
+            <Bell size={15} />
+          </button>
           <button
             onClick={onLogout}
             title="Sign out"
@@ -287,12 +282,12 @@ const Sidebar = ({
 
   return (
     <>
-      {/* Desktop sidebar — always visible on md+ */}
+      {/* Desktop sidebar - always visible on md+ */}
       <div className="hidden md:flex h-full shrink-0">
         {sidebarContent}
       </div>
 
-      {/* Mobile sidebar — slide-in drawer */}
+      {/* Mobile sidebar - slide-in drawer */}
       {isOpen && (
         <>
           {/* Backdrop */}
@@ -661,12 +656,136 @@ const PAGE_PERMS: { id: string; label: string }[] = [
   { id: 'upload', label: 'Manual Data Upload' },
 ];
 
+// --- Entra Groups tab: map discovered Entra group Object IDs to roles ---
+type EntraGroup = { groupId: string; label: string | null; lastSeen?: string; roleIds: string[] };
+
+const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
+  const [groups, setGroups] = useState<EntraGroup[] | null>(null);
+  const [samlEnabled, setSamlEnabled] = useState(true);
+  const [addId, setAddId] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const load = () =>
+    fetch('/api/entra/groups', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : { groups: [] }))
+      .then(d => { setGroups(d.groups || []); if (typeof d.samlEnabled === 'boolean') setSamlEnabled(d.samlEnabled); })
+      .catch(() => setGroups([]));
+  useEffect(() => { load(); }, []);
+
+  const save = async (groupId: string, patch: Partial<Pick<EntraGroup, 'label' | 'roleIds'>>) => {
+    setSavingId(groupId);
+    setGroups(gs => gs ? gs.map(g => g.groupId === groupId ? { ...g, ...patch } : g) : gs);
+    try {
+      await fetch(`/api/entra/groups/${encodeURIComponent(groupId)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(patch),
+      });
+    } catch { /* ignore */ } finally { setSavingId(null); }
+  };
+
+  const toggleRole = (g: EntraGroup, rid: string) => {
+    const next = g.roleIds.includes(rid) ? g.roleIds.filter(x => x !== rid) : [...g.roleIds, rid];
+    save(g.groupId, { roleIds: next });
+  };
+
+  const addGroup = async () => {
+    const id = addId.trim();
+    if (!id || groups?.some(g => g.groupId === id)) { setAddId(''); return; }
+    setGroups(gs => [...(gs || []), { groupId: id, label: null, roleIds: [] }]);
+    setAddId('');
+    await save(id, { roleIds: [] });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">Entra groups → roles</h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Groups appear here automatically after a user signs in with Microsoft. Map each group to
+            one or more roles - a user's access is the union of the roles from every group they belong to.
+            Being in at least one mapped group is what grants access.
+          </p>
+        </div>
+
+        {!samlEnabled && (
+          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>SSO is not configured on this environment yet (SAML env vars unset). You can still pre-map group Object IDs here; they take effect once SSO is enabled.</span>
+          </div>
+        )}
+
+        {/* Add a group by Object ID */}
+        <div className="flex items-center gap-2">
+          <input
+            value={addId}
+            onChange={e => setAddId(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addGroup(); }}
+            placeholder="Add a group by Object ID (GUID)"
+            className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+          />
+          <button onClick={addGroup} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 flex items-center gap-1.5">
+            <Plus size={15} /> Add
+          </button>
+        </div>
+      </div>
+
+      {groups === null ? (
+        <div className="text-center text-slate-400 py-10 text-sm">Loading groups…</div>
+      ) : groups.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center text-slate-400">
+          <ShieldCheck size={24} className="mx-auto mb-2 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-500">No groups discovered yet</p>
+          <p className="text-xs mt-1">They appear after someone signs in with Microsoft, or add one by its Object ID above.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {groups.map(g => (
+            <div key={g.groupId} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <input
+                    defaultValue={g.label || ''}
+                    onBlur={e => { const v = e.target.value.trim(); if (v !== (g.label || '')) save(g.groupId, { label: v }); }}
+                    placeholder="Add a friendly name…"
+                    className="text-sm font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-200 focus:border-indigo-400 outline-none w-64 max-w-full"
+                  />
+                  <div className="text-[11px] font-mono text-slate-400 truncate mt-0.5">{g.groupId}</div>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  {g.roleIds.length ? `${g.roleIds.length} role${g.roleIds.length > 1 ? 's' : ''}` : 'No roles - no access'}
+                  {savingId === g.groupId && ' · saving…'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {roles.map(r => {
+                  const on = g.roleIds.includes(r.id);
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => toggleRole(g, r.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}`}
+                    >
+                      {on && <Check size={12} />} {r.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- User Management (Users + Roles tabs) ---
 const UserManagementPage = ({
   users,
   onAddUser,
   onEditUser,
   onDeleteUser,
+  onSetAuthSource,
   companies,
   currentUserId,
   roles,
@@ -678,6 +797,7 @@ const UserManagementPage = ({
   onAddUser: () => void,
   onEditUser: (user: User) => void,
   onDeleteUser: (id: string) => void,
+  onSetAuthSource: (user: User, source: string) => void,
   companies: Company[],
   currentUserId?: string,
   roles: RoleDef[],
@@ -686,7 +806,7 @@ const UserManagementPage = ({
   onDeleteRole: (id: string) => Promise<void>,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [tab, setTab] = useState<'users' | 'roles'>('users');
+  const [tab, setTab] = useState<'users' | 'roles' | 'groups'>('users');
   const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
   const [roleError, setRoleError] = useState('');
@@ -787,8 +907,8 @@ const UserManagementPage = ({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-slate-200">
-        {(['users', 'roles'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px capitalize transition-colors ${tab === t ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{t}</button>
+        {([['users', 'Users'], ['roles', 'Roles'], ['groups', 'Entra Groups']] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{label}</button>
         ))}
       </div>
 
@@ -810,11 +930,11 @@ const UserManagementPage = ({
               <table className="w-full text-left min-w-[680px]">
                 <thead className="bg-slate-50/30 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   <tr>
-                    <th className="px-6 py-3 border-b border-slate-100">User</th>
-                    <th className="px-6 py-3 border-b border-slate-100">Role</th>
-                    <th className="px-6 py-3 border-b border-slate-100">Status</th>
-                    <th className="px-6 py-3 border-b border-slate-100">Access</th>
-                    <th className="px-6 py-3 border-b border-slate-100 text-right">Actions</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">User</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Role</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Status</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Access</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm divide-y divide-slate-50">
@@ -823,15 +943,15 @@ const UserManagementPage = ({
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 border border-slate-200 text-xs shrink-0">{initials(user.name)}</div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 text-left">
                             <p className="font-semibold text-slate-900 leading-none truncate">{user.name}</p>
                             <p className="text-[11px] text-slate-400 mt-1 truncate">{user.email}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         {(user.roleIds && user.roleIds.length > 0) ? (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 justify-center">
                             {user.roleIds.map(rid => {
                               const r = roles.find(x => x.id === rid);
                               const nm = r?.name || rid;
@@ -842,18 +962,18 @@ const UserManagementPage = ({
                           <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${roleBadge(user.role)}`}>{user.role}</span>
                         )}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         {user.role === 'Admin' ? (
                           <span className="text-[11px] font-semibold text-indigo-600">All companies</span>
                         ) : user.permissions.length === 0 ? (
                           <span className="text-[11px] text-slate-400">No access</span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 justify-center">
                             {user.permissions.map(p => {
                               const c = companies.find(c => c.id === p.companyId);
                               return <span key={p.companyId} className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-medium text-slate-600">{c?.name || p.companyId}{p.bankIds.length ? ` (${p.bankIds.length})` : ''}</span>;
@@ -861,9 +981,35 @@ const UserManagementPage = ({
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => onEditUser(user)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-3">
+                          {/* SSO indicator + toggle (on = Microsoft SSO, off = local password) */}
+                          <div
+                            className="flex items-center gap-1.5"
+                            title={user.authSource === 'sso'
+                              ? 'Microsoft SSO account (managed via Entra groups). Toggle off to make it a local password account.'
+                              : 'Local account (email / password). Toggle on to require Microsoft SSO.'}
+                          >
+                            {user.authSource === 'sso' ? (
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-indigo-600"><MicrosoftLogo size={12} /> SSO</span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-[11px] font-semibold text-slate-400"><Lock size={11} /> Local</span>
+                            )}
+                            <button
+                              role="switch"
+                              aria-checked={user.authSource === 'sso'}
+                              onClick={() => onSetAuthSource(user, user.authSource === 'sso' ? 'password' : 'sso')}
+                              className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${user.authSource === 'sso' ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                            >
+                              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${user.authSource === 'sso' ? 'translate-x-4' : ''}`} />
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => onEditUser(user)}
+                            disabled={user.authSource === 'sso'}
+                            title={user.authSource === 'sso' ? "SSO users are managed in Entra. Toggle off to edit." : undefined}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          ><Edit2 size={14} /> Edit</button>
                           <button onClick={() => onDeleteUser(user.id)} disabled={user.id === currentUserId} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors" title={user.id === currentUserId ? 'You cannot remove yourself' : 'Remove user'}><XCircle size={16} /></button>
                         </div>
                       </td>
@@ -877,7 +1023,7 @@ const UserManagementPage = ({
             </div>
           </div>
         </>
-      ) : (
+      ) : tab === 'roles' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: create + role list */}
           <div className="lg:col-span-1 space-y-4">
@@ -917,7 +1063,7 @@ const UserManagementPage = ({
           <div className="lg:col-span-2">
             {(() => {
               const role = roles.find(r => r.id === selectedRoleId) || roles[0];
-              if (!role) return <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center text-slate-400 text-sm">No roles yet — create one on the left.</div>;
+              if (!role) return <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center text-slate-400 text-sm">No roles yet - create one on the left.</div>;
               const locked = role.name === 'Admin';
               return (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
@@ -987,6 +1133,8 @@ const UserManagementPage = ({
             })()}
           </div>
         </div>
+      ) : (
+        <EntraGroupsTab roles={roles} />
       )}
     </div>
   );
@@ -1262,7 +1410,7 @@ const Header = ({
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0 gap-3 h-16 md:h-20">
-      {/* Left — hamburger + company logo + title */}
+      {/* Left - hamburger + company logo + title */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onMenuClick}
@@ -1279,7 +1427,7 @@ const Header = ({
         <h1 className="text-xl md:text-2xl font-bold text-slate-900 leading-none truncate">{title}</h1>
       </div>
 
-      {/* Right — search (notifications + sign out now live in the sidebar user section) */}
+      {/* Right - search (notifications + sign out now live in the sidebar user section) */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
         {/* Search */}
         <div className="relative hidden sm:block">
@@ -1569,14 +1717,15 @@ const CompanyDetailCard = ({
 }) => {
   return (
     <div>
-      <div className="overflow-x-auto">
+      {/* Fixed ~15-row height so switching company tabs never reflows the page; rows scroll, header stays. */}
+      <div className="overflow-auto h-[640px]">
         <table className="w-full text-left border-collapse min-w-[600px]">
-          <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
             <tr>
               <th className="px-6 py-4 border-b border-slate-100">Bank</th>
-              <th className="px-6 py-4 border-b border-slate-100 text-right">Wallets</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-left">Wallets</th>
               <th className="px-6 py-4 border-b border-slate-100 text-right">Balance (LCY)</th>
-              <th className="px-6 py-4 border-b border-slate-100 text-right">Currency</th>
+              <th className="px-6 py-4 border-b border-slate-100 text-center">Currency</th>
               <th className="px-6 py-4 border-b border-slate-100 text-right">Valuation (USD/T)</th>
             </tr>
           </thead>
@@ -1648,7 +1797,7 @@ const CompanyDetailCard = ({
               // Add active rows (Wallets)
               activeRows.forEach((wallet, idx) => {
                 const usdVal = wallet.value_usd ?? (wallet as any).usd_value ?? (wallet as any).valueUsd ?? (wallet as any).usdValue;
-                // Allow negative values (overdrafts) — only hide when truly absent or exactly zero balance with no DB value
+                // Allow negative values (overdrafts) - only hide when truly absent or exactly zero balance with no DB value
                 const converted = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0)
                   ? { amount: Number(usdVal), estimated: !!(wallet as any).value_usd_estimated }
                   : null;
@@ -1685,11 +1834,11 @@ const CompanyDetailCard = ({
                         <div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-left text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
                     <td className={`px-6 py-4 border-b border-slate-100 text-right font-mono font-bold ${isAlertRow ? 'text-red-600 animate-pulse' : 'text-slate-900'}`}>
                       {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-right">
+                    <td className="px-6 py-4 border-b border-slate-100 text-center">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wallet.currency === 'USD' || wallet.currency === 'USDT' ? 'bg-emerald-100 text-emerald-700' : wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                         {wallet.currency}
                       </span>
@@ -1704,7 +1853,7 @@ const CompanyDetailCard = ({
                           </span>
                         );
                       })() : (
-                        <span className="text-slate-300 text-xs">—</span>
+                        <span className="text-slate-300 text-xs">-</span>
                       )}
                     </td>
                   </tr>
@@ -1728,7 +1877,7 @@ const CompanyDetailCard = ({
                         <div className="text-[10px] text-slate-300 font-medium ml-2">↳ {activeRows.length > 0 ? "Additional Acct" : "Continued"}</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 text-xs font-mono">{acc.accountNumber}</td>
+                    <td className="px-6 py-4 border-b border-slate-100 text-left text-slate-400 text-xs font-mono">{acc.accountNumber}</td>
                     <td colSpan={3} className="px-6 py-4 border-b border-slate-100 text-right text-slate-400 italic text-xs">
                       {/* Hidden */}
                     </td>
@@ -1755,6 +1904,82 @@ const CompanyDetailCard = ({
   );
 };
 
+// Merged detail across companies (the "All" view): one table with a Company column,
+// bank main/sub rows, fixed ~15-row height + sticky header.
+const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alerts: WalletAlert[] }) => {
+  const badge = (c: string) =>
+    c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
+    c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
+  const rows: any[] = [];
+  let grandTotal = 0;
+  companies.forEach(company => {
+    let firstOfCompany = true;
+    (company.banks || []).forEach((bank: any) => {
+      const isVerified = bank.is_verified !== undefined
+        ? (bank.is_verified === 1 || bank.is_verified === '1' || bank.is_verified === true)
+        : bank.isVerified === true;
+      if (!isVerified) return;
+      const accounts = (bank.bank_accounts || bank.accounts || []) as any[];
+      const wallets: any[] = [];
+      accounts.forEach(acc => {
+        let ws = acc.wallets || [];
+        if (typeof ws === 'string') { try { ws = JSON.parse(ws); } catch { ws = []; } }
+        (ws as any[]).forEach(w => wallets.push({ ...w, accountNumber: acc.account_number || acc.accountNumber || '' }));
+      });
+      wallets.forEach((w, idx) => {
+        const usdVal = w.value_usd ?? w.usd_value ?? w.valueUsd ?? w.usdValue;
+        const usd = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0) ? Number(usdVal) : null;
+        if (usd !== null) grandTotal += usd;
+        const alert = alerts.find(a => a.bankId === bank.id && a.walletId === w.id && a.isEnabled);
+        const isAlertRow = alert ? (w.balance || 0) <= alert.threshold : false;
+        const fmtUsdCell = usd === null ? '-' : ((usd < 0 ? '-$' : '$') + Math.abs(usd).toLocaleString(undefined, { maximumFractionDigits: 0 }));
+        rows.push(
+          <tr key={`${company.id}-${bank.id}-${w.id}-${idx}`} className={`${isAlertRow ? 'bg-red-50/60' : 'hover:bg-slate-50/50'} transition-colors`}>
+            <td className="px-5 py-3 border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
+            <td className="px-5 py-3 border-b border-slate-100">
+              {idx === 0 ? (
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2"><span className="font-semibold text-slate-700">{bank.name}</span><ShieldCheck size={12} className="text-emerald-500 shrink-0" /></div>
+                  {bank.last_modified_date && <span className="text-[9px] text-indigo-500 font-bold uppercase mt-0.5 tracking-tight">Sync: {bank.last_modified_date}</span>}
+                </div>
+              ) : (<div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>)}
+            </td>
+            <td className="px-5 py-3 border-b border-slate-100 text-left text-slate-500 text-xs font-mono">{w.accountNumber}</td>
+            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[w.currency] || ''} {(w.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td className="px-5 py-3 border-b border-slate-100 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
+            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono font-bold ${usd === null ? 'text-slate-300' : (usd < 0 ? 'text-red-600' : 'text-slate-900')}`}>{fmtUsdCell}</td>
+          </tr>
+        );
+        firstOfCompany = false;
+      });
+    });
+  });
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="overflow-auto h-[640px]">
+        <table className="w-full text-left border-collapse text-xs min-w-[760px]">
+          <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
+            <tr>
+              <th className="px-5 py-3 border-b border-slate-100">Company</th>
+              <th className="px-5 py-3 border-b border-slate-100">Bank</th>
+              <th className="px-5 py-3 border-b border-slate-100">Wallets</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Valuation (USD/T)</th>
+            </tr>
+          </thead>
+          <tbody>{rows.length ? rows : (<tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">No verified balances</td></tr>)}</tbody>
+        </table>
+      </div>
+      {/* Pinned total (sum of all USD valuations) - stays put while rows scroll */}
+      <div className="flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+        <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+        <span className={`font-mono font-bold text-sm ${grandTotal < 0 ? 'text-red-600' : 'text-slate-800'}`}>{(grandTotal < 0 ? '-$' : '$') + Math.abs(grandTotal).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+      </div>
+    </div>
+  );
+};
+
 const CompanyTabs = ({
   companies,
   alerts,
@@ -1770,34 +1995,29 @@ const CompanyTabs = ({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Tab bar — one tab per company */}
-      <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50/60 px-2">
-        {companies.map(c => {
-          const on = c.id === active.id;
-          return (
-            <button
-              key={c.id}
-              onClick={() => setActiveId(c.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-            >
-              <span>{c.name}</span>
-              {c.industry && (
-                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>{c.industry}</span>
-              )}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Internal tabs only when scope is all companies; a page tab already picks one. */}
+      {companies.length > 1 && (
+        <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50/60 px-2">
+          {companies.map(c => {
+            const on = c.id === active.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setActiveId(c.id)}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              >
+                <span>{c.name}</span>
+                {c.industry && (
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>{c.industry}</span>
+                )}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${on ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Active company header + detail */}
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
-        <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
-        <h3 className="text-xl font-bold text-slate-800 tracking-tight">{active.name}</h3>
-        {active.status === 'Onboarding' && (
-          <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase animate-pulse">Onboarding</span>
-        )}
-      </div>
+      {/* The active company name is already shown on the tab, so no separate heading here. */}
       <CompanyDetailCard company={active} alerts={alerts} onShowBankDetails={onShowBankDetails} />
     </div>
   );
@@ -1809,14 +2029,19 @@ const BrandingPage = ({
   branding,
   companies,
   onSaved,
+  isAdmin,
+  theme,
+  onThemeChange,
 }: {
   branding: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> };
   companies: Company[];
   onSaved: (b: { siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> }) => void;
+  isAdmin: boolean;
+  theme: 'dark' | 'gray' | 'light';           // the current user's personal theme
+  onThemeChange: (t: 'dark' | 'gray' | 'light') => void; // persists per-user immediately
 }) => {
   const [siteName, setSiteName] = useState(branding.siteName);
   const [logo, setLogo] = useState<string | null>(branding.logo);
-  const [theme, setTheme] = useState<'dark' | 'gray' | 'light'>(branding.theme);
   const [logoBg, setLogoBg] = useState<'light' | 'dark' | 'none'>(branding.logoBg);
   const [companyLogos, setCompanyLogos] = useState<Record<string, string>>(branding.companyLogos || {});
   const [saving, setSaving] = useState(false);
@@ -1854,14 +2079,14 @@ const BrandingPage = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, theme, logoBg, companyLogos }),
+        body: JSON.stringify({ siteName: siteName.trim() || 'Liquidity Reports', logo, logoBg, companyLogos }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || 'Save failed');
       }
       const cleanLogos = Object.fromEntries(Object.entries(companyLogos).filter(([, v]) => v));
-      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme, logoBg, companyLogos: cleanLogos };
+      const next = { siteName: siteName.trim() || 'Liquidity Reports', logo, theme: branding.theme, logoBg, companyLogos: cleanLogos };
       onSaved(next);
       setSaved(true);
     } catch (e: any) {
@@ -1875,9 +2100,37 @@ const BrandingPage = ({
     <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
       <div>
         <h2 className="text-lg font-bold text-slate-900">Appearance</h2>
-        <p className="text-sm text-slate-400">Set the logo and name shown across the portal. Visible to everyone in your organization.</p>
+        <p className="text-sm text-slate-400">
+          {isAdmin
+            ? 'Your theme is saved to your account. The logo, name and company logos below apply to everyone in your organization.'
+            : 'Choose the portal theme for your account. Your choice is saved to your profile.'}
+        </p>
       </div>
 
+      {/* Theme - a personal preference, saved per user */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Theme</label>
+        <div className="grid grid-cols-3 gap-3 max-w-lg">
+          {([
+            { id: 'light', label: 'White', swatch: '#ffffff' },
+            { id: 'gray', label: 'Gray', swatch: '#3f4654' },
+            { id: 'dark', label: 'Dark', swatch: '#0b1220' },
+          ] as const).map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => onThemeChange(opt.id)}
+              className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-colors text-left ${theme === opt.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'}`}
+            >
+              <span className="w-9 h-9 rounded-lg shrink-0 ring-1 ring-black/10" style={{ background: opt.swatch }} />
+              <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
+              {theme === opt.id && <Check size={15} className="text-indigo-600 ml-auto" />}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-3">Applies to your view only and is remembered on your next sign-in.</p>
+      </div>
+
+      {isAdmin && (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
         {/* Logo */}
         <div>
@@ -1913,7 +2166,7 @@ const BrandingPage = ({
             />
           </div>
 
-          {/* Logo backdrop — pick what suits the logo (light-on-transparent vs dark-on-transparent) */}
+          {/* Logo backdrop - pick what suits the logo (light-on-transparent vs dark-on-transparent) */}
           <div className="mt-4">
             <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Logo background</span>
             <div className="flex items-center gap-2">
@@ -1941,28 +2194,6 @@ const BrandingPage = ({
             placeholder="Liquidity Reports"
             className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
           />
-        </div>
-
-        {/* Theme */}
-        <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Sidebar theme</label>
-          <div className="grid grid-cols-3 gap-3 max-w-lg">
-            {([
-              { id: 'light', label: 'White', swatch: '#ffffff' },
-              { id: 'gray', label: 'Gray', swatch: '#3f4654' },
-              { id: 'dark', label: 'Dark', swatch: '#0b1220' },
-            ] as const).map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => { setTheme(opt.id); setSaved(false); }}
-                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-colors text-left ${theme === opt.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'}`}
-              >
-                <span className="w-9 h-9 rounded-lg shrink-0 ring-1 ring-black/10" style={{ background: opt.swatch }} />
-                <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
-                {theme === opt.id && <Check size={15} className="text-indigo-600 ml-auto" />}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Per-company logos */}
@@ -2002,6 +2233,98 @@ const BrandingPage = ({
           {saved && <span className="text-sm text-emerald-600 font-medium">Saved</span>}
         </div>
       </div>
+      )}
+    </div>
+  );
+};
+
+// --- Notification settings (per user: browser push + email) ---
+
+const NotificationSettingsPage = ({ email }: { email?: string }) => {
+  const supported = typeof window !== 'undefined' && 'Notification' in window;
+  const [permission, setPermission] = useState<NotificationPermission>(supported ? Notification.permission : 'denied');
+  const [push, setPush] = useState(false);
+  const [emailOn, setEmailOn] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/my-settings', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : {}))
+      .then(d => { setPush(!!d.notifyPush); setEmailOn(!!d.notifyEmail); })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const persist = (patch: { notifyPush?: boolean; notifyEmail?: boolean }) => {
+    setSaved(false);
+    fetch('/api/my-settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(patch),
+    }).then(() => setSaved(true)).catch(() => {});
+  };
+
+  const togglePush = async () => {
+    if (push) { setPush(false); persist({ notifyPush: false }); return; }
+    if (!supported) return;
+    let perm = Notification.permission;
+    if (perm !== 'granted') perm = await Notification.requestPermission();
+    setPermission(perm);
+    if (perm === 'granted') { setPush(true); persist({ notifyPush: true }); }
+  };
+
+  const toggleEmail = () => { const next = !emailOn; setEmailOn(next); persist({ notifyEmail: next }); };
+
+  const Toggle = ({ on, onClick, disabled }: { on: boolean; onClick: () => void; disabled?: boolean }) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-indigo-600' : 'bg-slate-300'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
+    </button>
+  );
+
+  return (
+    <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-slate-900">Notifications</h2>
+        <p className="text-sm text-slate-400">Choose how you want to be notified about wallet alerts. These settings apply to your account only.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+        {/* Browser push */}
+        <div className="p-5 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><Bell size={17} /></span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-800">Browser notifications</div>
+              <p className="text-xs text-slate-400 mt-0.5">Show desktop notifications in this browser when an alert triggers.</p>
+              {!supported && <p className="text-xs text-amber-600 mt-1">This browser does not support notifications.</p>}
+              {supported && permission === 'denied' && (
+                <p className="text-xs text-amber-600 mt-1">Notifications are blocked for this site. Enable them in your browser's site settings, then turn this on.</p>
+              )}
+            </div>
+          </div>
+          <Toggle on={push} onClick={togglePush} disabled={!supported || !loaded} />
+        </div>
+
+        {/* Email */}
+        <div className="p-5 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><Mail size={17} /></span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-800">Email notifications</div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Receive alert emails{email ? <> at <span className="font-medium text-slate-600">{email}</span></> : ''}.
+              </p>
+            </div>
+          </div>
+          <Toggle on={emailOn} onClick={toggleEmail} disabled={!loaded} />
+        </div>
+      </div>
+
+      {saved && <p className="text-sm text-emerald-600 font-medium">Saved</p>}
     </div>
   );
 };
@@ -2050,6 +2373,12 @@ export default function App() {
 
   const [activePage, setActivePage] = useState<Page>('companies');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Export-to-Excel section picker.
+  const EXPORT_SHEETS = ['Portfolio Summary', 'Bank Detail', 'By Bank', 'By Company', 'By Currency'];
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSel, setExportSel] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(EXPORT_SHEETS.map(s => [s, true]))
+  );
 
   // ── Historical date picker ────────────────────────────────────────────────
   const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -2104,7 +2433,7 @@ export default function App() {
       });
   });
 
-  // User Management State — loaded from DB
+  // User Management State - loaded from DB
   const [users, setUsers] = useState<User[]>([]);
 
   const loadUsers = async () => {
@@ -2119,7 +2448,7 @@ export default function App() {
     }
   };
 
-  // Roles (custom roles + per-role company/bank access) — managed in User Management → Roles.
+  // Roles (custom roles + per-role company/bank access) - managed in User Management → Roles.
   const [roles, setRoles] = useState<RoleDef[]>([]);
   const loadRoles = async () => {
     try {
@@ -2157,7 +2486,7 @@ export default function App() {
   const [selectedBankDetails, setSelectedBankDetails] = useState<Bank | null>(null);
   const [isBankDetailsModalOpen, setIsBankDetailsModalOpen] = useState(false);
 
-  // Org branding (logo + site name + theme) — configured in Settings → Appearance.
+  // Org branding (logo + site name + theme) - configured in Settings → Appearance.
   const [branding, setBranding] = useState<{ siteName: string; logo: string | null; theme: 'dark' | 'gray' | 'light'; logoBg: 'light' | 'dark' | 'none'; companyLogos: Record<string, string> }>({ siteName: 'Liquidity Reports', logo: null, theme: 'dark', logoBg: 'light', companyLogos: {} });
   useEffect(() => {
     fetch('/api/branding', { credentials: 'include' })
@@ -2166,27 +2495,48 @@ export default function App() {
       .catch(() => {});
   }, []);
   useEffect(() => { document.title = branding.siteName || 'Liquidity Reports'; }, [branding.siteName]);
+
+  // Theme is a per-user preference (Settings → Appearance), stored server-side
+  // per account. null until loaded; falls back to the org default (branding.theme).
+  const [userTheme, setUserTheme] = useState<'dark' | 'gray' | 'light' | null>(null);
+  useEffect(() => {
+    fetch('/api/my-settings', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && ['dark', 'gray', 'light'].includes(d.theme)) setUserTheme(d.theme); })
+      .catch(() => {});
+  }, []);
+  const effectiveTheme: 'dark' | 'gray' | 'light' = userTheme ?? branding.theme;
+  const handleThemeChange = (t: 'dark' | 'gray' | 'light') => {
+    setUserTheme(t); // apply immediately
+    fetch('/api/my-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ theme: t }),
+    }).catch(() => {});
+  };
+
   // Apply the chosen theme: data-theme drives the portal-wide CSS (see index.css),
   // and we tint the sidebar variables so the rail matches the surface palette.
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = branding.theme;
+    root.dataset.theme = effectiveTheme;
     const palettes = {
-      dark: { bg: '#0f172a', border: '#1e293b' },
+      dark: { bg: '#18191b', border: '#272a2d' },   // Chatwoot slate-2 rail, slate-4 border
       gray: { bg: '#2b333f', border: '#3c4655' },
       light: { bg: '#1e293b', border: '#334155' }, // original dark sidebar over a bright portal
     };
-    const p = palettes[branding.theme] || palettes.dark;
+    const p = palettes[effectiveTheme] || palettes.dark;
     root.style.setProperty('--color-sidebar-bg', p.bg);
     root.style.setProperty('--color-sidebar-border', p.border);
-  }, [branding.theme]);
+  }, [effectiveTheme]);
 
   const handleShowBankDetails = (bank: Bank) => {
     setSelectedBankDetails(bank);
     setIsBankDetailsModalOpen(true);
   };
 
-  // Export the current Companies view to Excel — one worksheet per on-screen table.
+  // Export the current Companies view to Excel - one worksheet per on-screen table.
   const handleExportCompaniesCsv = () => {
     const flat: (string | number)[][] = [];
     const detail: (string | number)[][] = [];
@@ -2228,16 +2578,21 @@ export default function App() {
     });
     const toRows = (m: Record<string, number>) => Object.entries(m).map(([k, v]) => [k, Math.round(v)]);
     const who = selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'company') : 'all-companies';
-    downloadExcel(`portfolio-${who}.xls`, [
+    const allSheets = [
       { name: 'Portfolio Summary', headers: ['Company', 'Bank', 'Currency', 'Balance', 'FX Rate', 'USD Value'], rows: flat },
       { name: 'Bank Detail', headers: ['Company', 'Bank', 'Account', 'Currency', 'Balance (LCY)', 'USD Value', 'Last Sync'], rows: detail },
       { name: 'By Bank', headers: ['Bank', 'USD Value'], rows: toRows(byBank) },
       { name: 'By Company', headers: ['Company', 'USD Value'], rows: toRows(byCompany) },
       { name: 'By Currency', headers: ['Currency', 'USD Value'], rows: toRows(byCurrency) },
-    ]);
+    ];
+    // Only export the sections the user ticked in the export menu.
+    const selected = allSheets.filter(s => exportSel[s.name]);
+    if (!selected.length) return;
+    downloadExcel(`portfolio-${who}.xls`, selected);
+    setExportOpen(false);
   };
 
-  // Users are now stored in DB — no localStorage sync needed
+  // Users are now stored in DB - no localStorage sync needed
 
   // Load alerts from DB on mount
   useEffect(() => {
@@ -2283,6 +2638,20 @@ export default function App() {
     }
   };
 
+  const handleSetAuthSource = async (user: User, source: string) => {
+    if (source === 'password' && !window.confirm(`Revert "${user.name}" to a local account? They'll sign in with email/password again (a password may need to be set) instead of Microsoft.`)) return;
+    if (source === 'sso' && !window.confirm(`Require Microsoft SSO for "${user.name}"? Password login will be disabled for this account.`)) return;
+    try {
+      const res = await fetch(`/api/users/${user.id}/auth-source`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authSource: source }),
+      });
+      if (res.ok) await loadUsers();
+    } catch (e) {
+      console.error('Failed to change account type:', e);
+    }
+  };
+
   const handleSaveUser = async (user: User): Promise<void> => {
     const isEdit = !!editingUser;
     const res = await fetch(
@@ -2301,7 +2670,7 @@ export default function App() {
     setIsUserModalOpen(false);
   };
 
-  // Direct update (used by the inline permissions matrix) — PUT without touching the modal.
+  // Direct update (used by the inline permissions matrix) - PUT without touching the modal.
   const handleUpdateUser = async (user: User): Promise<void> => {
     const res = await fetch(`/api/users/${user.id}`, {
       method: 'PUT',
@@ -2388,6 +2757,7 @@ export default function App() {
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
     if (activePage === 'branding') return 'Appearance';
+    if (activePage === 'notifications') return 'Notifications';
     if (activePage === 'diagnostics') return 'Diagnostics';
     if (!selectedCompanyId) return 'Liquidity Overview';
     return companies.find(c => c.id === selectedCompanyId)?.name || 'Companies';
@@ -2515,7 +2885,7 @@ export default function App() {
         setLastSynced(syncTime);
         localStorage.setItem('smarttool_last_sync', syncTime);
       } else {
-        console.warn('Sync complete — no data returned (DB may be empty or unreachable).');
+        console.warn('Sync complete - no data returned (DB may be empty or unreachable).');
 
         // Still update the in-memory view with whatever we got
         const fallbackRes = await fetch('/api/liquidity');
@@ -2558,7 +2928,7 @@ export default function App() {
 
   const hasAnyWallets = (c: Company) => (c.banks || []).some(b => (b.accounts || []).some(acc => (acc.wallets || []).length > 0));
 
-  // Mobile sidebar open/close state — must be declared before any early returns
+  // Mobile sidebar open/close state - must be declared before any early returns
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ── Auth gate ────────────────────────────────────────────────────────────
@@ -2627,7 +2997,7 @@ export default function App() {
               >
                 <div className="space-y-6">
 
-                  {/* Top toolbar — date · last sync · sync · export */}
+                  {/* Top toolbar - date · last sync · sync · export */}
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-4 flex-wrap">
                       <div className="flex items-center gap-2">
@@ -2659,14 +3029,74 @@ export default function App() {
                           {isRefreshing ? 'Syncing…' : 'Sync All'}
                         </button>
                       )}
-                      <button
-                        onClick={handleExportCompaniesCsv}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                      >
-                        <Download size={15} /> Export Excel
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setExportOpen(v => !v)}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <Download size={15} /> Export Excel <ChevronDown size={13} className="text-slate-400" />
+                        </button>
+                        {exportOpen && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
+                            <div className="absolute right-0 top-11 z-40 w-64 bg-white rounded-xl border border-slate-200 shadow-xl p-2">
+                              <div className="flex items-center justify-between px-2 py-1.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sections to export</span>
+                                <button
+                                  onClick={() => { const all = EXPORT_SHEETS.every(s => exportSel[s]); setExportSel(Object.fromEntries(EXPORT_SHEETS.map(s => [s, !all]))); }}
+                                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                                >
+                                  {EXPORT_SHEETS.every(s => exportSel[s]) ? 'Clear all' : 'Select all'}
+                                </button>
+                              </div>
+                              <div className="max-h-56 overflow-y-auto">
+                                {EXPORT_SHEETS.map(s => (
+                                  <label key={s} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!exportSel[s]}
+                                      onChange={() => setExportSel(prev => ({ ...prev, [s]: !prev[s] }))}
+                                      className="accent-indigo-600 w-4 h-4"
+                                    />
+                                    {s}
+                                  </label>
+                                ))}
+                              </div>
+                              <button
+                                onClick={handleExportCompaniesCsv}
+                                disabled={!EXPORT_SHEETS.some(s => exportSel[s])}
+                                className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Download size={14} /> Export
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Page-level company tabs - filter the ENTIRE page to the selected company */}
+                  {companies.length > 1 && (
+                    <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+                      <button
+                        onClick={() => setSelectedCompanyId(null)}
+                        className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!selectedCompanyId ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                      >
+                        All
+                      </button>
+                      {companies.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => setSelectedCompanyId(c.id)}
+                          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${selectedCompanyId === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                        >
+                          {c.name}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCompanyId === c.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Historical mode banner */}
                   {isHistoricalMode && !historyLoading && (
@@ -2674,7 +3104,7 @@ export default function App() {
                       <div className="flex items-center gap-3">
                         <History size={16} className="text-amber-500 shrink-0" />
                         <p className="text-sm font-bold text-amber-800">
-                          Viewing historical snapshot —&nbsp;
+                          Viewing historical snapshot -&nbsp;
                           {new Date(historyDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
                         {historyEmpty && (
@@ -2735,7 +3165,7 @@ export default function App() {
                     {/* ── Main body ── */}
                     <div className="flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
 
-                      {/* ① LEFT — icon + donut + legend */}
+                      {/* ① LEFT - icon + donut + legend */}
                       <div className="flex flex-col items-center lg:items-start gap-4 p-5 lg:p-6 lg:w-[38%]">
                         {/* Title row */}
                         <div className="flex items-center gap-3">
@@ -2745,20 +3175,20 @@ export default function App() {
                           <div>
                             <h3 className="text-base font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
                             <p className="text-[11px] text-slate-400 font-medium">
-                              {isHistoricalMode ? 'Historical — read only' : 'Aggregated across all accounts'}
+                              {isHistoricalMode ? 'Historical - read only' : 'Aggregated across all accounts'}
                             </p>
                           </div>
                         </div>
 
-                        {/* Donut chart — bigger */}
+                        {/* Donut chart - bigger */}
                         <svg width={200} height={200} viewBox="0 0 200 200" className="mx-auto">
                           <g transform={`rotate(-90 ${cx} ${cy})`}>
                             {/* track */}
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={sw} />
-                            {/* crypto arc — indigo */}
+                            {/* crypto arc - indigo */}
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#6366f1" strokeWidth={sw}
                               strokeDasharray={`${cryptoRatio * circ} ${circ}`} />
-                            {/* fiat arc — sky blue */}
+                            {/* fiat arc - sky blue */}
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#93c5fd" strokeWidth={sw}
                               strokeDasharray={`${fiatRatio * circ} ${circ}`}
                               strokeDashoffset={`${-cryptoRatio * circ}`} />
@@ -2792,13 +3222,13 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* ② RIGHT — mini cards + total card */}
+                      {/* ② RIGHT - mini cards + total card */}
                       <div className="flex flex-col gap-3 p-5 lg:p-6 flex-1">
 
                         {/* Top row: Fiat + Crypto mini cards */}
                         <div className="grid grid-cols-2 gap-3">
                           {/* Fiat mini card */}
-                          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
                             <div className="flex items-center gap-2">
                               <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
                                 <WalletIcon size={14} className="text-indigo-600" />
@@ -2812,7 +3242,7 @@ export default function App() {
                           </div>
 
                           {/* Crypto mini card */}
-                          <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                          <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-2">
                             <div className="flex items-center gap-2">
                               <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
                                 <Bitcoin size={14} className="text-sky-500" />
@@ -2858,10 +3288,10 @@ export default function App() {
                     };
                     const usdCls = (n: number) => n < 0 ? 'text-red-600' : 'text-slate-800';
 
-                    // ── build flat rows ───────────────────────────────────
-                    type FlatRow = { company: string; bank: string; currency: string; balance: number; fxRate: number; usdValue: number; };
+                    // ── build flat rows (all companies; the mini tables always aggregate all) ──
+                    type FlatRow = { companyId: string; company: string; bank: string; currency: string; balance: number; fxRate: number; usdValue: number; };
                     const rows: FlatRow[] = [];
-                    // accumulators for mini tables
+                    // accumulators for mini tables - always across every company, unaffected by the table tabs
                     const byBank: Record<string, number> = {};
                     const byCompany: Record<string, number> = {};
                     const byCurrency: Record<string, number> = {};
@@ -2887,7 +3317,7 @@ export default function App() {
                         });
                         Object.entries(cellMap).forEach(([currency, cell]) => {
                           const fxRate = cell.balance !== 0 ? cell.usd / cell.balance : 0;
-                          rows.push({ company: company.name, bank: bank.name, currency, balance: cell.balance, fxRate, usdValue: cell.usd });
+                          rows.push({ companyId: company.id, company: company.name, bank: bank.name, currency, balance: cell.balance, fxRate, usdValue: cell.usd });
                           byBank[bank.name] = (byBank[bank.name] || 0) + cell.usd;
                           byCompany[company.name] = (byCompany[company.name] || 0) + cell.usd;
                           byCurrency[currency] = (byCurrency[currency] || 0) + cell.usd;
@@ -2895,7 +3325,10 @@ export default function App() {
                       });
                     });
 
-                    const grandTotal = rows.reduce((s, r) => s + r.usdValue, 0);
+                    // The Portfolio Summary table has its OWN tabs; the mini tables above are unaffected.
+                    // The page-level company tabs already scope filteredCompanies, so show all rows.
+                    const displayRows = rows;
+                    const grandTotal = displayRows.reduce((s, r) => s + r.usdValue, 0);
                     const currencyBadge = (c: string) =>
                       c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
                       c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
@@ -2903,33 +3336,34 @@ export default function App() {
                     const MiniTable = ({ title, data }: { title: string; data: Record<string, number> }) => {
                       const total = Object.values(data).reduce((s, v) => s + v, 0);
                       return (
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
-                          <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100">
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px] flex flex-col">
+                          <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100 shrink-0">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{title}</p>
                           </div>
-                          <table className="w-full text-xs">
-                            <tbody>
-                              {Object.entries(data).map(([label, usd]) => (
-                                <tr key={label} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                  <td className="px-4 py-2.5 text-slate-600 font-medium">{label}</td>
-                                  <td className={`px-4 py-2.5 text-right font-mono font-bold ${usdCls(usd)}`}>{fmtUsd(usd)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr className="bg-indigo-50 border-t border-indigo-100">
-                                <td className="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td>
-                                <td className={`px-4 py-2.5 text-right font-mono font-bold text-sm ${usdCls(total)}`}>{fmtUsd(total)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
+                          {/* Rows scroll past ~10; the Total below stays pinned at the bottom. */}
+                          <div className="flex-1 min-h-0 overflow-auto max-h-[360px]">
+                            <table className="w-full text-xs">
+                              <tbody>
+                                {Object.entries(data).map(([label, usd]) => (
+                                  <tr key={label} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                    <td className="px-4 py-2.5 text-slate-600 font-medium">{label}</td>
+                                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${usdCls(usd)}`}>{fmtUsd(usd)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-indigo-50 border-t border-indigo-100">
+                            <span className="font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</span>
+                            <span className={`font-mono font-bold text-sm ${usdCls(total)}`}>{fmtUsd(total)}</span>
+                          </div>
                         </div>
                       );
                     };
 
                     return (
                       <div className="space-y-4">
-                        {/* Three mini summary tables */}
+                        {/* Three mini summary tables (always all companies) */}
                         <div className="flex gap-4 flex-wrap">
                           <MiniTable title="By Bank" data={byBank} />
                           <MiniTable title="By Company" data={byCompany} />
@@ -2943,31 +3377,32 @@ export default function App() {
                             <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
                             <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">{selectedCompanyId ? (companies.find(c => c.id === selectedCompanyId)?.name || 'Company') : 'All Companies'}</span>
                           </div>
-                          <div className="overflow-x-auto">
+                          {/* Fixed ~15-row height so switching tabs never reflows the page; rows scroll, header stays. */}
+                          <div className="overflow-auto h-[640px]">
                             <table className="w-full text-left border-collapse text-xs min-w-[640px]">
-                              <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
                                 <tr>
                                   <th className="px-5 py-3 border-b border-slate-100">Company</th>
                                   <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-                                  <th className="px-5 py-3 border-b border-slate-100">Currency</th>
+                                  <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
                                   <th className="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
                                   <th className="px-5 py-3 border-b border-slate-100 text-right">FX Rate</th>
                                   <th className="px-5 py-3 border-b border-slate-100 text-right">USD Value</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {rows.map((row, i) => (
+                                {displayRows.map((row, i) => (
                                   <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                     <td className="px-5 py-3 font-medium text-slate-700">{row.company}</td>
                                     <td className="px-5 py-3 text-slate-600">{row.bank}</td>
-                                    <td className="px-5 py-3">
+                                    <td className="px-5 py-3 text-center">
                                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span>
                                     </td>
                                     <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>
                                       {CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}
                                     </td>
                                     <td className="px-5 py-3 text-right font-mono text-slate-500">
-                                      {row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '—'}
+                                      {row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '-'}
                                     </td>
                                     <td className={`px-5 py-3 text-right font-mono font-bold ${usdCls(row.usdValue)}`}>
                                       {fmtUsd(row.usdValue)}
@@ -2975,13 +3410,12 @@ export default function App() {
                                   </tr>
                                 ))}
                               </tbody>
-                              <tfoot>
-                                <tr className="bg-indigo-50 border-t-2 border-indigo-100">
-                                  <td colSpan={5} className="px-5 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</td>
-                                  <td className={`px-5 py-3 text-right font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</td>
-                                </tr>
-                              </tfoot>
                             </table>
+                          </div>
+                          {/* Pinned total (stays in place while the rows scroll) */}
+                          <div className="flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+                            <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+                            <span className={`font-mono font-bold text-sm ${usdCls(grandTotal)}`}>{fmtUsd(grandTotal)}</span>
                           </div>
                         </div>
                       </div>
@@ -3023,9 +3457,15 @@ export default function App() {
                           Trigger Initial Sync
                         </button>
                       </div>
-                    ) : (
-                      <CompanyTabs companies={filteredCompanies} alerts={alerts} onShowBankDetails={handleShowBankDetails} />
-                    )}
+                    ) : filteredCompanies.length > 1 ? (
+                      /* "All" - one merged table with a Company column. */
+                      <CompanyDetailTable companies={filteredCompanies} alerts={alerts} />
+                    ) : filteredCompanies.length === 1 ? (
+                      /* A single company selected via the page tab - just its detail. */
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <CompanyDetailCard company={filteredCompanies[0]} alerts={alerts} onShowBankDetails={handleShowBankDetails} />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </motion.div>
@@ -3039,7 +3479,16 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
                 className="w-full max-w-[2000px] mx-auto p-4 md:p-8"
               >
-                <PSPPage companies={companies} onSync={handleRefresh} isSyncing={isRefreshing} />
+                <PSPPage
+                  companies={isHistoricalMode && historyData ? historyData : companies}
+                  onSync={handleRefresh}
+                  isSyncing={isRefreshing}
+                  historyDate={historyDate}
+                  isHistoricalMode={isHistoricalMode}
+                  lastSynced={lastSynced}
+                  onDateChange={handleDateChange}
+                  todayStr={todayStr}
+                />
               </motion.div>
             )}
 
@@ -3105,6 +3554,7 @@ export default function App() {
                   onAddUser={handleAddUser}
                   onEditUser={handleEditUser}
                   onDeleteUser={handleDeleteUser}
+                  onSetAuthSource={handleSetAuthSource}
                   companies={companies}
                   currentUserId={authUser?.id}
                   roles={roles}
@@ -3143,14 +3593,32 @@ export default function App() {
               </motion.div>
             )}
 
-            {activePage === 'branding' && authUser?.role === 'Admin' && (
+            {activePage === 'branding' && (
               <motion.div
                 key="branding"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <BrandingPage branding={branding} companies={companies} onSaved={setBranding} />
+                <BrandingPage
+                  branding={branding}
+                  companies={companies}
+                  onSaved={setBranding}
+                  isAdmin={authUser?.role === 'Admin'}
+                  theme={effectiveTheme}
+                  onThemeChange={handleThemeChange}
+                />
+              </motion.div>
+            )}
+
+            {activePage === 'notifications' && (
+              <motion.div
+                key="notifications"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <NotificationSettingsPage email={authUser?.email} />
               </motion.div>
             )}
           </AnimatePresence>
