@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, Info, RefreshCcw, Globe, Download } from 'lucide-react';
+import { CreditCard, Info, RefreshCcw, Globe, Download, ChevronDown } from 'lucide-react';
 import { Company } from './types';
 import { downloadExcel } from './exportCsv';
 import PSPSection, {
@@ -145,6 +145,12 @@ const PSPPage = ({
   todayStr?: string;
 }) => {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  // Export-to-Excel section picker.
+  const EXPORT_SHEETS = ['PSP Summary', 'By Acquirer', 'By Company', 'By Currency'];
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSel, setExportSel] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(EXPORT_SHEETS.map(s => [s, true]))
+  );
   const companiesWithPsp = companies.filter(c => (c.psp_providers || []).length > 0);
 
   if (companiesWithPsp.length === 0) {
@@ -197,12 +203,16 @@ const PSPPage = ({
       ]);
     const bh = ['Transactions (USD)', 'Reserve (USD)', 'Balance (USD)', 'Settlement (USD)', 'Exposure (USD)'];
     const name = activeValid ? `psp-${(companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'company')}` : 'psp-all-companies';
-    downloadExcel(`${name}.xls`, [
+    const allSheets = [
       { name: 'PSP Summary', headers: ['Company', 'Acquirer', 'Currency', ...bh], rows: summary },
       { name: 'By Acquirer', headers: ['Acquirer', ...bh], rows: breakdownRows(byAcquirer) },
       { name: 'By Company', headers: ['Company', ...bh], rows: breakdownRows(byCompany) },
       { name: 'By Currency', headers: ['Currency', ...bh], rows: breakdownRows(byCurrency) },
-    ]);
+    ];
+    const selected = allSheets.filter(s => exportSel[s.name]);
+    if (!selected.length) return;
+    downloadExcel(`${name}.xls`, selected);
+    setExportOpen(false);
   };
 
   return (
@@ -213,12 +223,50 @@ const PSPPage = ({
           <p className="text-sm text-slate-500">Real-time overview of PSP balances, settlements and expected cash</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={exportCsv}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Download size={14} /> Export Excel
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen(v => !v)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Download size={14} /> Export Excel <ChevronDown size={13} className="text-slate-400" />
+            </button>
+            {exportOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
+                <div className="absolute right-0 top-11 z-40 w-64 bg-white rounded-xl border border-slate-200 shadow-xl p-2">
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sections to export</span>
+                    <button
+                      onClick={() => { const all = EXPORT_SHEETS.every(s => exportSel[s]); setExportSel(Object.fromEntries(EXPORT_SHEETS.map(s => [s, !all]))); }}
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      {EXPORT_SHEETS.every(s => exportSel[s]) ? 'Clear all' : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {EXPORT_SHEETS.map(s => (
+                      <label key={s} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={!!exportSel[s]}
+                          onChange={() => setExportSel(prev => ({ ...prev, [s]: !prev[s] }))}
+                          className="accent-indigo-600 w-4 h-4"
+                        />
+                        {s}
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    onClick={exportCsv}
+                    disabled={!EXPORT_SHEETS.some(s => exportSel[s])}
+                    className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Download size={14} /> Export
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           {onSync && (
             <button
               onClick={onSync}
