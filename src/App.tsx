@@ -3260,26 +3260,27 @@ export default function App() {
                     const MiniTable = ({ title, data }: { title: string; data: Record<string, number> }) => {
                       const total = Object.values(data).reduce((s, v) => s + v, 0);
                       return (
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
-                          <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100">
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px] flex flex-col">
+                          <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100 shrink-0">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{title}</p>
                           </div>
-                          <table className="w-full text-xs">
-                            <tbody>
-                              {Object.entries(data).map(([label, usd]) => (
-                                <tr key={label} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                  <td className="px-4 py-2.5 text-slate-600 font-medium">{label}</td>
-                                  <td className={`px-4 py-2.5 text-right font-mono font-bold ${usdCls(usd)}`}>{fmtUsd(usd)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr className="bg-indigo-50 border-t border-indigo-100">
-                                <td className="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td>
-                                <td className={`px-4 py-2.5 text-right font-mono font-bold text-sm ${usdCls(total)}`}>{fmtUsd(total)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
+                          {/* Rows scroll past ~10; the Total below stays pinned at the bottom. */}
+                          <div className="flex-1 min-h-0 overflow-auto max-h-[360px]">
+                            <table className="w-full text-xs">
+                              <tbody>
+                                {Object.entries(data).map(([label, usd]) => (
+                                  <tr key={label} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                    <td className="px-4 py-2.5 text-slate-600 font-medium">{label}</td>
+                                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${usdCls(usd)}`}>{fmtUsd(usd)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-indigo-50 border-t border-indigo-100">
+                            <span className="font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</span>
+                            <span className={`font-mono font-bold text-sm ${usdCls(total)}`}>{fmtUsd(total)}</span>
+                          </div>
                         </div>
                       );
                     };
