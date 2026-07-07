@@ -3075,26 +3075,36 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Page-level company tabs - filter the ENTIRE page to the selected company */}
+                  {/* Page-level company filter - dropdown on mobile, tabs on desktop */}
                   {companies.length > 1 && (
-                    <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
-                      <button
-                        onClick={() => setSelectedCompanyId(null)}
-                        className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!selectedCompanyId ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                    <>
+                      <select
+                        value={selectedCompanyId || ''}
+                        onChange={e => setSelectedCompanyId(e.target.value || null)}
+                        className="md:hidden w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300"
                       >
-                        All
-                      </button>
-                      {companies.map(c => (
+                        <option value="">All companies</option>
+                        {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.banks.length})</option>)}
+                      </select>
+                      <div className="hidden md:flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
                         <button
-                          key={c.id}
-                          onClick={() => setSelectedCompanyId(c.id)}
-                          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${selectedCompanyId === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                          onClick={() => setSelectedCompanyId(null)}
+                          className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!selectedCompanyId ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
                         >
-                          {c.name}
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCompanyId === c.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+                          All
                         </button>
-                      ))}
-                    </div>
+                        {companies.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => setSelectedCompanyId(c.id)}
+                            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${selectedCompanyId === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                          >
+                            {c.name}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCompanyId === c.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
 
                   {/* Historical mode banner */}

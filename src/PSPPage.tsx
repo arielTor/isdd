@@ -374,9 +374,19 @@ const PSPPage = ({
         </div>
       )}
 
-      {/* Company selector - View All + per company (always shown, even for a single company) */}
+      {/* Company selector - dropdown on mobile (when >1), tabs on desktop; always shown */}
+      {companiesWithPsp.length > 1 && (
+        <select
+          value={activeValid ? (activeCompanyId as string) : ''}
+          onChange={e => setActiveCompanyId(e.target.value || null)}
+          className="md:hidden w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">View All</option>
+          {companiesWithPsp.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      )}
       {companiesWithPsp.length >= 1 && (
-        <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200">
+        <div className={`${companiesWithPsp.length > 1 ? 'hidden md:flex' : 'flex'} items-stretch gap-1 overflow-x-auto border-b border-slate-200`}>
           <button
             onClick={() => setActiveCompanyId(null)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!activeValid ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
