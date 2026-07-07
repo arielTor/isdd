@@ -1904,6 +1904,75 @@ const CompanyDetailCard = ({
   );
 };
 
+// Merged detail across companies (the "All" view): one table with a Company column,
+// bank main/sub rows, fixed ~15-row height + sticky header.
+const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alerts: WalletAlert[] }) => {
+  const badge = (c: string) =>
+    c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
+    c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
+  const rows: any[] = [];
+  companies.forEach(company => {
+    let firstOfCompany = true;
+    (company.banks || []).forEach((bank: any) => {
+      const isVerified = bank.is_verified !== undefined
+        ? (bank.is_verified === 1 || bank.is_verified === '1' || bank.is_verified === true)
+        : bank.isVerified === true;
+      if (!isVerified) return;
+      const accounts = (bank.bank_accounts || bank.accounts || []) as any[];
+      const wallets: any[] = [];
+      accounts.forEach(acc => {
+        let ws = acc.wallets || [];
+        if (typeof ws === 'string') { try { ws = JSON.parse(ws); } catch { ws = []; } }
+        (ws as any[]).forEach(w => wallets.push({ ...w, accountNumber: acc.account_number || acc.accountNumber || '' }));
+      });
+      wallets.forEach((w, idx) => {
+        const usdVal = w.value_usd ?? w.usd_value ?? w.valueUsd ?? w.usdValue;
+        const usd = (usdVal !== undefined && usdVal !== null && Number(usdVal) !== 0) ? Number(usdVal) : null;
+        const alert = alerts.find(a => a.bankId === bank.id && a.walletId === w.id && a.isEnabled);
+        const isAlertRow = alert ? (w.balance || 0) <= alert.threshold : false;
+        const fmtUsdCell = usd === null ? '-' : ((usd < 0 ? '-$' : '$') + Math.abs(usd).toLocaleString(undefined, { maximumFractionDigits: 0 }));
+        rows.push(
+          <tr key={`${company.id}-${bank.id}-${w.id}-${idx}`} className={`${isAlertRow ? 'bg-red-50/60' : 'hover:bg-slate-50/50'} transition-colors`}>
+            <td className="px-5 py-3 border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
+            <td className="px-5 py-3 border-b border-slate-100">
+              {idx === 0 ? (
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2"><span className="font-semibold text-slate-700">{bank.name}</span><ShieldCheck size={12} className="text-emerald-500 shrink-0" /></div>
+                  {bank.last_modified_date && <span className="text-[9px] text-indigo-500 font-bold uppercase mt-0.5 tracking-tight">Sync: {bank.last_modified_date}</span>}
+                </div>
+              ) : (<div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>)}
+            </td>
+            <td className="px-5 py-3 border-b border-slate-100 text-left text-slate-500 text-xs font-mono">{w.accountNumber}</td>
+            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[w.currency] || ''} {(w.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td className="px-5 py-3 border-b border-slate-100 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
+            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono font-bold ${usd === null ? 'text-slate-300' : (usd < 0 ? 'text-red-600' : 'text-slate-900')}`}>{fmtUsdCell}</td>
+          </tr>
+        );
+        firstOfCompany = false;
+      });
+    });
+  });
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="overflow-auto h-[640px]">
+        <table className="w-full text-left border-collapse text-xs min-w-[760px]">
+          <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
+            <tr>
+              <th className="px-5 py-3 border-b border-slate-100">Company</th>
+              <th className="px-5 py-3 border-b border-slate-100">Bank</th>
+              <th className="px-5 py-3 border-b border-slate-100">Wallets</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Valuation (USD/T)</th>
+            </tr>
+          </thead>
+          <tbody>{rows.length ? rows : (<tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">No verified balances</td></tr>)}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 const CompanyTabs = ({
   companies,
   alerts,
@@ -3381,24 +3450,15 @@ export default function App() {
                           Trigger Initial Sync
                         </button>
                       </div>
-                    ) : (
-                      /* No internal tabs - the page-level company tabs drive this.
-                         Under "All" every company's detail stacks (each with a heading);
-                         when one company is selected it's just that one. */
-                      <div className="space-y-6">
-                        {filteredCompanies.map(company => (
-                          <div key={company.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            {filteredCompanies.length > 1 && (
-                              <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
-                                <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
-                                <h3 className="text-lg font-bold text-slate-800 tracking-tight">{company.name}</h3>
-                              </div>
-                            )}
-                            <CompanyDetailCard company={company} alerts={alerts} onShowBankDetails={handleShowBankDetails} />
-                          </div>
-                        ))}
+                    ) : filteredCompanies.length > 1 ? (
+                      /* "All" - one merged table with a Company column. */
+                      <CompanyDetailTable companies={filteredCompanies} alerts={alerts} />
+                    ) : filteredCompanies.length === 1 ? (
+                      /* A single company selected via the page tab - just its detail. */
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <CompanyDetailCard company={filteredCompanies[0]} alerts={alerts} onShowBankDetails={handleShowBankDetails} />
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </motion.div>

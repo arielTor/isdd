@@ -93,40 +93,43 @@ const BreakdownTable = ({ title, data }: { title: string; data: Record<string, {
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-w-[260px]">
       <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">{title}</div>
-      <table className="w-full text-xs">
-        <thead className="text-slate-400">
-          <tr>
-            <th className="text-left px-4 py-2 font-bold">{title.replace('By ', '')}</th>
-            <th className="text-right px-2 py-2 font-bold">Transactions</th>
-            <th className="text-right px-2 py-2 font-bold">Reserve</th>
-            <th className="text-right px-2 py-2 font-bold">Total</th>
-            <th className="text-right px-2 py-2 font-bold">Settl.</th>
-            <th className="text-right px-4 py-2 font-bold">Exposure</th>
-          </tr>
-        </thead>
-        <tbody className="text-slate-700">
-          {entries.map(([name, v]) => (
-            <tr key={name} className="border-t border-slate-50">
-              <td className="px-4 py-2 font-medium whitespace-nowrap">{name}</td>
-              <td className={`text-right px-2 py-2 font-mono ${v.transactionsUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.transactionsUsd)}</td>
-              <td className="text-right px-2 py-2 font-mono">{fmtUsd(v.reserveUsd)}</td>
-              <td className={`text-right px-2 py-2 font-mono ${v.balanceUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd)}</td>
-              <td className={`text-right px-2 py-2 font-mono ${v.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(v.settlementUsd)}</td>
-              <td className={`text-right px-4 py-2 font-mono font-bold ${(v.balanceUsd + v.settlementUsd) < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd + v.settlementUsd)}</td>
+      {/* Rows scroll past ~10; the sticky Total row stays pinned at the bottom. */}
+      <div className="overflow-auto max-h-[360px]">
+        <table className="w-full text-xs">
+          <thead className="text-slate-400 bg-slate-100 sticky top-0 z-10">
+            <tr>
+              <th className="text-left px-4 py-2 font-bold">{title.replace('By ', '')}</th>
+              <th className="text-right px-2 py-2 font-bold">Transactions</th>
+              <th className="text-right px-2 py-2 font-bold">Reserve</th>
+              <th className="text-right px-2 py-2 font-bold">Total</th>
+              <th className="text-right px-2 py-2 font-bold">Settl.</th>
+              <th className="text-right px-4 py-2 font-bold">Exposure</th>
             </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700">
-            <td className="px-4 py-2">Total</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.transactionsUsd)}</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.reserveUsd)}</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.balanceUsd)}</td>
-            <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.settlementUsd)}</td>
-            <td className="text-right px-4 py-2 font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</td>
-          </tr>
-        </tfoot>
-      </table>
+          </thead>
+          <tbody className="text-slate-700">
+            {entries.map(([name, v]) => (
+              <tr key={name} className="border-t border-slate-50">
+                <td className="px-4 py-2 font-medium whitespace-nowrap">{name}</td>
+                <td className={`text-right px-2 py-2 font-mono ${v.transactionsUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.transactionsUsd)}</td>
+                <td className="text-right px-2 py-2 font-mono">{fmtUsd(v.reserveUsd)}</td>
+                <td className={`text-right px-2 py-2 font-mono ${v.balanceUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd)}</td>
+                <td className={`text-right px-2 py-2 font-mono ${v.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(v.settlementUsd)}</td>
+                <td className={`text-right px-4 py-2 font-mono font-bold ${(v.balanceUsd + v.settlementUsd) < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd + v.settlementUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-indigo-200 font-bold text-indigo-700 [&>td]:sticky [&>td]:bottom-0 [&>td]:bg-slate-100">
+              <td className="px-4 py-2">Total</td>
+              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.transactionsUsd)}</td>
+              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.reserveUsd)}</td>
+              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.balanceUsd)}</td>
+              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.settlementUsd)}</td>
+              <td className="text-right px-4 py-2 font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 };
@@ -257,8 +260,8 @@ const PSPPage = ({
         </div>
       )}
 
-      {/* Company selector - View All + per company (like the Companies page) */}
-      {companiesWithPsp.length > 1 && (
+      {/* Company selector - View All + per company (always shown, even for a single company) */}
+      {companiesWithPsp.length >= 1 && (
         <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200">
           <button
             onClick={() => setActiveCompanyId(null)}
@@ -359,7 +362,7 @@ const PSPPage = ({
       </div>
 
       {/* Three breakdown tables */}
-      <div className="flex flex-col lg:flex-row gap-4">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
         <BreakdownTable title="By Acquirer" data={byAcquirer} />
         <BreakdownTable title="By Company" data={byCompany} />
         <BreakdownTable title="By Currency" data={byCurrency} />
