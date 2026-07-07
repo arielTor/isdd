@@ -1934,8 +1934,8 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
         const fmtUsdCell = usd === null ? '-' : ((usd < 0 ? '-$' : '$') + Math.abs(usd).toLocaleString(undefined, { maximumFractionDigits: 0 }));
         rows.push(
           <tr key={`${company.id}-${bank.id}-${w.id}-${idx}`} className={`${isAlertRow ? 'bg-red-50/60' : 'hover:bg-slate-50/50'} transition-colors`}>
-            <td className="px-5 py-3 border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
-            <td className="px-5 py-3 border-b border-slate-100">
+            <td className="px-3 md:px-5 py-3 border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
+            <td className="px-3 md:px-5 py-3 border-b border-slate-100">
               {idx === 0 ? (
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2"><span className="font-semibold text-slate-700">{bank.name}</span><ShieldCheck size={12} className="text-emerald-500 shrink-0" /></div>
@@ -1943,10 +1943,10 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
                 </div>
               ) : (<div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>)}
             </td>
-            <td className="px-5 py-3 border-b border-slate-100 text-left text-slate-500 text-xs font-mono">{w.accountNumber}</td>
-            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[w.currency] || ''} {(w.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-            <td className="px-5 py-3 border-b border-slate-100 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
-            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono font-bold ${usd === null ? 'text-slate-300' : (usd < 0 ? 'text-red-600' : 'text-slate-900')}`}>{fmtUsdCell}</td>
+            <td className="px-5 py-3 border-b border-slate-100 text-left text-slate-500 text-xs font-mono hidden md:table-cell">{w.accountNumber}</td>
+            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono hidden md:table-cell ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[w.currency] || ''} {(w.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td className="px-3 md:px-5 py-3 border-b border-slate-100 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
+            <td className={`px-3 md:px-5 py-3 border-b border-slate-100 text-right font-mono font-bold ${usd === null ? 'text-slate-300' : (usd < 0 ? 'text-red-600' : 'text-slate-900')}`}>{fmtUsdCell}</td>
           </tr>
         );
         firstOfCompany = false;
@@ -1956,15 +1956,15 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="overflow-auto h-[640px]">
-        <table className="w-full text-left border-collapse text-xs min-w-[760px]">
+        <table className="w-full text-left border-collapse text-xs min-w-0 md:min-w-[760px]">
           <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
             <tr>
-              <th className="px-5 py-3 border-b border-slate-100">Company</th>
-              <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-              <th className="px-5 py-3 border-b border-slate-100">Wallets</th>
-              <th className="px-5 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
-              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
-              <th className="px-5 py-3 border-b border-slate-100 text-right">Valuation (USD/T)</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100">Company</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100">Bank</th>
+              <th className="px-5 py-3 border-b border-slate-100 hidden md:table-cell">Wallets</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right hidden md:table-cell">Balance (LCY)</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100 text-center">Currency</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100 text-right">Valuation (USD/T)</th>
             </tr>
           </thead>
           <tbody>{rows.length ? rows : (<tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">No verified balances</td></tr>)}</tbody>
