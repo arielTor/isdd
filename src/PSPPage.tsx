@@ -90,45 +90,42 @@ const BreakdownTable = ({ title, data }: { title: string; data: Record<string, {
     settlementUsd: acc.settlementUsd + v.settlementUsd,
   }), { transactionsUsd: 0, reserveUsd: 0, balanceUsd: 0, settlementUsd: 0 });
 
+  // CSS-grid layout (not a <table>) so header, rows and the pinned Total share one
+  // column template; with the card as a flex column and the rows area flex-1, the
+  // Total sits at the very bottom - so all three cards' Totals line up on one row.
+  const cols = 'grid grid-cols-[1.3fr_1fr_1fr_1fr_0.8fr_1fr] gap-2 px-4';
+  const numCls = (n: number, extra = '') => `text-right font-mono ${n < 0 ? 'text-red-600' : extra}`;
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-w-[260px]">
-      <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">{title}</div>
-      {/* Rows scroll past ~10; the sticky Total row stays pinned at the bottom. */}
-      <div className="overflow-auto max-h-[360px]">
-        <table className="w-full text-xs">
-          <thead className="text-slate-400 bg-slate-100 sticky top-0 z-10">
-            <tr>
-              <th className="text-left px-4 py-2 font-bold">{title.replace('By ', '')}</th>
-              <th className="text-right px-2 py-2 font-bold">Transactions</th>
-              <th className="text-right px-2 py-2 font-bold">Reserve</th>
-              <th className="text-right px-2 py-2 font-bold">Total</th>
-              <th className="text-right px-2 py-2 font-bold">Settl.</th>
-              <th className="text-right px-4 py-2 font-bold">Exposure</th>
-            </tr>
-          </thead>
-          <tbody className="text-slate-700">
-            {entries.map(([name, v]) => (
-              <tr key={name} className="border-t border-slate-50">
-                <td className="px-4 py-2 font-medium whitespace-nowrap">{name}</td>
-                <td className={`text-right px-2 py-2 font-mono ${v.transactionsUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.transactionsUsd)}</td>
-                <td className="text-right px-2 py-2 font-mono">{fmtUsd(v.reserveUsd)}</td>
-                <td className={`text-right px-2 py-2 font-mono ${v.balanceUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd)}</td>
-                <td className={`text-right px-2 py-2 font-mono ${v.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(v.settlementUsd)}</td>
-                <td className={`text-right px-4 py-2 font-mono font-bold ${(v.balanceUsd + v.settlementUsd) < 0 ? 'text-red-600' : ''}`}>{fmtUsd(v.balanceUsd + v.settlementUsd)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-indigo-200 font-bold text-indigo-700 [&>td]:sticky [&>td]:bottom-0 [&>td]:bg-slate-100">
-              <td className="px-4 py-2">Total</td>
-              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.transactionsUsd)}</td>
-              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.reserveUsd)}</td>
-              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.balanceUsd)}</td>
-              <td className="text-right px-2 py-2 font-mono">{fmtUsd(totals.settlementUsd)}</td>
-              <td className="text-right px-4 py-2 font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</td>
-            </tr>
-          </tfoot>
-        </table>
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-w-[280px] flex flex-col">
+      <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide shrink-0">{title}</div>
+      <div className={`${cols} py-2 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100 shrink-0`}>
+        <span>{title.replace('By ', '')}</span>
+        <span className="text-right">Transactions</span>
+        <span className="text-right">Reserve</span>
+        <span className="text-right">Total</span>
+        <span className="text-right">Settl.</span>
+        <span className="text-right">Exposure</span>
+      </div>
+      {/* Rows scroll past ~10; the Total below stays pinned at the bottom. */}
+      <div className="flex-1 min-h-0 overflow-auto max-h-[360px] text-xs text-slate-700">
+        {entries.map(([name, v]) => (
+          <div key={name} className={`${cols} py-2 border-b border-slate-50`}>
+            <span className="font-medium truncate">{name}</span>
+            <span className={numCls(v.transactionsUsd)}>{fmtUsd(v.transactionsUsd)}</span>
+            <span className="text-right font-mono">{fmtUsd(v.reserveUsd)}</span>
+            <span className={numCls(v.balanceUsd)}>{fmtUsd(v.balanceUsd)}</span>
+            <span className={`text-right font-mono ${v.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(v.settlementUsd)}</span>
+            <span className={numCls(v.balanceUsd + v.settlementUsd, 'font-bold')}>{fmtUsd(v.balanceUsd + v.settlementUsd)}</span>
+          </div>
+        ))}
+      </div>
+      <div className={`${cols} py-2.5 text-xs font-bold text-indigo-700 border-t-2 border-indigo-300 shrink-0`}>
+        <span>Total</span>
+        <span className="text-right font-mono">{fmtUsd(totals.transactionsUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.reserveUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.balanceUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.settlementUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</span>
       </div>
     </div>
   );
@@ -362,7 +359,7 @@ const PSPPage = ({
       </div>
 
       {/* Three breakdown tables */}
-      <div className="flex flex-col lg:flex-row gap-4 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch">
         <BreakdownTable title="By Acquirer" data={byAcquirer} />
         <BreakdownTable title="By Company" data={byCompany} />
         <BreakdownTable title="By Currency" data={byCurrency} />
@@ -418,7 +415,7 @@ const PSPPage = ({
       {/* Per-company account-level detail - every company under View All, one when a tab is picked */}
       <div className="space-y-6">
         {scoped.map(company => (
-          <PSPSection key={company.id} company={company} />
+          <PSPSection key={company.id} company={company} showName={!activeValid} />
         ))}
       </div>
     </div>
