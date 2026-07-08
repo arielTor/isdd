@@ -2295,6 +2295,63 @@ async function startServer() {
     }
   });
 
+  // ── INTERNAL ROUTES  (API-key auth, no user session required) ───────────────
+
+  // POST /api/internal/sync-transactions
+  // Called by Zapier every hour with a batch of bank transactions from IFX/ibanq.
+  // Uses INSERT IGNORE so re-sent transactions are silently skipped.
+  app.post("/api/internal/sync-transactions", async (req: any, res) => {
+    const expectedKey = process.env.INTERNAL_SYNC_API_KEY;
+    if (!expectedKey || req.headers["x-api-key"] !== expectedKey) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { transactions } = req.body;
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return res.status(400).json({ error: "transactions array is required and must be non-empty" });
+    }
+
+    const placeholders = transactions.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(", ");
+    const values: any[] = [];
+    for (const t of transactions) {
+      values.push(
+        t.id,
+        t.wallet_id,
+        t.company_id,
+        t.bank_id,
+        t.transaction_date,
+        t.type,
+        t.amount,
+        t.currency,
+        t.other_party   ?? null,
+        t.reference     ?? null,
+        t.payment_scheme ?? null,
+        t.balance_after ?? null,
+        t.source        ?? "ifx",
+        t.synced_at,
+      );
+    }
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      await conn.execute(
+        `INSERT IGNORE INTO wallet_transactions
+          (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
+           currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
+         VALUES ${placeholders}`,
+        values
+      );
+      console.log(`[${new Date().toISOString()}] [sync-transactions] inserted batch of ${transactions.length}`);
+      res.json({ inserted: transactions.length, skipped: 0 });
+    } catch (err: any) {
+      console.error(`[${new Date().toISOString()}] [sync-transactions] DB error:`, err.message);
+      res.status(500).json({ error: "DB insert failed", detail: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
   // 404 for unknown API routes
   app.use("/api/*", corsMiddleware, (req, res) => {
     res.status(404).json({ error: "Endpoint not found", path: req.originalUrl });
