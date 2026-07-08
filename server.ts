@@ -2295,11 +2295,188 @@ async function startServer() {
     }
   });
 
+  // ── TRANSACTIONS ROUTES ───────────────────────────────────────────────────
+
+  // GET /api/transactions
+  app.get("/api/transactions", corsMiddleware, requireAuth, async (req: any, res) => {
+    const {
+      company_id, wallet_id, currency,
+      date_from, date_to,
+      type: txType,
+      search,
+      source = 'ifx',
+      page = '1',
+      limit: limitStr = '20',
+    } = req.query as Record<string, string>;
+
+    const pageNum  = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limitStr, 10)));
+    const offset   = (pageNum - 1) * limitNum;
+
+    const today         = new Date().toISOString().slice(0, 10);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateFrom      = date_from || thirtyDaysAgo;
+    const dateTo        = date_to   || today;
+
+    const conditions: string[] = ['wt.transaction_date BETWEEN ? AND ?'];
+    const baseParams: any[]    = [dateFrom, dateTo];
+
+    if (source)                          { conditions.push('wt.source = ?');                              baseParams.push(source); }
+    if (company_id)                      { conditions.push('wt.company_id = ?');                          baseParams.push(company_id); }
+    if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
+    if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
+    if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
+    if (search)                          { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ?)'); baseParams.push(`%${search}%`, `%${search}%`); }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      const [[summaryRow]] = await conn.execute(`
+        SELECT
+          COALESCE(SUM(CASE WHEN wt.type = 'credit' THEN wt.amount ELSE 0 END), 0) AS money_in,
+          COALESCE(SUM(CASE WHEN wt.type = 'debit'  THEN wt.amount ELSE 0 END), 0) AS money_out,
+          COUNT(*) AS tx_count
+        FROM wallet_transactions wt ${where}
+      `, baseParams) as [any[], any];
+
+      const [[countRow]] = await conn.execute(
+        `SELECT COUNT(*) AS total FROM wallet_transactions wt ${where}`, baseParams
+      ) as [any[], any];
+
+      const total    = Number(countRow.total)    || 0;
+      const moneyIn  = Number(summaryRow.money_in)  || 0;
+      const moneyOut = Number(summaryRow.money_out) || 0;
+
+      const [rows] = await conn.execute(`
+        SELECT
+          wt.id, wt.wallet_id, wt.company_id, wt.bank_id,
+          wt.transaction_date, wt.type, wt.amount, wt.currency,
+          wt.other_party, wt.reference, wt.payment_scheme,
+          wt.balance_after, wt.source, wt.synced_at,
+          c.name AS company_name,
+          b.name AS bank_name
+        FROM wallet_transactions wt
+        LEFT JOIN companies c ON c.id = wt.company_id
+        LEFT JOIN banks     b ON b.id = wt.bank_id
+        ${where}
+        ORDER BY wt.transaction_date DESC, wt.id DESC
+        LIMIT ? OFFSET ?
+      `, [...baseParams, limitNum, offset]) as [any[], any];
+
+      res.json({
+        transactions: rows,
+        pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
+        summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
+      });
+    } catch (err: any) {
+      console.error(`[transactions] query error:`, err.message);
+      res.status(500).json({ error: "Query failed", detail: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
+  // ── API LOGGING (for API Monitor screen) ─────────────────────────────────────
+
+  async function logApiCall(entry: {
+    direction: string; source: string; endpoint: string; method: string;
+    status_code: number; request_body: string | null; response_body: string | null;
+    duration_ms: number; ip_address: string;
+  }): Promise<void> {
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      await conn.execute(
+        `INSERT INTO api_call_logs
+           (direction, source, endpoint, method, status_code, request_body, response_body, duration_ms, ip_address)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [entry.direction, entry.source, entry.endpoint, entry.method,
+         entry.status_code, entry.request_body, entry.response_body,
+         entry.duration_ms, entry.ip_address]
+      );
+    } catch {
+      // Silently ignore — table may not exist yet; logging must never break the main endpoint
+    } finally {
+      if (conn) conn.end();
+    }
+  }
+
+  // GET /api/admin/api-logs
+  app.get("/api/admin/api-logs", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const {
+      direction, source, status,
+      date_from, date_to,
+      page = '1',
+      limit: limitStr = '50',
+    } = req.query as Record<string, string>;
+
+    const pageNum  = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(200, Math.max(1, parseInt(limitStr, 10)));
+    const offset   = (pageNum - 1) * limitNum;
+
+    const today     = new Date().toISOString().slice(0, 10);
+    const dateFrom  = date_from || today;
+    const dateTo    = date_to   || today;
+
+    const conditions: string[] = ['DATE(created_at) BETWEEN ? AND ?'];
+    const params: any[]        = [dateFrom, dateTo];
+
+    if (direction && direction !== 'all') { conditions.push('direction = ?');      params.push(direction); }
+    if (source     && source     !== 'all') { conditions.push('source = ?');         params.push(source); }
+    if (status === '2xx') { conditions.push('status_code BETWEEN 200 AND 299'); }
+    if (status === 'err') { conditions.push('status_code >= 400'); }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      const [[summaryRow]] = await conn.execute(`
+        SELECT
+          COUNT(*)                                                    AS total_calls,
+          COALESCE(AVG(duration_ms), 0)                              AS avg_duration,
+          SUM(CASE WHEN status_code BETWEEN 200 AND 299 THEN 1 ELSE 0 END) AS success_count,
+          SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END)        AS error_count
+        FROM api_call_logs ${where}
+      `, params) as [any[], any];
+
+      const [[countRow]] = await conn.execute(
+        `SELECT COUNT(*) AS total FROM api_call_logs ${where}`, params
+      ) as [any[], any];
+
+      const [rows] = await conn.execute(`
+        SELECT id, direction, source, endpoint, method, status_code,
+               request_body, response_body, duration_ms, ip_address, created_at
+        FROM api_call_logs ${where}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `, [...params, limitNum, offset]) as [any[], any];
+
+      const total = Number(countRow.total) || 0;
+      res.json({
+        logs: rows,
+        pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
+        summary: {
+          total_calls:   Number(summaryRow.total_calls)   || 0,
+          avg_duration:  Math.round(Number(summaryRow.avg_duration) || 0),
+          success_count: Number(summaryRow.success_count) || 0,
+          error_count:   Number(summaryRow.error_count)   || 0,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Query failed", detail: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
   // ── INTERNAL ROUTES  (API-key auth, no user session required) ───────────────
 
   // POST /api/internal/sync-transactions
   // Called by Zapier every hour with a batch of bank transactions from IFX/ibanq.
-  // Uses INSERT IGNORE so re-sent transactions are silently skipped.
+  // Upserts: re-sent transactions update mutable fields (amount, reference, etc.).
   app.post("/api/internal/sync-transactions", async (req: any, res) => {
     const expectedKey = process.env.INTERNAL_SYNC_API_KEY;
     if (!expectedKey || req.headers["x-api-key"] !== expectedKey) {
@@ -2332,21 +2509,49 @@ async function startServer() {
       );
     }
 
+    const startMs = Date.now();
+    const ip = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || '').split(',')[0].trim();
+    let statusCode = 200;
     let conn: any;
     try {
       conn = await mysql.createConnection(dbConfig());
       await conn.execute(
-        `INSERT IGNORE INTO wallet_transactions
+        `INSERT INTO wallet_transactions
           (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
            currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
-         VALUES ${placeholders}`,
+         VALUES ${placeholders}
+         ON DUPLICATE KEY UPDATE
+           amount         = VALUES(amount),
+           balance_after  = VALUES(balance_after),
+           reference      = VALUES(reference),
+           other_party    = VALUES(other_party),
+           payment_scheme = VALUES(payment_scheme),
+           synced_at      = VALUES(synced_at)`,
         values
       );
-      console.log(`[${new Date().toISOString()}] [sync-transactions] inserted batch of ${transactions.length}`);
-      res.json({ inserted: transactions.length, skipped: 0 });
+      console.log(`[${new Date().toISOString()}] [sync-transactions] upserted batch of ${transactions.length}`);
+      const responseBody = { inserted: transactions.length, skipped: 0 };
+      res.json(responseBody);
+      logApiCall({
+        direction: 'inbound', source: 'zapier',
+        endpoint: '/api/internal/sync-transactions', method: 'POST',
+        status_code: 200,
+        request_body: JSON.stringify({ batch_size: transactions.length }),
+        response_body: JSON.stringify(responseBody),
+        duration_ms: Date.now() - startMs, ip_address: ip,
+      });
     } catch (err: any) {
+      statusCode = 500;
       console.error(`[${new Date().toISOString()}] [sync-transactions] DB error:`, err.message);
       res.status(500).json({ error: "DB insert failed", detail: err.message });
+      logApiCall({
+        direction: 'inbound', source: 'zapier',
+        endpoint: '/api/internal/sync-transactions', method: 'POST',
+        status_code: 500,
+        request_body: JSON.stringify({ batch_size: transactions.length }),
+        response_body: JSON.stringify({ error: err.message }),
+        duration_ms: Date.now() - startMs, ip_address: ip,
+      });
     } finally {
       if (conn) conn.end();
     }

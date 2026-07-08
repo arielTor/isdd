@@ -32,6 +32,8 @@ import {
   Coins,
   LogOut,
   CreditCard,
+  Receipt,
+  RadioTower,
   Image as ImageIcon,
   UploadCloud,
   Check,
@@ -48,6 +50,8 @@ import { downloadExcel } from './exportCsv';
 import UploadScreen from './UploadScreen';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
+import TransactionsPage from './TransactionsPage';
+import APIMonitorPage from './APIMonitorPage';
 
 // ── Logged-in user type ───────────────────────────────────────────────────────
 interface AuthUser {
@@ -94,7 +98,7 @@ const MicrosoftLogo = ({ size = 12 }: { size?: number }) => (
 );
 
 // --- Types ---
-type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
+type Page = 'dashboard' | 'companies' | 'transactions' | 'psp' | 'api-monitor' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
 
 // Backdrop colour for a logo badge - admin picks this in Appearance so logos
 // designed for light *or* dark backgrounds both render correctly.
@@ -136,8 +140,10 @@ const Sidebar = ({
   const [settingsOpen, setSettingsOpen] = useState(() => settingsIds.includes(activePage));
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
-    { id: 'psp', icon: CreditCard, label: 'Payment Providers', roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'dashboard',    icon: LayoutDashboard, label: 'Dashboard',          roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'transactions', icon: Receipt,          label: 'Transactions',       roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'psp',          icon: CreditCard,       label: 'Payment Providers',  roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'api-monitor',  icon: RadioTower,       label: 'API Monitor',        roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
 
   const settingsNav = [
@@ -228,7 +234,17 @@ const Sidebar = ({
             <span className="truncate flex-1 text-left">Bank Balance</span>
           </button>
 
-          {workspaceNav.filter(item => item.id !== 'dashboard').map(renderNavItem)}
+          {workspaceNav.filter(item => !['dashboard', 'api-monitor'].includes(item.id)).map(renderNavItem)}
+
+          {/* API Monitor — admin only, rendered last in workspace nav */}
+          {workspaceNav.filter(item => item.id === 'api-monitor').map(item => (
+            <div key={item.id} className="relative">
+              {renderNavItem(item)}
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 bg-slate-600/70 text-slate-400 text-[9px] font-bold uppercase rounded pointer-events-none">
+                Admin
+              </span>
+            </div>
+          ))}
         </div>
       </nav>
 
@@ -648,11 +664,13 @@ const ROLE_DESC: Record<string, string> = {
 
 // Portal areas a role can be granted access to.
 const PAGE_PERMS: { id: string; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'companies', label: 'Companies' },
-  { id: 'psp', label: 'Payment Providers' },
-  { id: 'alerts', label: 'Alert Center' },
-  { id: 'upload', label: 'Manual Data Upload' },
+  { id: 'dashboard',    label: 'Dashboard' },
+  { id: 'companies',    label: 'Companies' },
+  { id: 'transactions', label: 'Transactions' },
+  { id: 'psp',          label: 'Payment Providers' },
+  { id: 'api-monitor',  label: 'API Monitor' },
+  { id: 'alerts',       label: 'Alert Center' },
+  { id: 'upload',       label: 'Manual Data Upload' },
 ];
 
 // --- Entra Groups tab: map discovered Entra group Object IDs to roles ---
@@ -2751,7 +2769,9 @@ export default function App() {
 
   const selectedCompanyName = useMemo(() => {
     if (activePage === 'dashboard') return 'My Dashboard';
+    if (activePage === 'transactions') return 'Transactions';
     if (activePage === 'psp') return 'Payment Providers';
+    if (activePage === 'api-monitor') return 'API Monitor';
     if (activePage === 'users') return 'User Management';
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
@@ -3498,6 +3518,30 @@ export default function App() {
                   onDateChange={handleDateChange}
                   todayStr={todayStr}
                 />
+              </motion.div>
+            )}
+
+            {activePage === 'transactions' && (
+              <motion.div
+                key="transactions"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="w-full max-w-[2000px] mx-auto p-4 md:p-8"
+              >
+                <TransactionsPage companies={companies} />
+              </motion.div>
+            )}
+
+            {activePage === 'api-monitor' && authUser?.role === 'Admin' && (
+              <motion.div
+                key="api-monitor"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="w-full max-w-[2000px] mx-auto p-4 md:p-8"
+              >
+                <APIMonitorPage />
               </motion.div>
             )}
 
