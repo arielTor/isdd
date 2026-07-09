@@ -43,10 +43,15 @@ const fmtAmount = (amount: number, currency: string, type: 'credit' | 'debit') =
 const fmtMoney = (n: number) =>
   `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Currency badge colours match the rest of the app.
+const curBadge = (c: string) =>
+  c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
+  c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
+
 const SummaryCard = ({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) => (
-  <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 flex flex-col gap-1">
+  <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 flex flex-col gap-1">
     <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">{label}</span>
-    <span className={`text-xl font-bold ${color || 'text-white'}`}>{value}</span>
+    <span className={`text-xl font-bold ${color || 'text-slate-900'}`}>{value}</span>
     {sub && <span className="text-slate-500 text-xs">{sub}</span>}
   </div>
 );
@@ -100,22 +105,20 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   };
 
   const resetPage = () => setPage(1);
+  const inputCls = "border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400";
+  const labelCls = "text-slate-400 text-xs font-semibold uppercase tracking-wider";
 
   const { transactions = [], pagination, summary } = data || {};
 
   return (
     <div className="space-y-5">
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-800/50 border border-slate-700/50 rounded-xl p-1 w-fit">
+      {/* Banks / Payment Providers toggle */}
+      <div className="inline-flex rounded-lg border border-slate-200 bg-white overflow-hidden text-sm font-semibold">
         {(['banks', 'psp'] as const).map(t => (
           <button
             key={t}
             onClick={() => { setTab(t); setPage(1); setData(null); }}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
-              tab === t
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            className={`px-5 py-2 transition-colors ${tab === t ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             {t === 'banks' ? 'Banks' : 'Payment Providers'}
           </button>
@@ -123,73 +126,50 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       </div>
 
       {tab === 'psp' ? (
-        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-12 text-center space-y-3">
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-12 text-center space-y-3">
           <div className="text-4xl">🔌</div>
-          <p className="text-white font-semibold text-lg">Payment provider transactions coming soon.</p>
-          <p className="text-slate-400 text-sm">PSP integration is currently being configured.</p>
+          <p className="text-slate-900 font-semibold text-lg">Payment provider transactions coming soon.</p>
+          <p className="text-slate-500 text-sm">PSP integration is currently being configured.</p>
         </div>
       ) : (
         <>
           {/* Filters */}
-          <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 flex flex-wrap gap-3 items-end">
-            {/* Company */}
+          <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Company</label>
-              <select
-                value={companyId}
-                onChange={e => { setCompanyId(e.target.value); resetPage(); }}
-                className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-w-[140px]"
-              >
+              <label className={labelCls}>Company</label>
+              <select value={companyId} onChange={e => { setCompanyId(e.target.value); resetPage(); }} className={`${inputCls} min-w-[140px]`}>
                 <option value="">All Companies</option>
                 {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
 
-            {/* Currency */}
             <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Currency</label>
-              <select
-                value={currency}
-                onChange={e => { setCurrency(e.target.value); resetPage(); }}
-                className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
+              <label className={labelCls}>Currency</label>
+              <select value={currency} onChange={e => { setCurrency(e.target.value); resetPage(); }} className={inputCls}>
                 {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
-            {/* Date from */}
             <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">From</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={e => { setDateFrom(e.target.value); resetPage(); }}
-                className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
+              <label className={labelCls}>From</label>
+              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); resetPage(); }} className={inputCls} />
             </div>
 
-            {/* Date to */}
             <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">To</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={e => { setDateTo(e.target.value); resetPage(); }}
-                className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
+              <label className={labelCls}>To</label>
+              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); resetPage(); }} className={inputCls} />
             </div>
 
-            {/* Search */}
             <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-              <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Search</label>
+              <label className={labelCls}>Search</label>
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Party name or reference…"
                   value={searchInput}
                   onChange={e => handleSearchInput(e.target.value)}
-                  className="w-full bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className={`${inputCls} w-full pl-8`}
                 />
               </div>
             </div>
@@ -200,10 +180,10 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 <button
                   key={t}
                   onClick={() => { setTxType(t); resetPage(); }}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                     txType === t
-                      ? t === 'credit' ? 'bg-emerald-600 text-white' : t === 'debit' ? 'bg-rose-600 text-white' : 'bg-indigo-600 text-white'
-                      : 'bg-slate-700/60 text-slate-400 hover:text-white border border-slate-600/50'
+                      ? t === 'credit' ? 'bg-emerald-600 text-white' : t === 'debit' ? 'bg-red-600 text-white' : 'bg-indigo-600 text-white'
+                      : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-200'
                   }`}
                 >
                   {t === 'all' ? 'All' : t === 'credit' ? '↙ In' : '↗ Out'}
@@ -214,7 +194,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             <button
               onClick={fetchData}
               disabled={loading}
-              className="flex items-center gap-2 px-3 py-2 bg-slate-700/60 border border-slate-600/50 text-slate-300 hover:text-white rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm transition-colors"
             >
               <RefreshCcw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
@@ -223,42 +203,24 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           {/* Summary cards */}
           {summary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <SummaryCard
-                label="Money In"
-                value={fmtMoney(summary.money_in)}
-                sub={`${dateFrom} → ${dateTo}`}
-                color="text-emerald-400"
-              />
-              <SummaryCard
-                label="Money Out"
-                value={fmtMoney(summary.money_out)}
-                sub={`${dateFrom} → ${dateTo}`}
-                color="text-rose-400"
-              />
-              <SummaryCard
-                label="Net Change"
-                value={(summary.net_change >= 0 ? '+' : '') + fmtMoney(summary.net_change)}
-                color={summary.net_change >= 0 ? 'text-emerald-400' : 'text-rose-400'}
-              />
-              <SummaryCard
-                label="Transactions"
-                value={summary.tx_count.toLocaleString()}
-                sub="matching filters"
-              />
+              <SummaryCard label="Money In" value={fmtMoney(summary.money_in)} sub={`${dateFrom} → ${dateTo}`} color="text-emerald-600" />
+              <SummaryCard label="Money Out" value={fmtMoney(summary.money_out)} sub={`${dateFrom} → ${dateTo}`} color="text-red-600" />
+              <SummaryCard label="Net Change" value={(summary.net_change >= 0 ? '+' : '') + fmtMoney(summary.net_change)} color={summary.net_change >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <SummaryCard label="Transactions" value={summary.tx_count.toLocaleString()} sub="matching filters" />
             </div>
           )}
 
           {/* Table */}
-          <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
+          <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
             {loading && !data ? (
-              <div className="p-12 text-center text-slate-500 text-sm">Loading transactions…</div>
+              <div className="p-12 text-center text-slate-400 text-sm">Loading transactions…</div>
             ) : transactions.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 text-sm">No transactions found for the selected filters.</div>
+              <div className="p-12 text-center text-slate-400 text-sm">No transactions found for the selected filters.</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-slate-700/50 border-b border-slate-700/50">
+                    <tr className="bg-slate-100 border-b border-slate-200">
                       {['Date', 'Description', 'Reference', 'Type', 'Amount', 'Currency', 'Scheme'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
                           {h}
@@ -266,44 +228,40 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-700/30">
+                  <tbody className="divide-y divide-slate-100">
                     {transactions.map(tx => (
-                      <tr key={tx.id} className="hover:bg-slate-700/20 transition-colors">
-                        <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{fmtDate(tx.transaction_date)}</td>
-                        <td className="px-4 py-3 text-slate-200 max-w-[200px] truncate" title={tx.other_party || ''}>
-                          {tx.other_party || <span className="text-slate-600">—</span>}
+                      <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDate(tx.transaction_date)}</td>
+                        <td className="px-4 py-3 text-slate-800 max-w-[200px] truncate" title={tx.other_party || ''}>
+                          {tx.other_party || <span className="text-slate-300">-</span>}
                         </td>
-                        <td className="px-4 py-3 text-slate-400 max-w-[240px]">
+                        <td className="px-4 py-3 text-slate-500 max-w-[240px]">
                           {tx.reference ? (
                             <span title={tx.reference} className="cursor-default">
                               {tx.reference.length > 60 ? tx.reference.slice(0, 60) + '…' : tx.reference}
                             </span>
-                          ) : <span className="text-slate-600">—</span>}
+                          ) : <span className="text-slate-300">-</span>}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            tx.type === 'credit'
-                              ? 'bg-emerald-500/20 text-emerald-400'
-                              : 'bg-rose-500/20 text-rose-400'
+                            tx.type === 'credit' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
                           }`}>
-                            {tx.type === 'credit'
-                              ? <ArrowDownLeft size={11} />
-                              : <ArrowUpRight size={11} />}
+                            {tx.type === 'credit' ? <ArrowDownLeft size={11} /> : <ArrowUpRight size={11} />}
                             {tx.type === 'credit' ? 'In' : 'Out'}
                           </span>
                         </td>
                         <td className={`px-4 py-3 font-mono font-semibold whitespace-nowrap ${
-                          tx.type === 'credit' ? 'text-emerald-400' : 'text-rose-400'
+                          tx.type === 'credit' ? 'text-emerald-600' : 'text-red-600'
                         }`}>
                           {fmtAmount(tx.amount, tx.currency, tx.type)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 bg-slate-700/60 text-slate-300 rounded text-xs font-mono">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
                             {tx.currency}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-500 text-xs">
-                          {tx.payment_scheme || <span className="text-slate-700">—</span>}
+                          {tx.payment_scheme || <span className="text-slate-300">-</span>}
                         </td>
                       </tr>
                     ))}
@@ -314,25 +272,25 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
 
             {/* Pagination */}
             {pagination && pagination.total > 0 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700/50 text-xs text-slate-400">
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 text-xs text-slate-500">
                 <span>
-                  Showing {((pagination.page - 1) * pagination.limit) + 1}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()} transactions
+                  Showing {((pagination.page - 1) * pagination.limit) + 1}-{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()} transactions
                 </span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={page <= 1}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-700/60 border border-slate-600/50 rounded-lg disabled:opacity-40 hover:text-white transition-colors"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg disabled:opacity-40 text-slate-600 hover:bg-slate-50 transition-colors"
                   >
                     <ChevronLeft size={13} /> Prev
                   </button>
-                  <span className="flex items-center px-3 py-1.5 text-slate-300">
+                  <span className="flex items-center px-3 py-1.5 text-slate-600">
                     {pagination.page} / {pagination.pages}
                   </span>
                   <button
                     onClick={() => setPage(p => Math.min(pagination.pages, p + 1))}
                     disabled={page >= pagination.pages}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-700/60 border border-slate-600/50 rounded-lg disabled:opacity-40 hover:text-white transition-colors"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg disabled:opacity-40 text-slate-600 hover:bg-slate-50 transition-colors"
                   >
                     Next <ChevronRight size={13} />
                   </button>
