@@ -1,6 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCcw } from 'lucide-react';
+import { Search, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCcw, X } from 'lucide-react';
 import { Company } from './types';
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const GEO_OPTIONS = ['GCC', 'LATAM', 'Mixed'] as const;
+type Geo = typeof GEO_OPTIONS[number];
+
+const CATEGORY_OPTIONS = [
+  'ACC Service providers','Aff comp','BOP',"BTW ACC's","BTW CMP's",'CC','CC Upload',
+  'Client Deposit','Client WD','Fee','internal','LEG License expenses','Leq','Management',
+  'Management - C','Management - I','MRKT Services','MRKT Services Tools','MRKT Spend',
+  'MRKT Tools','Return','SAL IT','SAL Management','SAL MKT','Settlement','TECH Platforms',
+  'TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement','Salary Israel',
+  "G&A (Israel)",'Management - T','TAX',
+] as const;
+
+const GEO_COLORS: Record<Geo, string> = {
+  GCC:   'bg-sky-100 text-sky-700 border border-sky-200',
+  LATAM: 'bg-amber-100 text-amber-700 border border-amber-200',
+  Mixed: 'bg-violet-100 text-violet-700 border border-violet-200',
+};
+
+const CURRENCIES = ['ALL', 'EUR', 'GBP', 'USD', 'ILS', 'USDT'];
+
+// Currency badge colours match the rest of the app.
+const curBadge = (c: string) =>
+  c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
+  c === 'BTC' || c === 'ETH'  ? 'bg-orange-100 text-orange-700'   : 'bg-blue-100 text-blue-700';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Transaction {
   id: string;
@@ -19,6 +48,8 @@ interface Transaction {
   balance_after: number | null;
   source: string;
   synced_at: string;
+  geo: Geo | null;
+  category: string | null;
 }
 
 interface ApiResponse {
@@ -27,7 +58,7 @@ interface ApiResponse {
   summary: { money_in: number; money_out: number; net_change: number; tx_count: number };
 }
 
-const CURRENCIES = ['ALL', 'EUR', 'GBP', 'USD', 'ILS', 'USDT'];
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const fmtDate = (d: string) => {
   try { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
@@ -43,10 +74,134 @@ const fmtAmount = (amount: number, currency: string, type: 'credit' | 'debit') =
 const fmtMoney = (n: number) =>
   `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// Currency badge colours match the rest of the app.
-const curBadge = (c: string) =>
-  c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
-  c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
+// ── ClassifyCell ─────────────────────────────────────────────────────────────
+// Inline dropdown. Click chip/label to open, × to clear. Category has search.
+
+function ClassifyCell<T extends string>({
+  txId, field, value, options, colorMap, placeholder, onUpdate,
+}: {
+  txId: string;
+  field: 'geo' | 'category';
+  value: T | null;
+  options: readonly T[];
+  colorMap?: Record<string, string>;
+  placeholder: string;
+  onUpdate: (id: string, field: 'geo' | 'category', value: string | null) => void;
+}) {
+  const [open, setOpen]     = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [query, setQuery]   = useState('');
+  const ref                 = useRef<HTMLDivElement>(null);
+  const inputRef            = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) { setQuery(''); return; }
+    setTimeout(() => inputRef.current?.focus(), 50);
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const filtered = options.filter(o => o.toLowerCase().includes(query.toLowerCase()));
+  const showSearch = options.length > 6;
+
+  const handleSelect = async (next: string | null) => {
+    setOpen(false);
+    if (next === value) return;
+    onUpdate(txId, field, next);        // optimistic
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/transactions/${txId}/classify`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: next }),
+      });
+      if (!r.ok) onUpdate(txId, field, value); // revert on error
+    } catch {
+      onUpdate(txId, field, value);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const chipClass = value && colorMap
+    ? colorMap[value] ?? 'bg-slate-100 text-slate-600 border border-slate-200'
+    : 'bg-slate-100 text-slate-600 border border-slate-200';
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setOpen(v => !v)}
+          className={`px-2 py-0.5 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+            value ? chipClass : 'text-slate-400 hover:text-indigo-600'
+          } ${saving ? 'opacity-40' : ''}`}
+          title={value ? 'Click to change' : `Add ${placeholder}`}
+        >
+          {value ?? `+ ${placeholder}`}
+        </button>
+        {value && (
+          <button
+            onClick={e => { e.stopPropagation(); handleSelect(null); }}
+            className="text-slate-400 hover:text-rose-500 transition-colors"
+            title={`Clear ${field}`}
+          >
+            <X size={10} />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute z-40 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-52 overflow-hidden">
+          {showSearch && (
+            <div className="p-2 border-b border-slate-100">
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search…"
+                className="w-full border border-slate-200 text-slate-700 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 placeholder:text-slate-400"
+                onKeyDown={e => e.key === 'Escape' && setOpen(false)}
+              />
+            </div>
+          )}
+          <div className="max-h-52 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-2 text-slate-400 text-xs">No match</div>
+            ) : filtered.map(opt => (
+              <button
+                key={opt}
+                onClick={() => handleSelect(opt)}
+                className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                  value === opt
+                    ? 'text-indigo-600 font-semibold bg-indigo-50'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+          {value && (
+            <div className="border-t border-slate-100 py-1">
+              <button
+                onClick={() => handleSelect(null)}
+                className="w-full text-left px-3 py-1.5 text-xs text-rose-500 hover:bg-rose-50 transition-colors"
+              >
+                ✕ Clear {field}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Summary card ──────────────────────────────────────────────────────────────
 
 const SummaryCard = ({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) => (
   <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 flex flex-col gap-1">
@@ -56,19 +211,21 @@ const SummaryCard = ({ label, value, sub, color }: { label: string; value: strin
   </div>
 );
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function TransactionsPage({ companies }: { companies: Company[] }) {
-  const [tab, setTab] = useState<'banks' | 'psp'>('banks');
-  const [companyId, setCompanyId] = useState('');
-  const [currency, setCurrency] = useState('ALL');
-  const [txType, setTxType] = useState<'all' | 'credit' | 'debit'>('all');
-  const [search, setSearch] = useState('');
+  const [tab, setTab]               = useState<'banks' | 'psp'>('banks');
+  const [companyId, setCompanyId]   = useState('');
+  const [currency, setCurrency]     = useState('ALL');
+  const [txType, setTxType]         = useState<'all' | 'credit' | 'debit'>('all');
+  const [search, setSearch]         = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [dateFrom, setDateFrom] = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [page, setPage] = useState(1);
-  const [data, setData] = useState<ApiResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [dateFrom, setDateFrom]     = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [dateTo, setDateTo]         = useState(() => new Date().toISOString().slice(0, 10));
+  const [page, setPage]             = useState(1);
+  const [data, setData]             = useState<ApiResponse | null>(null);
+  const [loading, setLoading]       = useState(false);
+  const searchTimer                 = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const source = tab === 'banks' ? 'ifx' : 'rapyd';
 
@@ -76,18 +233,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     if (tab === 'psp') return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        source,
-        page: String(page),
-        limit: '20',
-        date_from: dateFrom,
-        date_to: dateTo,
-      });
-      if (companyId) params.set('company_id', companyId);
+      const params = new URLSearchParams({ source, page: String(page), limit: '20', date_from: dateFrom, date_to: dateTo });
+      if (companyId)          params.set('company_id', companyId);
       if (currency !== 'ALL') params.set('currency', currency);
-      if (txType !== 'all') params.set('type', txType);
-      if (search) params.set('search', search);
-
+      if (txType !== 'all')   params.set('type', txType);
+      if (search)             params.set('search', search);
       const res = await fetch(`/api/transactions?${params}`);
       if (res.ok) setData(await res.json());
     } finally {
@@ -97,12 +247,24 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Debounce search input
   const handleSearchInput = (v: string) => {
     setSearchInput(v);
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => { setSearch(v); setPage(1); }, 400);
   };
+
+  // Optimistic classification update — mutates local state without refetch
+  const handleClassify = useCallback((id: string, field: 'geo' | 'category', value: string | null) => {
+    setData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        transactions: prev.transactions.map(tx =>
+          tx.id === id ? { ...tx, [field]: value } : tx
+        ),
+      };
+    });
+  }, []);
 
   const resetPage = () => setPage(1);
   const inputCls = "border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400";
@@ -174,7 +336,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
               </div>
             </div>
 
-            {/* Type filter */}
             <div className="flex gap-1">
               {(['all', 'credit', 'debit'] as const).map(t => (
                 <button
@@ -226,6 +387,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                           {h}
                         </th>
                       ))}
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-500 whitespace-nowrap">GEO</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-500 whitespace-nowrap">Category</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -262,6 +425,22 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                         </td>
                         <td className="px-4 py-3 text-slate-500 text-xs">
                           {tx.payment_scheme || <span className="text-slate-300">-</span>}
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <ClassifyCell
+                            txId={tx.id} field="geo" value={tx.geo}
+                            options={GEO_OPTIONS} colorMap={GEO_COLORS}
+                            placeholder="GEO" onUpdate={handleClassify}
+                          />
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <ClassifyCell
+                            txId={tx.id} field="category" value={tx.category as any}
+                            options={CATEGORY_OPTIONS} placeholder="Category"
+                            onUpdate={handleClassify}
+                          />
                         </td>
                       </tr>
                     ))}

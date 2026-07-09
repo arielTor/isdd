@@ -2368,7 +2368,7 @@ async function startServer() {
           wt.id, wt.wallet_id, wt.company_id, wt.bank_id,
           wt.transaction_date, wt.type, wt.amount, wt.currency,
           wt.other_party, wt.reference, wt.payment_scheme,
-          wt.balance_after, wt.source, wt.synced_at,
+          wt.balance_after, wt.source, wt.synced_at, wt.geo, wt.category,
           c.name AS company_name,
           b.name AS bank_name
         FROM wallet_transactions wt
@@ -2387,6 +2387,50 @@ async function startServer() {
     } catch (err: any) {
       console.error(`[transactions] query error:`, err.message);
       res.status(500).json({ error: "Query failed", detail: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
+  // PATCH /api/transactions/:id/classify — set geo + category on a transaction
+  const VALID_GEOS = new Set(['GCC', 'LATAM', 'Mixed', '']);
+  const VALID_CATEGORIES = new Set([
+    'ACC Service providers','Aff comp','BOP',"BTW ACC's","BTW CMP's",'CC','CC Upload',
+    'Client Deposit','Client WD','Fee','internal','LEG License expenses','Leq','Management',
+    'Management - C','Management - I','MRKT Services','MRKT Services Tools','MRKT Spend',
+    'MRKT Tools','Return','SAL IT','SAL Management','SAL MKT','Settlement','TECH Platforms',
+    'TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement','Salary Israel',
+    "G&A (Israel)",'Management - T','TAX','',
+  ]);
+
+  app.patch("/api/transactions/:id/classify", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { id } = req.params;
+    const { geo, category } = req.body as { geo?: string | null; category?: string | null };
+
+    const geoVal      = geo      == null ? null : String(geo).trim();
+    const categoryVal = category == null ? null : String(category).trim();
+
+    if (geoVal      !== null && !VALID_GEOS.has(geoVal))       return res.status(400).json({ error: `Invalid geo: ${geoVal}` });
+    if (categoryVal !== null && !VALID_CATEGORIES.has(categoryVal)) return res.status(400).json({ error: `Invalid category: ${categoryVal}` });
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const updates: string[] = [];
+      const params: any[]     = [];
+      if (geo      !== undefined) { updates.push('geo = ?');      params.push(geoVal      || null); }
+      if (category !== undefined) { updates.push('category = ?'); params.push(categoryVal || null); }
+      if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+      params.push(id);
+      const [result] = await conn.execute(
+        `UPDATE wallet_transactions SET ${updates.join(', ')} WHERE id = ?`, params
+      ) as [any, any];
+
+      if (result.affectedRows === 0) return res.status(404).json({ error: 'Transaction not found' });
+      res.json({ id, geo: geoVal || null, category: categoryVal || null });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Update failed', detail: err.message });
     } finally {
       if (conn) conn.end();
     }
