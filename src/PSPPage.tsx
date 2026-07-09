@@ -7,6 +7,7 @@ import PSPSection, {
   walletBalance,
   walletTransactions,
   walletRollingReserve,
+  walletTotalUsd,
   walletRate,
   buildCurrencyRateMap,
   settlementUsd,
@@ -126,6 +127,74 @@ const BreakdownTable = ({ title, data }: { title: string; data: Record<string, {
         <span className="text-right font-mono">{fmtUsd(totals.balanceUsd)}</span>
         <span className="text-right font-mono">{fmtUsd(totals.settlementUsd)}</span>
         <span className="text-right font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</span>
+      </div>
+    </div>
+  );
+};
+
+// Merged per-account detail across companies (the "View All" view): one table with a
+// Company column, fixed height + sticky header + pinned Total.
+const PSPDetailTable = ({ companies }: { companies: Company[] }) => {
+  const badge = (c: string) =>
+    c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
+    c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
+  const fmt2 = (n: number) => { const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return n < 0 ? `(${s})` : s; };
+  const rows: any[] = [];
+  let grandUsd = 0;
+  companies.forEach(company => {
+    const settlements = company.psp_settlements || [];
+    let firstOfCompany = true;
+    (company.psp_providers || []).forEach(provider => {
+      provider.ewallets.forEach(ew => {
+        ew.wallets.forEach(w => {
+          const balance = walletBalance(w);
+          const transactions = walletTransactions(w);
+          const reserve = walletRollingReserve(w);
+          const settlement = pendingSettlementSum(settlements, ew.id, w.currency);
+          const valuationUsd = walletTotalUsd(w);
+          grandUsd += valuationUsd;
+          const meta = [ew.category, ew.status].filter(Boolean).join(' · ');
+          rows.push(
+            <tr key={`${company.id}-${ew.id}-${w.id}`} className="hover:bg-slate-50/50 border-b border-slate-50">
+              <td className="px-5 py-3 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
+              <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{provider.name}</td>
+              <td className="px-3 py-3"><div className="font-semibold text-slate-800">{ew.reference_id || ew.id}</div>{meta && <div className="text-[10px] text-slate-400 font-mono">{meta}</div>}</td>
+              <td className={`px-3 py-3 text-right font-mono font-bold ${balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmt2(balance)}</td>
+              <td className="px-3 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
+              <td className={`px-3 py-3 text-right font-mono ${transactions < 0 ? 'text-red-600' : 'text-slate-600'}`}>{fmt2(transactions)}</td>
+              <td className="px-3 py-3 text-right font-mono text-slate-600">{fmt2(reserve)}</td>
+              <td className={`px-3 py-3 text-right font-mono ${settlement === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmt2(settlement)}</td>
+              <td className={`px-5 py-3 text-right font-mono font-bold ${valuationUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsd(valuationUsd)}</td>
+            </tr>
+          );
+          firstOfCompany = false;
+        });
+      });
+    });
+  });
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="overflow-auto h-[560px]">
+        <table className="w-full text-left border-collapse text-sm min-w-[860px]">
+          <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
+            <tr>
+              <th className="px-5 py-3 border-b border-slate-100">Company</th>
+              <th className="px-3 py-3 border-b border-slate-100">Acquirer</th>
+              <th className="px-3 py-3 border-b border-slate-100">Account</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Balance</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-center">Currency</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Transactions</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Rolling Reserves</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Settlement</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Valuation (USD)</th>
+            </tr>
+          </thead>
+          <tbody>{rows.length ? rows : (<tr><td colSpan={9} className="px-5 py-10 text-center text-slate-400 text-sm">No PSP accounts</td></tr>)}</tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+        <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+        <span className={`font-mono font-bold text-sm ${grandUsd < 0 ? 'text-red-600' : 'text-slate-800'}`}>{fmtUsd(grandUsd)}</span>
       </div>
     </div>
   );
@@ -305,9 +374,19 @@ const PSPPage = ({
         </div>
       )}
 
-      {/* Company selector - View All + per company (always shown, even for a single company) */}
+      {/* Company selector - dropdown on mobile (when >1), tabs on desktop; always shown */}
+      {companiesWithPsp.length > 1 && (
+        <select
+          value={activeValid ? (activeCompanyId as string) : ''}
+          onChange={e => setActiveCompanyId(e.target.value || null)}
+          className="md:hidden w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">View All</option>
+          {companiesWithPsp.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      )}
       {companiesWithPsp.length >= 1 && (
-        <div className="flex items-stretch gap-1 overflow-x-auto border-b border-slate-200">
+        <div className={`${companiesWithPsp.length > 1 ? 'hidden md:flex' : 'flex'} items-stretch gap-1 overflow-x-auto border-b border-slate-200`}>
           <button
             onClick={() => setActiveCompanyId(null)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!activeValid ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
@@ -462,9 +541,11 @@ const PSPPage = ({
 
       {/* Per-company account-level detail - every company under View All, one when a tab is picked */}
       <div className="space-y-6">
-        {scoped.map(company => (
-          <PSPSection key={company.id} company={company} showName={!activeValid} />
-        ))}
+        {scoped.length > 1
+          ? <PSPDetailTable companies={scoped} />
+          : scoped.map(company => (
+              <PSPSection key={company.id} company={company} showName={!activeValid} />
+            ))}
       </div>
     </div>
   );

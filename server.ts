@@ -8,7 +8,7 @@ import mysql from "mysql2/promise";
 import session from "express-session";
 import bcrypt from "bcryptjs";
 import passport from "passport";
-import { Strategy as SamlStrategy, Profile as SamlProfile } from "@node-saml/passport-saml";
+import { Strategy as SamlStrategy, MultiSamlStrategy, Profile as SamlProfile } from "@node-saml/passport-saml";
 import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -160,11 +160,18 @@ async function startServer() {
   // the "App Federation Metadata Url" from Entra and we fetch the cert from it at startup
   // (SAML_IDP_CERT can still be used to paste a raw cert instead).
   const ENTRA_TENANT_ID = "318030de-752f-42b3-9848-abd6ec3809e3";
-  const APP_BASE_URL = process.env.APP_URL || "https://stage-finboard.corp-domain.com";
   const SAML_ENTRY_POINT = process.env.SAML_ENTRY_POINT || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/saml2`;
-  const SAML_ISSUER = process.env.SAML_ISSUER || APP_BASE_URL;
-  const SAML_CALLBACK_URL = process.env.SAML_CALLBACK_URL || `${APP_BASE_URL}/api/auth/saml/callback`;
   const SAML_METADATA_URL = process.env.SAML_METADATA_URL || "";
+  // The issuer (SP entity id) and the reply URL must match the domain the user is on -
+  // stage returns to stage, prod returns to prod. Derive them from the request host so a
+  // single build works on every environment (env vars still override if set). Both domains
+  // are registered as Identifier + Reply URL in the Entra app.
+  const baseFromReq = (req: any): string => {
+    const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+    return host ? `https://${host}` : "https://finboard.corp-domain.com";
+  };
+  const samlIssuerFor = (req: any) => process.env.SAML_ISSUER || baseFromReq(req);
+  const samlCallbackFor = (req: any) => process.env.SAML_CALLBACK_URL || `${baseFromReq(req)}/api/auth/saml/callback`;
 
   // Resolve the IdP signing certificate(s): an explicit SAML_IDP_CERT wins; otherwise
   // fetch the App Federation Metadata XML and pull out the <X509Certificate> value(s)
@@ -199,26 +206,29 @@ async function startServer() {
     catch { return "?"; }
   });
   const SAML_ENABLED = idpCerts.length > 0;
-  let samlStrategy: SamlStrategy | null = null;
+  let samlStrategy: MultiSamlStrategy | null = null;
   if (SAML_ENABLED) {
-    samlStrategy = new SamlStrategy(
+    // MultiSamlStrategy resolves options per request, so issuer + callbackUrl track the
+    // domain the user is actually on (fixes prod SSO round-tripping back to stage).
+    samlStrategy = new MultiSamlStrategy(
       {
-        entryPoint: SAML_ENTRY_POINT,
-        issuer: SAML_ISSUER,
-        callbackUrl: SAML_CALLBACK_URL,
-        idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
-        // Entra signs the ASSERTION by default, not the Response envelope. @node-saml v5
-        // requires a signed response by default, which caused "Invalid document signature".
-        // Require the assertion signature (which Entra provides) and not the response.
-        wantAssertionsSigned: true,
-        wantAuthnResponseSigned: false,
-        identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        getSamlOptions: (req: any, done: any) => done(null, {
+          entryPoint: SAML_ENTRY_POINT,
+          issuer: samlIssuerFor(req),
+          callbackUrl: samlCallbackFor(req),
+          idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
+          // Entra signs the ASSERTION, not the Response envelope; @node-saml v5 requires a
+          // signed response by default (caused "Invalid document signature").
+          wantAssertionsSigned: true,
+          wantAuthnResponseSigned: false,
+          identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        }),
       },
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false),
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false)
     );
-    passport.use("saml", samlStrategy);
-    console.log(`🔐 SAML SSO: ENABLED (issuer ${SAML_ISSUER}, certs ${idpCertFingerprints.join(", ") || "none"})`);
+    passport.use("saml", samlStrategy as any);
+    console.log(`🔐 SAML SSO: ENABLED (issuer/callback derived per request; certs ${idpCertFingerprints.join(", ") || "none"})`);
   }
   app.use(passport.initialize());
 
@@ -780,9 +790,13 @@ async function startServer() {
     app.get("/api/auth/saml/login", passport.authenticate("saml", { session: false }));
 
     // SP metadata - hand this to the Entra admin when registering the app.
-    app.get("/api/auth/saml/metadata", (_req, res) => {
-      res.type("application/xml");
-      res.send(samlStrategy!.generateServiceProviderMetadata(null, null));
+    // MultiSamlStrategy resolves per-request options, so pass the req (metadata reflects
+    // the domain it is requested from).
+    app.get("/api/auth/saml/metadata", (req: any, res) => {
+      samlStrategy!.generateServiceProviderMetadata(req, null, null, (err: any, metadata: string) => {
+        if (err) { res.status(500).send("metadata error"); return; }
+        res.type("application/xml").send(metadata);
+      });
     });
 
     // Entra POSTs the signed assertion here after the employee authenticates.
@@ -2295,18 +2309,199 @@ async function startServer() {
     }
   });
 
+  // ── TRANSACTIONS ROUTES ───────────────────────────────────────────────────
+
+  // GET /api/transactions
+  app.get("/api/transactions", corsMiddleware, requireAuth, async (req: any, res) => {
+    const {
+      company_id, wallet_id, currency,
+      date_from, date_to,
+      type: txType,
+      search,
+      source = 'ifx',
+      page = '1',
+      limit: limitStr = '20',
+    } = req.query as Record<string, string>;
+
+    const pageNum  = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limitStr, 10)));
+    const offset   = (pageNum - 1) * limitNum;
+
+    const today         = new Date().toISOString().slice(0, 10);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateFrom      = date_from || thirtyDaysAgo;
+    const dateTo        = date_to   || today;
+
+    const conditions: string[] = ['wt.transaction_date BETWEEN ? AND ?'];
+    const baseParams: any[]    = [dateFrom, dateTo];
+
+    if (source)                          { conditions.push('wt.source = ?');                              baseParams.push(source); }
+    if (company_id)                      { conditions.push('wt.company_id = ?');                          baseParams.push(company_id); }
+    if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
+    if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
+    if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
+    if (search)                          { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ?)'); baseParams.push(`%${search}%`, `%${search}%`); }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      const [[summaryRow]] = await conn.execute(`
+        SELECT
+          COALESCE(SUM(CASE WHEN wt.type = 'credit' THEN wt.amount ELSE 0 END), 0) AS money_in,
+          COALESCE(SUM(CASE WHEN wt.type = 'debit'  THEN wt.amount ELSE 0 END), 0) AS money_out,
+          COUNT(*) AS tx_count
+        FROM wallet_transactions wt ${where}
+      `, baseParams) as [any[], any];
+
+      const [[countRow]] = await conn.execute(
+        `SELECT COUNT(*) AS total FROM wallet_transactions wt ${where}`, baseParams
+      ) as [any[], any];
+
+      const total    = Number(countRow.total)    || 0;
+      const moneyIn  = Number(summaryRow.money_in)  || 0;
+      const moneyOut = Number(summaryRow.money_out) || 0;
+
+      const [rows] = await conn.execute(`
+        SELECT
+          wt.id, wt.wallet_id, wt.company_id, wt.bank_id,
+          wt.transaction_date, wt.type, wt.amount, wt.currency,
+          wt.other_party, wt.reference, wt.payment_scheme,
+          wt.balance_after, wt.source, wt.synced_at,
+          c.name AS company_name,
+          b.name AS bank_name
+        FROM wallet_transactions wt
+        LEFT JOIN companies c ON c.id = wt.company_id
+        LEFT JOIN banks     b ON b.id = wt.bank_id
+        ${where}
+        ORDER BY wt.transaction_date DESC, wt.id DESC
+        LIMIT ? OFFSET ?
+      `, [...baseParams, limitNum, offset]) as [any[], any];
+
+      res.json({
+        transactions: rows,
+        pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
+        summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
+      });
+    } catch (err: any) {
+      console.error(`[transactions] query error:`, err.message);
+      res.status(500).json({ error: "Query failed", detail: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
+  // ── API LOGGING (for API Monitor screen) ─────────────────────────────────────
+
+  async function logApiCall(entry: {
+    direction: string; source: string; endpoint: string; method: string;
+    status_code: number; request_body: string | null; response_body: string | null;
+    duration_ms: number; ip_address: string;
+  }): Promise<void> {
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      await conn.execute(
+        `INSERT INTO api_call_logs
+           (direction, source, endpoint, method, status_code, request_body, response_body, duration_ms, ip_address)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [entry.direction, entry.source, entry.endpoint, entry.method,
+         entry.status_code, entry.request_body, entry.response_body,
+         entry.duration_ms, entry.ip_address]
+      );
+    } catch {
+      // Silently ignore — table may not exist yet; logging must never break the main endpoint
+    } finally {
+      if (conn) conn.end();
+    }
+  }
+
+  // GET /api/admin/api-logs
+  app.get("/api/admin/api-logs", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const {
+      direction, source, status,
+      date_from, date_to,
+      page = '1',
+      limit: limitStr = '50',
+    } = req.query as Record<string, string>;
+
+    const pageNum  = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(200, Math.max(1, parseInt(limitStr, 10)));
+    const offset   = (pageNum - 1) * limitNum;
+
+    const today     = new Date().toISOString().slice(0, 10);
+    const dateFrom  = date_from || today;
+    const dateTo    = date_to   || today;
+
+    const conditions: string[] = ['DATE(created_at) BETWEEN ? AND ?'];
+    const params: any[]        = [dateFrom, dateTo];
+
+    if (direction && direction !== 'all') { conditions.push('direction = ?');      params.push(direction); }
+    if (source     && source     !== 'all') { conditions.push('source = ?');         params.push(source); }
+    if (status === '2xx') { conditions.push('status_code BETWEEN 200 AND 299'); }
+    if (status === 'err') { conditions.push('status_code >= 400'); }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      const [[summaryRow]] = await conn.execute(`
+        SELECT
+          COUNT(*)                                                    AS total_calls,
+          COALESCE(AVG(duration_ms), 0)                              AS avg_duration,
+          SUM(CASE WHEN status_code BETWEEN 200 AND 299 THEN 1 ELSE 0 END) AS success_count,
+          SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END)        AS error_count
+        FROM api_call_logs ${where}
+      `, params) as [any[], any];
+
+      const [[countRow]] = await conn.execute(
+        `SELECT COUNT(*) AS total FROM api_call_logs ${where}`, params
+      ) as [any[], any];
+
+      const [rows] = await conn.execute(`
+        SELECT id, direction, source, endpoint, method, status_code,
+               request_body, response_body, duration_ms, ip_address, created_at
+        FROM api_call_logs ${where}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `, [...params, limitNum, offset]) as [any[], any];
+
+      const total = Number(countRow.total) || 0;
+      res.json({
+        logs: rows,
+        pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
+        summary: {
+          total_calls:   Number(summaryRow.total_calls)   || 0,
+          avg_duration:  Math.round(Number(summaryRow.avg_duration) || 0),
+          success_count: Number(summaryRow.success_count) || 0,
+          error_count:   Number(summaryRow.error_count)   || 0,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Query failed", detail: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
   // ── INTERNAL ROUTES  (API-key auth, no user session required) ───────────────
 
   // POST /api/internal/sync-transactions
   // Called by Zapier every hour with a batch of bank transactions from IFX/ibanq.
-  // Uses INSERT IGNORE so re-sent transactions are silently skipped.
+  // Upserts: re-sent transactions update mutable fields (amount, reference, etc.).
   app.post("/api/internal/sync-transactions", async (req: any, res) => {
     const expectedKey = process.env.INTERNAL_SYNC_API_KEY;
     if (!expectedKey || req.headers["x-api-key"] !== expectedKey) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { transactions } = req.body;
+    let { transactions } = req.body;
+    // Zapier sends the array as a JSON string when mapped via the data field — parse it if needed
+    if (typeof transactions === 'string') {
+      try { transactions = JSON.parse(transactions); } catch { transactions = null; }
+    }
     if (!Array.isArray(transactions) || transactions.length === 0) {
       return res.status(400).json({ error: "transactions array is required and must be non-empty" });
     }
@@ -2332,21 +2527,49 @@ async function startServer() {
       );
     }
 
+    const startMs = Date.now();
+    const ip = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || '').split(',')[0].trim();
+    let statusCode = 200;
     let conn: any;
     try {
       conn = await mysql.createConnection(dbConfig());
       await conn.execute(
-        `INSERT IGNORE INTO wallet_transactions
+        `INSERT INTO wallet_transactions
           (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
            currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
-         VALUES ${placeholders}`,
+         VALUES ${placeholders} AS new_row
+         ON DUPLICATE KEY UPDATE
+           amount         = new_row.amount,
+           balance_after  = new_row.balance_after,
+           reference      = new_row.reference,
+           other_party    = new_row.other_party,
+           payment_scheme = new_row.payment_scheme,
+           synced_at      = new_row.synced_at`,
         values
       );
-      console.log(`[${new Date().toISOString()}] [sync-transactions] inserted batch of ${transactions.length}`);
-      res.json({ inserted: transactions.length, skipped: 0 });
+      console.log(`[${new Date().toISOString()}] [sync-transactions] upserted batch of ${transactions.length}`);
+      const responseBody = { inserted: transactions.length, skipped: 0 };
+      res.json(responseBody);
+      logApiCall({
+        direction: 'inbound', source: 'zapier',
+        endpoint: '/api/internal/sync-transactions', method: 'POST',
+        status_code: 200,
+        request_body: JSON.stringify({ batch_size: transactions.length }),
+        response_body: JSON.stringify(responseBody),
+        duration_ms: Date.now() - startMs, ip_address: ip,
+      });
     } catch (err: any) {
+      statusCode = 500;
       console.error(`[${new Date().toISOString()}] [sync-transactions] DB error:`, err.message);
       res.status(500).json({ error: "DB insert failed", detail: err.message });
+      logApiCall({
+        direction: 'inbound', source: 'zapier',
+        endpoint: '/api/internal/sync-transactions', method: 'POST',
+        status_code: 500,
+        request_body: JSON.stringify({ batch_size: transactions.length }),
+        response_body: JSON.stringify({ error: err.message }),
+        duration_ms: Date.now() - startMs, ip_address: ip,
+      });
     } finally {
       if (conn) conn.end();
     }

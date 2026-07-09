@@ -32,6 +32,8 @@ import {
   Coins,
   LogOut,
   CreditCard,
+  Receipt,
+  RadioTower,
   Image as ImageIcon,
   UploadCloud,
   Check,
@@ -48,6 +50,8 @@ import { downloadExcel } from './exportCsv';
 import UploadScreen from './UploadScreen';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
+import TransactionsPage from './TransactionsPage';
+import APIMonitorPage from './APIMonitorPage';
 
 // ── Logged-in user type ───────────────────────────────────────────────────────
 interface AuthUser {
@@ -94,7 +98,7 @@ const MicrosoftLogo = ({ size = 12 }: { size?: number }) => (
 );
 
 // --- Types ---
-type Page = 'dashboard' | 'companies' | 'psp' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
+type Page = 'dashboard' | 'companies' | 'transactions' | 'psp' | 'api-monitor' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
 
 // Backdrop colour for a logo badge - admin picks this in Appearance so logos
 // designed for light *or* dark backgrounds both render correctly.
@@ -136,8 +140,10 @@ const Sidebar = ({
   const [settingsOpen, setSettingsOpen] = useState(() => settingsIds.includes(activePage));
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Manager', 'Viewer'] },
-    { id: 'psp', icon: CreditCard, label: 'Payment Providers', roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'dashboard',    icon: LayoutDashboard, label: 'Dashboard',          roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'transactions', icon: Receipt,          label: 'Transactions',       roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'psp',          icon: CreditCard,       label: 'Payment Providers',  roles: ['Admin', 'Manager', 'Viewer'] },
+    { id: 'api-monitor',  icon: RadioTower,       label: 'API Monitor',        roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
 
   const settingsNav = [
@@ -188,11 +194,11 @@ const Sidebar = ({
       <div className="px-4 py-4 md:px-5 md:py-5 flex items-center justify-between border-b border-sidebar-border/70">
         <div className="flex items-center gap-3 min-w-0">
           {brandLogo ? (
-            <div className={`w-12 h-12 md:w-[72px] md:h-[72px] rounded-xl flex items-center justify-center shrink-0 p-1 md:p-1.5 ${brandLogoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(brandLogoBg) }}>
+            <div className={`w-[58px] h-[58px] md:w-[86px] md:h-[86px] rounded-xl flex items-center justify-center shrink-0 p-1 md:p-1.5 ${brandLogoBg === 'none' ? '' : 'ring-1 ring-black/5'}`} style={{ backgroundColor: logoBgColor(brandLogoBg) }}>
               <img src={brandLogo} alt={brandName} className="max-w-full max-h-full object-contain" />
             </div>
           ) : (
-            <div className="w-12 h-12 md:w-[72px] md:h-[72px] bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white text-lg md:text-2xl shadow-lg shadow-indigo-900/40 shrink-0">
+            <div className="w-[58px] h-[58px] md:w-[86px] md:h-[86px] bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center font-bold text-white text-lg md:text-2xl shadow-lg shadow-indigo-900/40 shrink-0">
               {(brandName?.[0] || 'L').toUpperCase()}
             </div>
           )}
@@ -213,7 +219,6 @@ const Sidebar = ({
       {/* Scrollable: workspace nav + company switcher */}
       <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
         <div className="space-y-1">
-          {sectionLabel('Menu')}
           {workspaceNav.filter(item => item.id === 'dashboard').map(renderNavItem)}
 
           {/* Bank Balance - opens the all-companies balance overview. */}
@@ -229,7 +234,17 @@ const Sidebar = ({
             <span className="truncate flex-1 text-left">Bank Balance</span>
           </button>
 
-          {workspaceNav.filter(item => item.id !== 'dashboard').map(renderNavItem)}
+          {workspaceNav.filter(item => !['dashboard', 'api-monitor'].includes(item.id)).map(renderNavItem)}
+
+          {/* API Monitor — admin only, rendered last in workspace nav */}
+          {workspaceNav.filter(item => item.id === 'api-monitor').map(item => (
+            <div key={item.id} className="relative">
+              {renderNavItem(item)}
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 bg-slate-600/70 text-slate-400 text-[9px] font-bold uppercase rounded pointer-events-none">
+                Admin
+              </span>
+            </div>
+          ))}
         </div>
       </nav>
 
@@ -649,11 +664,13 @@ const ROLE_DESC: Record<string, string> = {
 
 // Portal areas a role can be granted access to.
 const PAGE_PERMS: { id: string; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'companies', label: 'Companies' },
-  { id: 'psp', label: 'Payment Providers' },
-  { id: 'alerts', label: 'Alert Center' },
-  { id: 'upload', label: 'Manual Data Upload' },
+  { id: 'dashboard',    label: 'Dashboard' },
+  { id: 'companies',    label: 'Companies' },
+  { id: 'transactions', label: 'Transactions' },
+  { id: 'psp',          label: 'Payment Providers' },
+  { id: 'api-monitor',  label: 'API Monitor' },
+  { id: 'alerts',       label: 'Alert Center' },
+  { id: 'upload',       label: 'Manual Data Upload' },
 ];
 
 // --- Entra Groups tab: map discovered Entra group Object IDs to roles ---
@@ -1935,8 +1952,8 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
         const fmtUsdCell = usd === null ? '-' : ((usd < 0 ? '-$' : '$') + Math.abs(usd).toLocaleString(undefined, { maximumFractionDigits: 0 }));
         rows.push(
           <tr key={`${company.id}-${bank.id}-${w.id}-${idx}`} className={`${isAlertRow ? 'bg-red-50/60' : 'hover:bg-slate-50/50'} transition-colors`}>
-            <td className="px-5 py-3 border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
-            <td className="px-5 py-3 border-b border-slate-100">
+            <td className="px-3 md:px-5 py-3 border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
+            <td className="px-3 md:px-5 py-3 border-b border-slate-100">
               {idx === 0 ? (
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2"><span className="font-semibold text-slate-700">{bank.name}</span><ShieldCheck size={12} className="text-emerald-500 shrink-0" /></div>
@@ -1944,10 +1961,10 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
                 </div>
               ) : (<div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>)}
             </td>
-            <td className="px-5 py-3 border-b border-slate-100 text-left text-slate-500 text-xs font-mono">{w.accountNumber}</td>
-            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[w.currency] || ''} {(w.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-            <td className="px-5 py-3 border-b border-slate-100 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
-            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono font-bold ${usd === null ? 'text-slate-300' : (usd < 0 ? 'text-red-600' : 'text-slate-900')}`}>{fmtUsdCell}</td>
+            <td className="px-5 py-3 border-b border-slate-100 text-left text-slate-500 text-xs font-mono hidden md:table-cell">{w.accountNumber}</td>
+            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono hidden md:table-cell ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[w.currency] || ''} {(w.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td className="px-3 md:px-5 py-3 border-b border-slate-100 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
+            <td className={`px-3 md:px-5 py-3 border-b border-slate-100 text-right font-mono font-bold ${usd === null ? 'text-slate-300' : (usd < 0 ? 'text-red-600' : 'text-slate-900')}`}>{fmtUsdCell}</td>
           </tr>
         );
         firstOfCompany = false;
@@ -1957,15 +1974,15 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="overflow-auto h-[640px]">
-        <table className="w-full text-left border-collapse text-xs min-w-[760px]">
+        <table className="w-full text-left border-collapse text-xs min-w-0 md:min-w-[760px]">
           <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
             <tr>
-              <th className="px-5 py-3 border-b border-slate-100">Company</th>
-              <th className="px-5 py-3 border-b border-slate-100">Bank</th>
-              <th className="px-5 py-3 border-b border-slate-100">Wallets</th>
-              <th className="px-5 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
-              <th className="px-5 py-3 border-b border-slate-100 text-center">Currency</th>
-              <th className="px-5 py-3 border-b border-slate-100 text-right">Valuation (USD/T)</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100">Company</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100">Bank</th>
+              <th className="px-5 py-3 border-b border-slate-100 hidden md:table-cell">Wallets</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right hidden md:table-cell">Balance (LCY)</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100 text-center">Currency</th>
+              <th className="px-3 md:px-5 py-3 border-b border-slate-100 text-right">Valuation (USD/T)</th>
             </tr>
           </thead>
           <tbody>{rows.length ? rows : (<tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">No verified balances</td></tr>)}</tbody>
@@ -2752,7 +2769,9 @@ export default function App() {
 
   const selectedCompanyName = useMemo(() => {
     if (activePage === 'dashboard') return 'My Dashboard';
+    if (activePage === 'transactions') return 'Transactions';
     if (activePage === 'psp') return 'Payment Providers';
+    if (activePage === 'api-monitor') return 'API Monitor';
     if (activePage === 'users') return 'User Management';
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
@@ -3076,26 +3095,36 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Page-level company tabs - filter the ENTIRE page to the selected company */}
+                  {/* Page-level company filter - dropdown on mobile, tabs on desktop */}
                   {companies.length > 1 && (
-                    <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
-                      <button
-                        onClick={() => setSelectedCompanyId(null)}
-                        className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!selectedCompanyId ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                    <>
+                      <select
+                        value={selectedCompanyId || ''}
+                        onChange={e => setSelectedCompanyId(e.target.value || null)}
+                        className="md:hidden w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300"
                       >
-                        All
-                      </button>
-                      {companies.map(c => (
+                        <option value="">All companies</option>
+                        {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.banks.length})</option>)}
+                      </select>
+                      <div className="hidden md:flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
                         <button
-                          key={c.id}
-                          onClick={() => setSelectedCompanyId(c.id)}
-                          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${selectedCompanyId === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                          onClick={() => setSelectedCompanyId(null)}
+                          className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!selectedCompanyId ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
                         >
-                          {c.name}
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCompanyId === c.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+                          All
                         </button>
-                      ))}
-                    </div>
+                        {companies.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => setSelectedCompanyId(c.id)}
+                            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${selectedCompanyId === c.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                          >
+                            {c.name}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCompanyId === c.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>{c.banks.length}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
 
                   {/* Historical mode banner */}
@@ -3489,6 +3518,30 @@ export default function App() {
                   onDateChange={handleDateChange}
                   todayStr={todayStr}
                 />
+              </motion.div>
+            )}
+
+            {activePage === 'transactions' && (
+              <motion.div
+                key="transactions"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="w-full max-w-[2000px] mx-auto p-4 md:p-8"
+              >
+                <TransactionsPage companies={companies} />
+              </motion.div>
+            )}
+
+            {activePage === 'api-monitor' && authUser?.role === 'Admin' && (
+              <motion.div
+                key="api-monitor"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="w-full max-w-[2000px] mx-auto p-4 md:p-8"
+              >
+                <APIMonitorPage />
               </motion.div>
             )}
 
