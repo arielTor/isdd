@@ -2336,10 +2336,17 @@ async function startServer() {
     try {
       conn = await mysql.createConnection(dbConfig());
       await conn.execute(
-        `INSERT IGNORE INTO wallet_transactions
+        `INSERT INTO wallet_transactions
           (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
            currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
-         VALUES ${placeholders}`,
+         VALUES ${placeholders} AS new_row
+         ON DUPLICATE KEY UPDATE
+           amount         = new_row.amount,
+           balance_after  = new_row.balance_after,
+           reference      = new_row.reference,
+           other_party    = new_row.other_party,
+           payment_scheme = new_row.payment_scheme,
+           synced_at      = new_row.synced_at`,
         values
       );
       console.log(`[${new Date().toISOString()}] [sync-transactions] inserted batch of ${transactions.length}`);
