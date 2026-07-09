@@ -8,7 +8,7 @@ import mysql from "mysql2/promise";
 import session from "express-session";
 import bcrypt from "bcryptjs";
 import passport from "passport";
-import { Strategy as SamlStrategy, Profile as SamlProfile } from "@node-saml/passport-saml";
+import { Strategy as SamlStrategy, MultiSamlStrategy, Profile as SamlProfile } from "@node-saml/passport-saml";
 import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -160,11 +160,18 @@ async function startServer() {
   // the "App Federation Metadata Url" from Entra and we fetch the cert from it at startup
   // (SAML_IDP_CERT can still be used to paste a raw cert instead).
   const ENTRA_TENANT_ID = "318030de-752f-42b3-9848-abd6ec3809e3";
-  const APP_BASE_URL = process.env.APP_URL || "https://stage-finboard.corp-domain.com";
   const SAML_ENTRY_POINT = process.env.SAML_ENTRY_POINT || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/saml2`;
-  const SAML_ISSUER = process.env.SAML_ISSUER || APP_BASE_URL;
-  const SAML_CALLBACK_URL = process.env.SAML_CALLBACK_URL || `${APP_BASE_URL}/api/auth/saml/callback`;
   const SAML_METADATA_URL = process.env.SAML_METADATA_URL || "";
+  // The issuer (SP entity id) and the reply URL must match the domain the user is on -
+  // stage returns to stage, prod returns to prod. Derive them from the request host so a
+  // single build works on every environment (env vars still override if set). Both domains
+  // are registered as Identifier + Reply URL in the Entra app.
+  const baseFromReq = (req: any): string => {
+    const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+    return host ? `https://${host}` : "https://finboard.corp-domain.com";
+  };
+  const samlIssuerFor = (req: any) => process.env.SAML_ISSUER || baseFromReq(req);
+  const samlCallbackFor = (req: any) => process.env.SAML_CALLBACK_URL || `${baseFromReq(req)}/api/auth/saml/callback`;
 
   // Resolve the IdP signing certificate(s): an explicit SAML_IDP_CERT wins; otherwise
   // fetch the App Federation Metadata XML and pull out the <X509Certificate> value(s)
@@ -199,26 +206,29 @@ async function startServer() {
     catch { return "?"; }
   });
   const SAML_ENABLED = idpCerts.length > 0;
-  let samlStrategy: SamlStrategy | null = null;
+  let samlStrategy: MultiSamlStrategy | null = null;
   if (SAML_ENABLED) {
-    samlStrategy = new SamlStrategy(
+    // MultiSamlStrategy resolves options per request, so issuer + callbackUrl track the
+    // domain the user is actually on (fixes prod SSO round-tripping back to stage).
+    samlStrategy = new MultiSamlStrategy(
       {
-        entryPoint: SAML_ENTRY_POINT,
-        issuer: SAML_ISSUER,
-        callbackUrl: SAML_CALLBACK_URL,
-        idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
-        // Entra signs the ASSERTION by default, not the Response envelope. @node-saml v5
-        // requires a signed response by default, which caused "Invalid document signature".
-        // Require the assertion signature (which Entra provides) and not the response.
-        wantAssertionsSigned: true,
-        wantAuthnResponseSigned: false,
-        identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        getSamlOptions: (req: any, done: any) => done(null, {
+          entryPoint: SAML_ENTRY_POINT,
+          issuer: samlIssuerFor(req),
+          callbackUrl: samlCallbackFor(req),
+          idpCert: idpCerts.length === 1 ? idpCerts[0] : idpCerts,
+          // Entra signs the ASSERTION, not the Response envelope; @node-saml v5 requires a
+          // signed response by default (caused "Invalid document signature").
+          wantAssertionsSigned: true,
+          wantAuthnResponseSigned: false,
+          identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        }),
       },
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false),
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false)
     );
-    passport.use("saml", samlStrategy);
-    console.log(`🔐 SAML SSO: ENABLED (issuer ${SAML_ISSUER}, certs ${idpCertFingerprints.join(", ") || "none"})`);
+    passport.use("saml", samlStrategy as any);
+    console.log(`🔐 SAML SSO: ENABLED (issuer/callback derived per request; certs ${idpCertFingerprints.join(", ") || "none"})`);
   }
   app.use(passport.initialize());
 
@@ -780,9 +790,13 @@ async function startServer() {
     app.get("/api/auth/saml/login", passport.authenticate("saml", { session: false }));
 
     // SP metadata - hand this to the Entra admin when registering the app.
-    app.get("/api/auth/saml/metadata", (_req, res) => {
-      res.type("application/xml");
-      res.send(samlStrategy!.generateServiceProviderMetadata(null, null));
+    // MultiSamlStrategy resolves per-request options, so pass the req (metadata reflects
+    // the domain it is requested from).
+    app.get("/api/auth/saml/metadata", (req: any, res) => {
+      samlStrategy!.generateServiceProviderMetadata(req, null, null, (err: any, metadata: string) => {
+        if (err) { res.status(500).send("metadata error"); return; }
+        res.type("application/xml").send(metadata);
+      });
     });
 
     // Entra POSTs the signed assertion here after the employee authenticates.
