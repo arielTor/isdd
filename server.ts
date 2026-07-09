@@ -2483,7 +2483,11 @@ async function startServer() {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { transactions } = req.body;
+    let { transactions } = req.body;
+    // Zapier sends the array as a JSON string when mapped via the data field — parse it if needed
+    if (typeof transactions === 'string') {
+      try { transactions = JSON.parse(transactions); } catch { transactions = null; }
+    }
     if (!Array.isArray(transactions) || transactions.length === 0) {
       return res.status(400).json({ error: "transactions array is required and must be non-empty" });
     }
