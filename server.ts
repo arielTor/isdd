@@ -2523,7 +2523,7 @@ async function startServer() {
         t.payment_scheme ?? null,
         t.balance_after ?? null,
         t.source        ?? "ifx",
-        t.synced_at,
+        t.synced_at ? new Date(t.synced_at).toISOString().slice(0, 19).replace('T', ' ') : null,
       );
     }
 
