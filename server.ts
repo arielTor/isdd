@@ -2393,7 +2393,8 @@ async function startServer() {
         summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
       });
     } catch (err: any) {
-      console.error(`[transactions] query error:`, err.message);
+      console.error(`[transactions] query error:`, err.message, '\n', err.stack);
+      res.setHeader('X-Query-Error', String(err.message).slice(0, 500));
       res.status(500).json({ error: "Query failed", detail: err.message });
     } finally {
       if (conn) conn.end();
