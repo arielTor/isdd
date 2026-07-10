@@ -230,7 +230,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        source: 'ifx',
         page: String(page),
         limit: '20',
         date_from: dateFrom,
