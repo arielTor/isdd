@@ -37,6 +37,9 @@ const d = (daysAgo: number) => {
 };
 const W = 'mock-wallet-0001'; const C = 'mock-co-0001'; const B = 'mock-bank-0001';
 
+// Approximate fiat rates (USD per 1 unit) — used only for mock data display
+const MOCK_RATES: Record<string, number> = { USD: 1, USDT: 1, EUR: 1.08, GBP: 1.27, ILS: 0.27 };
+
 const MOCK_TRANSACTIONS: Transaction[] = [
   { id:'mk01', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(1),  type:'credit', amount:48500,   currency:'USD', other_party:'Nexus Capital Ltd',        reference:'REF-NC-2026-0701',  payment_scheme:'SWIFT',           balance_after:289340, source:'ifx', synced_at:d(1),  geo:'GCC',   category:'Client Deposit' },
   { id:'mk02', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(2),  type:'debit',  amount:12800,   currency:'USD', other_party:'Meta Payments Inc',         reference:'REF-MP-2026-0702',  payment_scheme:'WIRE',            balance_after:276540, source:'ifx', synced_at:d(2),  geo:'GCC',   category:'Fee' },
@@ -111,8 +114,12 @@ function buildMockResponse(
   const slice    = filtered.slice(offset, offset + limit);
   const moneyIn  = filtered.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
   const moneyOut = filtered.filter(t => t.type === 'debit').reduce((s, t) => s + t.amount, 0);
+  const sliceWithUsd = slice.map(tx => {
+    const rate = MOCK_RATES[tx.currency] ?? null;
+    return { ...tx, amount_usd: rate !== null ? Math.round(tx.amount * rate * 100) / 100 : null };
+  });
   return {
-    transactions: slice,
+    transactions: sliceWithUsd,
     pagination: { total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) },
     summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
   };
@@ -139,6 +146,7 @@ interface Transaction {
   synced_at: string;
   geo: Geo | null;
   category: string | null;
+  amount_usd: number | null;
 }
 
 interface ApiResponse {
@@ -305,7 +313,6 @@ const SummaryCard = ({ label, value, sub, color }: { label: string; value: strin
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function TransactionsPage({ companies }: { companies: Company[] }) {
-  const [tab, setTab]               = useState<'banks' | 'psp'>('banks');
   const [companyId, setCompanyId]   = useState('');
   const [currency, setCurrency]     = useState('ALL');
   const [txType, setTxType]         = useState<'all' | 'credit' | 'debit'>('all');
@@ -319,10 +326,9 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [isMock, setIsMock]         = useState(false);
   const searchTimer                 = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const source = tab === 'banks' ? 'ifx' : 'rapyd';
+  const source = 'ifx';
 
   const fetchData = useCallback(async () => {
-    if (tab === 'psp') return;
     setLoading(true);
     try {
       const params = new URLSearchParams({ source, page: String(page), limit: '20', date_from: dateFrom, date_to: dateTo });
@@ -351,7 +357,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     } finally {
       setLoading(false);
     }
-  }, [tab, source, page, companyId, currency, txType, search, dateFrom, dateTo]);
+  }, [source, page, companyId, currency, txType, search, dateFrom, dateTo]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -382,27 +388,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
 
   return (
     <div className="space-y-5">
-      {/* Banks / Payment Providers toggle */}
-      <div className="inline-flex rounded-lg border border-slate-200 bg-white overflow-hidden text-sm font-semibold">
-        {(['banks', 'psp'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => { setTab(t); setPage(1); setData(null); }}
-            className={`px-5 py-2 transition-colors ${tab === t ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-          >
-            {t === 'banks' ? 'Banks' : 'Payment Providers'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'psp' ? (
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-12 text-center space-y-3">
-          <div className="text-4xl">🔌</div>
-          <p className="text-slate-900 font-semibold text-lg">Payment provider transactions coming soon.</p>
-          <p className="text-slate-500 text-sm">PSP integration is currently being configured.</p>
-        </div>
-      ) : (
-        <>
+      <>
           {/* Filters */}
           <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
@@ -497,7 +483,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-100 border-b border-slate-200">
-                      {['Date', 'Description', 'Reference', 'Type', 'Amount', 'Currency', 'Scheme'].map(h => (
+                      {['Date', 'Description', 'Reference', 'Type', 'Amount', 'Currency', 'Amount USD'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
                           {h}
                         </th>
@@ -538,8 +524,10 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                             {tx.currency}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">
-                          {tx.payment_scheme || <span className="text-slate-300">-</span>}
+                        <td className="px-4 py-3 font-mono text-slate-600 whitespace-nowrap text-xs">
+                          {tx.amount_usd != null
+                            ? `$${tx.amount_usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : <span className="text-slate-300">—</span>}
                         </td>
 
                         <td className="px-4 py-2">
@@ -592,8 +580,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
               </div>
             )}
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }

@@ -2345,7 +2345,8 @@ async function startServer() {
     const where = `WHERE ${conditions.join(' AND ')}`;
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      const [rates, dbConn] = await Promise.all([getUsdRates(), mysql.createConnection(dbConfig())]);
+      conn = dbConn;
 
       const [[summaryRow]] = await conn.execute(`
         SELECT
@@ -2379,8 +2380,14 @@ async function startServer() {
         LIMIT ? OFFSET ?
       `, [...baseParams, limitNum, offset]) as [any[], any];
 
+      const STABLECOINS_SET = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
+      const txWithUsd = (rows as any[]).map((row: any) => {
+        const rate = STABLECOINS_SET.has(row.currency) ? 1 : (rates[row.currency] ?? null);
+        return { ...row, amount_usd: rate !== null ? Math.round(row.amount * rate * 100) / 100 : null };
+      });
+
       res.json({
-        transactions: rows,
+        transactions: txWithUsd,
         pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
         summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
       });
