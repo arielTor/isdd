@@ -29,6 +29,95 @@ const curBadge = (c: string) =>
   c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
   c === 'BTC' || c === 'ETH'  ? 'bg-orange-100 text-orange-700'   : 'bg-blue-100 text-blue-700';
 
+// ── Mock data (used when the API is unreachable / Stage has no DB) ────────────
+
+const d = (daysAgo: number) => {
+  const dt = new Date(); dt.setDate(dt.getDate() - daysAgo);
+  return dt.toISOString().slice(0, 10);
+};
+const W = 'mock-wallet-0001'; const C = 'mock-co-0001'; const B = 'mock-bank-0001';
+
+const MOCK_TRANSACTIONS: Transaction[] = [
+  { id:'mk01', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(1),  type:'credit', amount:48500,   currency:'USD', other_party:'Nexus Capital Ltd',        reference:'REF-NC-2026-0701',  payment_scheme:'SWIFT',           balance_after:289340, source:'ifx', synced_at:d(1),  geo:'GCC',   category:'Client Deposit' },
+  { id:'mk02', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(2),  type:'debit',  amount:12800,   currency:'USD', other_party:'Meta Payments Inc',         reference:'REF-MP-2026-0702',  payment_scheme:'WIRE',            balance_after:276540, source:'ifx', synced_at:d(2),  geo:'GCC',   category:'Fee' },
+  { id:'mk03', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(3),  type:'credit', amount:9200,    currency:'EUR', other_party:'Horizon Trade BV',          reference:'REF-HT-2026-0703',  payment_scheme:'SEPA',            balance_after:285740, source:'ifx', synced_at:d(3),  geo:'LATAM', category:'Settlement' },
+  { id:'mk04', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(4),  type:'debit',  amount:3500,    currency:'EUR', other_party:'CloudHost Services',        reference:'REF-CH-2026-0704',  payment_scheme:'SEPA',            balance_after:282240, source:'ifx', synced_at:d(4),  geo:'GCC',   category:'TECH Platforms' },
+  { id:'mk05', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(5),  type:'credit', amount:75000,   currency:'USD', other_party:'Apex Growth Fund',          reference:'REF-AG-2026-0705',  payment_scheme:'SWIFT',           balance_after:357240, source:'ifx', synced_at:d(5),  geo:null,    category:null },
+  { id:'mk06', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(7),  type:'debit',  amount:8400,    currency:'GBP', other_party:'Payroll Direct UK',         reference:'REF-PD-2026-0707',  payment_scheme:'FASTER_PAYMENTS', balance_after:348840, source:'ifx', synced_at:d(7),  geo:'GCC',   category:'SAL Management' },
+  { id:'mk07', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(8),  type:'credit', amount:22000,   currency:'USD', other_party:'Blue Ridge Ventures',       reference:'REF-BR-2026-0708',  payment_scheme:'SWIFT',           balance_after:370840, source:'ifx', synced_at:d(8),  geo:'GCC',   category:'Wire Settlement' },
+  { id:'mk08', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(9),  type:'debit',  amount:5100,    currency:'USD', other_party:'Amazon Web Services',       reference:'INV-AWS-062026',    payment_scheme:'WIRE',            balance_after:365740, source:'ifx', synced_at:d(9),  geo:'GCC',   category:'TECH Tools' },
+  { id:'mk09', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(10), type:'credit', amount:18300,   currency:'ILS', other_party:'FinEdge IL',               reference:'REF-FE-2026-0710',  payment_scheme:'LOCAL_TRANSFER',  balance_after:384040, source:'ifx', synced_at:d(10), geo:null,    category:null },
+  { id:'mk10', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(11), type:'debit',  amount:14200,   currency:'ILS', other_party:'HR Systems Israel',         reference:'SAL-JUL-2026',      payment_scheme:'LOCAL_TRANSFER',  balance_after:369840, source:'ifx', synced_at:d(11), geo:'GCC',   category:'Salary Israel' },
+  { id:'mk11', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(12), type:'credit', amount:35000,   currency:'USD', other_party:'Orion Digital Ltd',         reference:'REF-OD-2026-0712',  payment_scheme:'SWIFT',           balance_after:404840, source:'ifx', synced_at:d(12), geo:'LATAM', category:"BTW ACC's" },
+  { id:'mk12', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(13), type:'debit',  amount:2900,    currency:'EUR', other_party:'SaaS Tooling GmbH',         reference:'INV-ST-0623',       payment_scheme:'SEPA',            balance_after:401940, source:'ifx', synced_at:d(13), geo:'GCC',   category:'MRKT Tools' },
+  { id:'mk13', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(14), type:'credit', amount:61000,   currency:'USD', other_party:'Pacific Bridge Capital',    reference:'REF-PB-2026-0714',  payment_scheme:'SWIFT',           balance_after:462940, source:'ifx', synced_at:d(14), geo:null,    category:null },
+  { id:'mk14', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(15), type:'debit',  amount:19500,   currency:'USD', other_party:'Affiliate Partners LLC',    reference:'PAY-AP-2026-0715',  payment_scheme:'WIRE',            balance_after:443440, source:'ifx', synced_at:d(15), geo:'GCC',   category:'Aff comp' },
+  { id:'mk15', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(16), type:'debit',  amount:4400,    currency:'EUR', other_party:'Marketing Cloud Pro',       reference:'INV-MCP-062026',    payment_scheme:'SEPA',            balance_after:439040, source:'ifx', synced_at:d(16), geo:'Mixed', category:'MRKT Spend' },
+  { id:'mk16', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(17), type:'credit', amount:27500,   currency:'USD', other_party:'Redwood Investments',       reference:'REF-RW-2026-0717',  payment_scheme:'SWIFT',           balance_after:466540, source:'ifx', synced_at:d(17), geo:'GCC',   category:'Management' },
+  { id:'mk17', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(18), type:'debit',  amount:6800,    currency:'GBP', other_party:'UK Compliance Office',      reference:'COMP-FEE-2026',     payment_scheme:'FASTER_PAYMENTS', balance_after:459740, source:'ifx', synced_at:d(18), geo:'GCC',   category:'LEG License expenses' },
+  { id:'mk18', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(19), type:'credit', amount:14700,   currency:'USD', other_party:'Sigma Clearing Corp',       reference:'CLR-SC-2026-0719',  payment_scheme:'SWIFT',           balance_after:474440, source:'ifx', synced_at:d(19), geo:'LATAM', category:'Settlement' },
+  { id:'mk19', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(20), type:'debit',  amount:3200,    currency:'USD', other_party:'Stripe Inc',               reference:'INV-STR-062026',    payment_scheme:'WIRE',            balance_after:471240, source:'ifx', synced_at:d(20), geo:null,    category:null },
+  { id:'mk20', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(21), type:'credit', amount:52000,   currency:'EUR', other_party:'Euro Clearing BV',          reference:'ECB-TRF-2026-0721', payment_scheme:'SEPA',            balance_after:523240, source:'ifx', synced_at:d(21), geo:'GCC',   category:'CC Upload' },
+  { id:'mk21', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(22), type:'debit',  amount:11000,   currency:'EUR', other_party:'Zendesk Europe',            reference:'INV-ZD-062026',     payment_scheme:'SEPA',            balance_after:512240, source:'ifx', synced_at:d(22), geo:'GCC',   category:'TECH Platforms' },
+  { id:'mk22', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(23), type:'credit', amount:8900,    currency:'USD', other_party:'DataLayer Analytics',       reference:'REF-DL-2026-0723',  payment_scheme:'SWIFT',           balance_after:521140, source:'ifx', synced_at:d(23), geo:null,    category:null },
+  { id:'mk23', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(24), type:'debit',  amount:7300,    currency:'ILS', other_party:'Leumi Bank Israel',         reference:'BANK-FEES-JUN26',   payment_scheme:'LOCAL_TRANSFER',  balance_after:513840, source:'ifx', synced_at:d(24), geo:'GCC',   category:'ACC Service providers' },
+  { id:'mk24', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(25), type:'credit', amount:33000,   currency:'USD', other_party:'Summit Bridge Fund',        reference:'SBF-WIRE-072026',   payment_scheme:'SWIFT',           balance_after:546840, source:'ifx', synced_at:d(25), geo:'LATAM', category:"BTW CMP's" },
+  { id:'mk25', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(26), type:'debit',  amount:9800,    currency:'USD', other_party:'Google Workspace',          reference:'INV-GWS-062026',    payment_scheme:'WIRE',            balance_after:537040, source:'ifx', synced_at:d(26), geo:'GCC',   category:'MRKT Services Tools' },
+  { id:'mk26', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(27), type:'credit', amount:44500,   currency:'GBP', other_party:'London Clearing House',     reference:'LCH-TRF-0726',      payment_scheme:'FASTER_PAYMENTS', balance_after:581540, source:'ifx', synced_at:d(27), geo:null,    category:null },
+  { id:'mk27', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(28), type:'debit',  amount:16400,   currency:'GBP', other_party:'UK Payroll Services',       reference:'SAL-UK-JUL2026',    payment_scheme:'FASTER_PAYMENTS', balance_after:565140, source:'ifx', synced_at:d(28), geo:'GCC',   category:'SAL MKT' },
+  { id:'mk28', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(29), type:'credit', amount:27100,   currency:'USD', other_party:'Alpha Liquidity Partners',  reference:'ALP-IN-072026',     payment_scheme:'SWIFT',           balance_after:592240, source:'ifx', synced_at:d(29), geo:'Mixed', category:'Management - C' },
+  { id:'mk29', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(30), type:'debit',  amount:5500,    currency:'EUR', other_party:'VOIP Global Systems',       reference:'INV-VOIP-062026',   payment_scheme:'SEPA',            balance_after:586740, source:'ifx', synced_at:d(30), geo:'GCC',   category:'VOIP' },
+  { id:'mk30', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(32), type:'credit', amount:18000,   currency:'USD', other_party:'Verde Capital Group',       reference:'VCG-WIRE-0732',     payment_scheme:'SWIFT',           balance_after:604740, source:'ifx', synced_at:d(32), geo:null,    category:null },
+  { id:'mk31', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(34), type:'debit',  amount:4100,    currency:'USD', other_party:'Twilio Communications',     reference:'INV-TW-062026',     payment_scheme:'WIRE',            balance_after:600640, source:'ifx', synced_at:d(34), geo:'GCC',   category:'TECH Tools' },
+  { id:'mk32', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(36), type:'credit', amount:67000,   currency:'USD', other_party:'Continental Bridge LLC',    reference:'CBL-IN-072026',     payment_scheme:'SWIFT',           balance_after:667640, source:'ifx', synced_at:d(36), geo:'LATAM', category:'Client Deposit' },
+  { id:'mk33', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(38), type:'debit',  amount:23000,   currency:'USD', other_party:'Global Affiliates Network', reference:'GAN-PAY-2026',      payment_scheme:'WIRE',            balance_after:644640, source:'ifx', synced_at:d(38), geo:'GCC',   category:'Aff comp' },
+  { id:'mk34', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(40), type:'credit', amount:12500,   currency:'EUR', other_party:'Adriatic Clearing BV',      reference:'ACB-SEPA-0740',     payment_scheme:'SEPA',            balance_after:657140, source:'ifx', synced_at:d(40), geo:'Mixed', category:'Settlement' },
+  { id:'mk35', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(42), type:'debit',  amount:8700,    currency:'EUR', other_party:'HubSpot Europe',            reference:'INV-HS-062026',     payment_scheme:'SEPA',            balance_after:648440, source:'ifx', synced_at:d(42), geo:'GCC',   category:'MRKT Services' },
+  { id:'mk36', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(44), type:'credit', amount:41000,   currency:'USD', other_party:'Pinnacle Asset Mgmt',       reference:'PAM-IN-0744',       payment_scheme:'SWIFT',           balance_after:689440, source:'ifx', synced_at:d(44), geo:null,    category:null },
+  { id:'mk37', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(46), type:'debit',  amount:17600,   currency:'ILS', other_party:'Israel Tax Authority',      reference:'VAT-Q2-2026',       payment_scheme:'LOCAL_TRANSFER',  balance_after:671840, source:'ifx', synced_at:d(46), geo:'GCC',   category:'TAX' },
+  { id:'mk38', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(48), type:'credit', amount:29900,   currency:'USD', other_party:'Torino Capital Partners',   reference:'TCP-WIRE-0748',     payment_scheme:'SWIFT',           balance_after:701740, source:'ifx', synced_at:d(48), geo:'LATAM', category:"BTW ACC's" },
+  { id:'mk39', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(50), type:'debit',  amount:6200,    currency:'GBP', other_party:'Employment Rights Office',  reference:'PAYE-JUN2026',      payment_scheme:'FASTER_PAYMENTS', balance_after:695540, source:'ifx', synced_at:d(50), geo:null,    category:null },
+  { id:'mk40', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(52), type:'credit', amount:55000,   currency:'USD', other_party:'Eastern Wealth Fund',       reference:'EWF-IN-0752',       payment_scheme:'SWIFT',           balance_after:750540, source:'ifx', synced_at:d(52), geo:null,    category:null },
+  { id:'mk41', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(54), type:'debit',  amount:13300,   currency:'USD', other_party:'Klarna US',                reference:'INV-KL-062026',     payment_scheme:'WIRE',            balance_after:737240, source:'ifx', synced_at:d(54), geo:'GCC',   category:'CC' },
+  { id:'mk42', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(56), type:'credit', amount:38000,   currency:'EUR', other_party:'Frankfurt Bridge Bank',     reference:'FBB-SEPA-0756',     payment_scheme:'SEPA',            balance_after:775240, source:'ifx', synced_at:d(56), geo:'GCC',   category:'Wire Settlement' },
+  { id:'mk43', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(58), type:'debit',  amount:4800,    currency:'EUR', other_party:'Salesforce Europe',         reference:'INV-SF-062026',     payment_scheme:'SEPA',            balance_after:770440, source:'ifx', synced_at:d(58), geo:null,    category:null },
+  { id:'mk44', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(60), type:'credit', amount:21000,   currency:'GBP', other_party:'Sterling Capital Trust',    reference:'SCT-WIRE-0760',     payment_scheme:'FASTER_PAYMENTS', balance_after:791440, source:'ifx', synced_at:d(60), geo:'Mixed', category:'Management - I' },
+  { id:'mk45', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(62), type:'debit',  amount:9100,    currency:'GBP', other_party:'UK Office Lease Ltd',       reference:'LEASE-JUN2026',     payment_scheme:'FASTER_PAYMENTS', balance_after:782340, source:'ifx', synced_at:d(62), geo:'GCC',   category:'Leq' },
+  { id:'mk46', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(64), type:'credit', amount:46000,   currency:'USD', other_party:'Quartz Digital Holdings',   reference:'QDH-IN-0764',       payment_scheme:'SWIFT',           balance_after:828340, source:'ifx', synced_at:d(64), geo:'LATAM', category:'Client Deposit' },
+  { id:'mk47', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(66), type:'debit',  amount:20500,   currency:'USD', other_party:'Uruguay IT Team',           reference:'SALARY-UY-062026',  payment_scheme:'WIRE',            balance_after:807840, source:'ifx', synced_at:d(66), geo:'LATAM', category:'Uruguay Team' },
+  { id:'mk48', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(68), type:'credit', amount:31500,   currency:'USD', other_party:'Meridian Investment Corp',  reference:'MIC-WIRE-0768',     payment_scheme:'SWIFT',           balance_after:839340, source:'ifx', synced_at:d(68), geo:null,    category:null },
+  { id:'mk49', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(70), type:'debit',  amount:15700,   currency:'ILS', other_party:'IBI Brokerage IL',          reference:'IBI-FEE-Q2-2026',   payment_scheme:'LOCAL_TRANSFER',  balance_after:823640, source:'ifx', synced_at:d(70), geo:'GCC',   category:'TK IB' },
+  { id:'mk50', wallet_id:W, company_id:C, company_name:'BluePine Ltd', bank_id:B, bank_name:'IFX Bank', transaction_date:d(72), type:'credit', amount:82000,   currency:'USD', other_party:'Diamond Bridge Capital',    reference:'DBC-IN-0772',       payment_scheme:'SWIFT',           balance_after:905640, source:'ifx', synced_at:d(72), geo:'GCC',   category:'CC Upload' },
+];
+
+function buildMockResponse(
+  rows: Transaction[],
+  { currency, txType, search, dateFrom, dateTo, page, limit }:
+  { currency: string; txType: string; search: string; dateFrom: string; dateTo: string; page: number; limit: number }
+): ApiResponse {
+  let filtered = rows.filter(tx => {
+    if (currency && currency !== 'ALL' && tx.currency !== currency) return false;
+    if (txType && txType !== 'all' && tx.type !== txType) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!(tx.other_party?.toLowerCase().includes(q) || tx.reference?.toLowerCase().includes(q))) return false;
+    }
+    if (dateFrom && tx.transaction_date < dateFrom) return false;
+    if (dateTo   && tx.transaction_date > dateTo)   return false;
+    return true;
+  });
+  const total    = filtered.length;
+  const offset   = (page - 1) * limit;
+  const slice    = filtered.slice(offset, offset + limit);
+  const moneyIn  = filtered.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
+  const moneyOut = filtered.filter(t => t.type === 'debit').reduce((s, t) => s + t.amount, 0);
+  return {
+    transactions: slice,
+    pagination: { total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) },
+    summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
+  };
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Transaction {
@@ -78,7 +167,7 @@ const fmtMoney = (n: number) =>
 // Inline dropdown. Click chip/label to open, × to clear. Category has search.
 
 function ClassifyCell<T extends string>({
-  txId, field, value, options, colorMap, placeholder, onUpdate,
+  txId, field, value, options, colorMap, placeholder, onUpdate, isMock,
 }: {
   txId: string;
   field: 'geo' | 'category';
@@ -86,6 +175,7 @@ function ClassifyCell<T extends string>({
   options: readonly T[];
   colorMap?: Record<string, string>;
   placeholder: string;
+  isMock?: boolean;
   onUpdate: (id: string, field: 'geo' | 'category', value: string | null) => void;
 }) {
   const [open, setOpen]     = useState(false);
@@ -111,6 +201,7 @@ function ClassifyCell<T extends string>({
     setOpen(false);
     if (next === value) return;
     onUpdate(txId, field, next);        // optimistic
+    if (isMock) return;                 // mock mode: no DB, keep the change
     setSaving(true);
     try {
       const r = await fetch(`/api/transactions/${txId}/classify`, {
@@ -118,7 +209,7 @@ function ClassifyCell<T extends string>({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [field]: next }),
       });
-      if (!r.ok) onUpdate(txId, field, value); // revert on error
+      if (!r.ok) onUpdate(txId, field, value); // revert on real error
     } catch {
       onUpdate(txId, field, value);
     } finally {
@@ -225,6 +316,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [page, setPage]             = useState(1);
   const [data, setData]             = useState<ApiResponse | null>(null);
   const [loading, setLoading]       = useState(false);
+  const [isMock, setIsMock]         = useState(false);
   const searchTimer                 = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const source = tab === 'banks' ? 'ifx' : 'rapyd';
@@ -239,7 +331,23 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       if (txType !== 'all')   params.set('type', txType);
       if (search)             params.set('search', search);
       const res = await fetch(`/api/transactions?${params}`);
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        const json = await res.json();
+        // Fall back to mock when the DB returns zero rows (no DB on Stage)
+        if (json.transactions?.length === 0 && page === 1 && !search && !companyId) {
+          setIsMock(true);
+          setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page, limit: 20 }));
+        } else {
+          setIsMock(false);
+          setData(json);
+        }
+      } else {
+        throw new Error('api error');
+      }
+    } catch {
+      // API unreachable (no DB on Stage) — serve mock data
+      setIsMock(true);
+      setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page, limit: 20 }));
     } finally {
       setLoading(false);
     }
@@ -361,6 +469,13 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             </button>
           </div>
 
+          {/* Mock mode banner */}
+          {isMock && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-xs font-semibold">
+              <span>⚠️</span> Showing demo data — no database connection on this environment. Classifications are local-only and reset on refresh.
+            </div>
+          )}
+
           {/* Summary cards */}
           {summary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -431,7 +546,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                           <ClassifyCell
                             txId={tx.id} field="geo" value={tx.geo}
                             options={GEO_OPTIONS} colorMap={GEO_COLORS}
-                            placeholder="GEO" onUpdate={handleClassify}
+                            placeholder="GEO" onUpdate={handleClassify} isMock={isMock}
                           />
                         </td>
 
@@ -439,7 +554,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                           <ClassifyCell
                             txId={tx.id} field="category" value={tx.category as any}
                             options={CATEGORY_OPTIONS} placeholder="Category"
-                            onUpdate={handleClassify}
+                            onUpdate={handleClassify} isMock={isMock}
                           />
                         </td>
                       </tr>
