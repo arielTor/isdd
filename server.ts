@@ -2378,8 +2378,8 @@ async function startServer() {
         LEFT JOIN banks     b ON b.id = wt.bank_id
         ${where}
         ORDER BY wt.transaction_date DESC, wt.id DESC
-        LIMIT ? OFFSET ?
-      `, [...baseParams, limitNum, offset]) as [any[], any];
+        LIMIT ${limitNum} OFFSET ${offset}
+      `, baseParams) as [any[], any];
 
       const STABLECOINS_TX = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
       const txWithUsd = (rows as any[]).map((row: any) => {
