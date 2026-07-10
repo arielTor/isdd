@@ -2345,7 +2345,8 @@ async function startServer() {
     const where = `WHERE ${conditions.join(' AND ')}`;
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      const [rates, dbConn] = await Promise.all([getUsdRates(), mysql.createConnection(dbConfig())]);
+      conn = dbConn;
 
       const [[summaryRow]] = await conn.execute(`
         SELECT
@@ -2369,6 +2370,7 @@ async function startServer() {
           wt.transaction_date, wt.type, wt.amount, wt.currency,
           wt.other_party, wt.reference, wt.payment_scheme,
           wt.balance_after, wt.source, wt.synced_at,
+          wt.geo, wt.category,
           c.name AS company_name,
           b.name AS bank_name
         FROM wallet_transactions wt
@@ -2379,14 +2381,66 @@ async function startServer() {
         LIMIT ? OFFSET ?
       `, [...baseParams, limitNum, offset]) as [any[], any];
 
+      const STABLECOINS_TX = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
+      const txWithUsd = (rows as any[]).map((row: any) => {
+        const rate = STABLECOINS_TX.has(row.currency) ? 1 : (rates[row.currency] ?? null);
+        return { ...row, amount_usd: rate !== null ? Math.round(row.amount * rate * 100) / 100 : null };
+      });
+
       res.json({
-        transactions: rows,
+        transactions: txWithUsd,
         pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
         summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
       });
     } catch (err: any) {
       console.error(`[transactions] query error:`, err.message);
       res.status(500).json({ error: "Query failed", detail: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
+  // PATCH /api/transactions/:id/classify — set geo + category on a transaction
+  const VALID_GEOS = new Set(['GCC', 'LATAM', 'Mixed', '']);
+  const VALID_CATEGORIES = new Set([
+    'ACC Service providers','Aff comp','BOP',"BTW ACC's","BTW CMP's",'CC','CC Upload',
+    'Client Deposit','Client WD','Fee','internal','LEG License expenses','Leq','Management',
+    'Management - C','Management - I','MRKT Services','MRKT Services Tools','MRKT Spend',
+    'MRKT Tools','Return','SAL IT','SAL Management','SAL MKT','Settlement','TECH Platforms',
+    'TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement','Salary Israel',
+    "G&A (Israel)",'Management - T','TAX','',
+  ]);
+  app.patch("/api/transactions/:id/classify", corsMiddleware, requireAuth, async (req: any, res) => {
+    const { id } = req.params;
+    const { geo, category } = req.body as { geo?: string; category?: string };
+
+    const geoVal      = geo      === undefined ? undefined : (geo      ?? '');
+    const categoryVal = category === undefined ? undefined : (category ?? '');
+
+    if (geoVal !== undefined && !VALID_GEOS.has(geoVal)) {
+      return res.status(400).json({ error: `Invalid geo value: ${geoVal}` });
+    }
+    if (categoryVal !== undefined && !VALID_CATEGORIES.has(categoryVal)) {
+      return res.status(400).json({ error: `Invalid category value: ${categoryVal}` });
+    }
+
+    const updates: string[] = [];
+    const params: any[]     = [];
+    if (geoVal      !== undefined) { updates.push('geo = ?');      params.push(geoVal      || null); }
+    if (categoryVal !== undefined) { updates.push('category = ?'); params.push(categoryVal || null); }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(id);
+
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      await conn.execute(
+        `UPDATE wallet_transactions SET ${updates.join(', ')} WHERE id = ?`, params
+      );
+      res.json({ id, geo: geoVal || null, category: categoryVal || null });
+    } catch (err: any) {
+      console.error(`[classify] update error:`, err.message);
+      res.status(500).json({ error: 'DB update failed', detail: err.message });
     } finally {
       if (conn) conn.end();
     }
