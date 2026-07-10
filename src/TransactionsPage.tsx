@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCcw, X } from 'lucide-react';
+import { Search, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCcw, X, Download, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Company } from './types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -25,6 +25,8 @@ const GEO_COLORS: Record<Geo, string> = {
 const CURRENCIES = ['ALL', 'EUR', 'GBP', 'USD', 'ILS', 'USDT'];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type SortKey = 'date' | 'amount' | 'amount_usd';
 
 interface Transaction {
   id: string;
@@ -74,7 +76,6 @@ const fmtUsd = (n: number | null) =>
   n == null ? null : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ── ClassifyCell ──────────────────────────────────────────────────────────────
-// Inline dropdown. Click chip to change, × to clear. Category has search filter.
 
 function ClassifyCell<T extends string>({
   txId, field, value, options, colorMap, placeholder, onUpdate,
@@ -222,6 +223,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [dateFrom, setDateFrom]       = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
   const [dateTo, setDateTo]           = useState(() => new Date().toISOString().slice(0, 10));
   const [page, setPage]               = useState(1);
+  const [sortBy, setSortBy]           = useState<SortKey>('date');
+  const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc');
   const [data, setData]               = useState<ApiResponse | null>(null);
   const [loading, setLoading]         = useState(false);
   const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -239,13 +242,24 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       if (currency !== 'ALL') params.set('currency', currency);
       if (txType !== 'all')   params.set('type', txType);
       if (search)             params.set('search', search);
+      // date and amount sort server-side; amount_usd sort applied client-side below
+      if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
 
       const res = await fetch(`/api/transactions?${params}`);
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        const json = await res.json();
+        if (sortBy === 'amount_usd') {
+          const dir = sortDir === 'asc' ? 1 : -1;
+          json.transactions = [...json.transactions].sort((a: Transaction, b: Transaction) =>
+            ((a.amount_usd ?? 0) - (b.amount_usd ?? 0)) * dir
+          );
+        }
+        setData(json);
+      }
     } finally {
       setLoading(false);
     }
-  }, [page, companyId, currency, txType, search, dateFrom, dateTo]);
+  }, [page, companyId, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -255,21 +269,56 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     searchTimer.current = setTimeout(() => { setSearch(v); setPage(1); }, 400);
   };
 
-  // Optimistic classification update — no refetch needed
+  const handleSort = (key: SortKey) => {
+    if (sortBy === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(key); setSortDir('desc'); }
+    setPage(1);
+  };
+
   const handleClassify = useCallback((id: string, field: 'geo' | 'category', value: string | null) => {
     setData(prev => {
       if (!prev) return prev;
-      return {
-        ...prev,
-        transactions: prev.transactions.map(tx =>
-          tx.id === id ? { ...tx, [field]: value } : tx
-        ),
-      };
+      return { ...prev, transactions: prev.transactions.map(tx => tx.id === id ? { ...tx, [field]: value } : tx) };
     });
   }, []);
 
+  const exportCsv = useCallback(() => {
+    const rows = data?.transactions ?? [];
+    const headers = ['Date', 'Description', 'Type', 'Amount', 'Currency', 'Amount USD', 'GEO', 'Category', 'Reference'];
+    const csvRows = rows.map(tx => [
+      tx.transaction_date,
+      tx.other_party ?? '',
+      tx.type,
+      tx.type === 'credit' ? tx.amount : -tx.amount,
+      tx.currency,
+      tx.amount_usd ?? '',
+      tx.geo ?? '',
+      tx.category ?? '',
+      tx.reference ?? '',
+    ]);
+
+    const csv = [headers, ...csvRows]
+      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `transactions_${dateFrom}_to_${dateTo}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [data, dateFrom, dateTo]);
+
   const resetPage = () => setPage(1);
   const { transactions = [], pagination, summary } = data || {};
+
+  const SortIcon = ({ k }: { k: SortKey }) =>
+    sortBy === k
+      ? sortDir === 'asc' ? <ArrowUp size={10} className="text-indigo-400" /> : <ArrowDown size={10} className="text-indigo-400" />
+      : <ArrowUpDown size={10} className="opacity-25" />;
 
   return (
     <div className="space-y-5">
@@ -368,6 +417,22 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
 
       {/* Table */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
+
+        {/* Table toolbar */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700/30">
+          <span className="text-xs text-slate-500">
+            {pagination ? `${pagination.total.toLocaleString()} transaction${pagination.total !== 1 ? 's' : ''}` : ''}
+          </span>
+          <button
+            onClick={exportCsv}
+            disabled={transactions.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Download size={13} />
+            Export CSV
+          </button>
+        </div>
+
         {loading && !data ? (
           <div className="p-12 text-center text-slate-500 text-sm">Loading transactions…</div>
         ) : transactions.length === 0 ? (
@@ -377,26 +442,43 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-700/50 border-b border-slate-700/50">
-                  {['Date','Description','Reference','Type','Amount','Currency','Amount USD'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">GEO</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">Category</th>
+                  {/* Sortable: Date */}
+                  <th
+                    onClick={() => handleSort('date')}
+                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-200 select-none"
+                  >
+                    <div className="flex items-center gap-1">Date <SortIcon k="date" /></div>
+                  </th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Description</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Type</th>
+                  {/* Sortable: Amount */}
+                  <th
+                    onClick={() => handleSort('amount')}
+                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-200 select-none"
+                  >
+                    <div className="flex items-center gap-1">Amount <SortIcon k="amount" /></div>
+                  </th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Currency</th>
+                  {/* Sortable: Amount USD */}
+                  <th
+                    onClick={() => handleSort('amount_usd')}
+                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-200 select-none"
+                  >
+                    <div className="flex items-center gap-1">Amount USD <SortIcon k="amount_usd" /></div>
+                  </th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">GEO</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">Category</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Reference</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/30">
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-3 text-slate-200 max-w-[200px] truncate" title={tx.other_party || ''}>
+                    <td className="px-4 py-1.5 text-slate-300 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[200px] truncate text-xs" title={tx.other_party || ''}>
                       {tx.other_party || <span className="text-slate-600">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-slate-400 max-w-[240px]">
-                      {tx.reference
-                        ? <span title={tx.reference}>{tx.reference.length > 60 ? tx.reference.slice(0, 60) + '…' : tx.reference}</span>
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-1.5">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
                         tx.type === 'credit' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
                       }`}>
@@ -404,29 +486,35 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                         {tx.type === 'credit' ? 'In' : 'Out'}
                       </span>
                     </td>
-                    <td className={`px-4 py-3 font-mono font-semibold whitespace-nowrap ${tx.type === 'credit' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <td className={`px-4 py-1.5 font-mono font-semibold whitespace-nowrap text-xs ${tx.type === 'credit' ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {fmtAmount(tx.amount, tx.currency, tx.type)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-1.5">
                       <span className="px-2 py-0.5 bg-slate-700/60 text-slate-300 rounded text-xs font-mono">{tx.currency}</span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-slate-400 whitespace-nowrap text-xs">
+                    <td className="px-4 py-1.5 font-mono text-slate-400 whitespace-nowrap text-xs">
                       {fmtUsd(tx.amount_usd) ?? <span className="text-slate-600">—</span>}
                     </td>
-
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-1">
                       <ClassifyCell
                         txId={tx.id} field="geo" value={tx.geo}
                         options={GEO_OPTIONS} colorMap={GEO_COLORS}
                         placeholder="GEO" onUpdate={handleClassify}
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-1">
                       <ClassifyCell
                         txId={tx.id} field="category" value={tx.category as any}
                         options={CATEGORY_OPTIONS} placeholder="Category"
                         onUpdate={handleClassify}
                       />
+                    </td>
+                    <td className="px-4 py-1.5 text-slate-500 max-w-[200px] text-xs">
+                      {tx.reference
+                        ? <span title={tx.reference} className="cursor-default truncate block">
+                            {tx.reference.length > 40 ? tx.reference.slice(0, 40) + '…' : tx.reference}
+                          </span>
+                        : <span className="text-slate-600">—</span>}
                     </td>
                   </tr>
                 ))}

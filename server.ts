@@ -2321,7 +2321,13 @@ async function startServer() {
       source = 'ifx',
       page = '1',
       limit: limitStr = '20',
+      sort_by = 'date',
+      sort_dir = 'desc',
     } = req.query as Record<string, string>;
+
+    const SORT_COLS: Record<string, string> = { date: 'wt.transaction_date', amount: 'wt.amount' };
+    const orderCol = SORT_COLS[sort_by] ?? 'wt.transaction_date';
+    const orderDir = sort_dir === 'asc' ? 'ASC' : 'DESC';
 
     const pageNum  = Math.max(1, parseInt(page, 10));
     const limitNum = Math.min(100, Math.max(1, parseInt(limitStr, 10)));
@@ -2377,7 +2383,7 @@ async function startServer() {
         LEFT JOIN companies c ON c.id = wt.company_id
         LEFT JOIN banks     b ON b.id = wt.bank_id
         ${where}
-        ORDER BY wt.transaction_date DESC, wt.id DESC
+        ORDER BY ${orderCol} ${orderDir}, wt.id ${orderDir}
         LIMIT ${limitNum} OFFSET ${offset}
       `, baseParams) as [any[], any];
 
