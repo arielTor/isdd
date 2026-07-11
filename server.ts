@@ -2626,6 +2626,80 @@ async function startServer() {
     }
   });
 
+  // POST /api/internal/sync-balances
+  // Called by Zapier to update wallet balances from the bank feed.
+  // UPDATE only — never inserts or upserts; only touches balance and updated_at.
+  app.post("/api/internal/sync-balances", async (req: any, res) => {
+    const expectedKey = process.env.INTERNAL_SYNC_API_KEY;
+    if (!expectedKey || req.headers["x-api-key"] !== expectedKey) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    let { updates } = req.body;
+    // Zapier sends the array as a JSON string — parse it if needed
+    if (typeof updates === 'string') {
+      try { updates = JSON.parse(updates); } catch { updates = null; }
+    }
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: "updates array is required and must be non-empty" });
+    }
+
+    const startMs = Date.now();
+    const ip = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || '').split(',')[0].trim();
+    let conn: any;
+    const results: { wallet_id: string; balance: number; updated: boolean; error?: string }[] = [];
+    let updatedCount = 0;
+    let failedCount  = 0;
+
+    try {
+      conn = await mysql.createConnection(dbConfig());
+
+      for (const item of updates) {
+        const { wallet_id, balance } = item;
+        try {
+          const [result] = await conn.execute(
+            `UPDATE wallets SET balance = ?, updated_at = NOW() WHERE id = ?`,
+            [balance, wallet_id]
+          ) as [any, any];
+
+          if (result.affectedRows > 0) {
+            results.push({ wallet_id, balance, updated: true });
+            updatedCount++;
+          } else {
+            // Wallet ID not found — row exists check failed silently
+            results.push({ wallet_id, balance, updated: false, error: 'wallet not found' });
+            failedCount++;
+          }
+        } catch (itemErr: any) {
+          console.error(`[${new Date().toISOString()}] [sync-balances] failed to update ${wallet_id}:`, itemErr.message);
+          results.push({ wallet_id, balance, updated: false, error: itemErr.message });
+          failedCount++;
+        }
+      }
+    } catch (connErr: any) {
+      console.error(`[${new Date().toISOString()}] [sync-balances] DB connection error:`, connErr.message);
+      return res.status(500).json({ error: "DB connection failed", detail: connErr.message });
+    } finally {
+      if (conn) conn.end();
+    }
+
+    const total = updates.length;
+    const statusCode = failedCount === 0 ? 200 : updatedCount === 0 ? 500 : 207;
+    const responseBody = { success: updatedCount > 0, total, updated: updatedCount, failed: failedCount, results };
+
+    console.log(`[${new Date().toISOString()}] [sync-balances] total=${total} updated=${updatedCount} failed=${failedCount}`);
+    logApiCall({
+      direction: 'inbound', source: 'zapier',
+      endpoint: '/api/internal/sync-balances', method: 'POST',
+      status_code: statusCode,
+      request_body: JSON.stringify({ batch_size: total }),
+      response_body: JSON.stringify({ success: responseBody.success, total, updated: updatedCount, failed: failedCount }),
+      duration_ms: Date.now() - startMs, ip_address: ip,
+    });
+
+    res.status(statusCode).json(responseBody);
+  });
+
   // 404 for unknown API routes
   app.use("/api/*", corsMiddleware, (req, res) => {
     res.status(404).json({ error: "Endpoint not found", path: req.originalUrl });
