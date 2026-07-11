@@ -216,7 +216,8 @@ const SummaryCard = ({ label, value, sub, color }: { label: string; value: strin
 
 export default function TransactionsPage({ companies }: { companies: Company[] }) {
   const [companyId, setCompanyId]     = useState('');
-  const [bankId, setBankId]           = useState('');
+  const [source, setSource]           = useState('');
+  const [sources, setSources]         = useState<string[]>([]);
   const [currency, setCurrency]       = useState('ALL');
   const [txType, setTxType]           = useState<'all' | 'credit' | 'debit'>('all');
   const [search, setSearch]           = useState('');
@@ -240,7 +241,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
         date_to: dateTo,
       });
       if (companyId)          params.set('company_id', companyId);
-      if (bankId)             params.set('bank_id', bankId);
+      if (source)             params.set('source', source);
       if (currency !== 'ALL') params.set('currency', currency);
       if (txType !== 'all')   params.set('type', txType);
       if (search)             params.set('search', search);
@@ -261,9 +262,16 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     } finally {
       setLoading(false);
     }
-  }, [page, companyId, bankId, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
+  }, [page, companyId, source, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    fetch('/api/transactions/sources')
+      .then(r => r.ok ? r.json() : [])
+      .then(setSources)
+      .catch(() => {});
+  }, []);
 
   const handleSearchInput = (v: string) => {
     setSearchInput(v);
@@ -330,7 +338,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Company</label>
           <select
             value={companyId}
-            onChange={e => { setCompanyId(e.target.value); setBankId(''); resetPage(); }}
+            onChange={e => { setCompanyId(e.target.value); resetPage(); }}
             className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-w-[140px]"
           >
             <option value="">All Companies</option>
@@ -338,24 +346,19 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           </select>
         </div>
 
-        {(() => {
-          const availableBanks = companyId
-            ? (companies.find(c => c.id === companyId)?.banks ?? [])
-            : companies.flatMap(c => c.banks).filter((b, i, arr) => arr.findIndex(x => x.id === b.id) === i);
-          return availableBanks.length > 0 ? (
-            <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Bank</label>
-              <select
-                value={bankId}
-                onChange={e => { setBankId(e.target.value); resetPage(); }}
-                className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-w-[140px]"
-              >
-                <option value="">All Banks</option>
-                {availableBanks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </div>
-          ) : null;
-        })()}
+        {sources.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Source</label>
+            <select
+              value={source}
+              onChange={e => { setSource(e.target.value); resetPage(); }}
+              className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-w-[120px]"
+            >
+              <option value="">All Sources</option>
+              {sources.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Currency</label>

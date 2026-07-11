@@ -2311,10 +2311,26 @@ async function startServer() {
 
   // ── TRANSACTIONS ROUTES ───────────────────────────────────────────────────
 
+  // GET /api/transactions/sources — distinct non-null source values
+  app.get("/api/transactions/sources", corsMiddleware, requireAuth, async (_req: any, res) => {
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const [rows] = await conn.execute(
+        `SELECT DISTINCT source FROM wallet_transactions WHERE source IS NOT NULL AND source != '' ORDER BY source`
+      ) as [any[], any];
+      res.json((rows as any[]).map((r: any) => r.source));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
   // GET /api/transactions
   app.get("/api/transactions", corsMiddleware, requireAuth, async (req: any, res) => {
     const {
-      company_id, bank_id, wallet_id, currency,
+      company_id, wallet_id, currency,
       date_from, date_to,
       type: txType,
       search,
@@ -2343,7 +2359,6 @@ async function startServer() {
 
     if (source)                          { conditions.push('wt.source = ?');                              baseParams.push(source); }
     if (company_id)                      { conditions.push('wt.company_id = ?');                          baseParams.push(company_id); }
-    if (bank_id)                         { conditions.push('wt.bank_id = ?');                             baseParams.push(bank_id); }
     if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
