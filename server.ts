@@ -2311,15 +2311,42 @@ async function startServer() {
 
   // ── TRANSACTIONS ROUTES ───────────────────────────────────────────────────
 
-  // GET /api/transactions/sources — distinct non-null source values
+  // GET /api/transactions/sources
+  // Returns filter options for the Source dropdown.
+  // Sources with a single bank → { label: source, source, bank_id: null }
+  // Sources with multiple banks → one entry per bank → { label: bank_name, source, bank_id }
   app.get("/api/transactions/sources", corsMiddleware, requireAuth, async (_req: any, res) => {
     let conn: any;
     try {
       conn = await mysql.createConnection(dbConfig());
-      const [rows] = await conn.execute(
-        `SELECT DISTINCT source FROM wallet_transactions WHERE source IS NOT NULL AND source != '' ORDER BY source`
-      ) as [any[], any];
-      res.json((rows as any[]).map((r: any) => r.source));
+      const [rows] = await conn.execute(`
+        SELECT
+          wt_src.source,
+          wt_src.bank_id,
+          b.name AS bank_name,
+          src_counts.bank_count
+        FROM (
+          SELECT DISTINCT source, bank_id
+          FROM wallet_transactions
+          WHERE source IS NOT NULL AND source != ''
+        ) wt_src
+        LEFT JOIN banks b ON b.id = wt_src.bank_id
+        JOIN (
+          SELECT source, COUNT(DISTINCT bank_id) AS bank_count
+          FROM wallet_transactions
+          WHERE source IS NOT NULL AND source != ''
+          GROUP BY source
+        ) src_counts ON src_counts.source = wt_src.source
+        ORDER BY wt_src.source, bank_name
+      `) as [any[], any];
+
+      const options = (rows as any[]).map((r: any) => ({
+        label:   r.bank_count > 1 ? (r.bank_name || r.bank_id) : r.source,
+        source:  r.source,
+        bank_id: r.bank_count > 1 ? r.bank_id : null,
+      }));
+
+      res.json(options);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     } finally {
@@ -2330,7 +2357,7 @@ async function startServer() {
   // GET /api/transactions
   app.get("/api/transactions", corsMiddleware, requireAuth, async (req: any, res) => {
     const {
-      company_id, wallet_id, currency,
+      company_id, bank_id, wallet_id, currency,
       date_from, date_to,
       type: txType,
       search,
@@ -2359,6 +2386,7 @@ async function startServer() {
 
     if (source)                          { conditions.push('wt.source = ?');                              baseParams.push(source); }
     if (company_id)                      { conditions.push('wt.company_id = ?');                          baseParams.push(company_id); }
+    if (bank_id)                         { conditions.push('wt.bank_id = ?');                             baseParams.push(bank_id); }
     if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }

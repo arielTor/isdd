@@ -216,8 +216,8 @@ const SummaryCard = ({ label, value, sub, color }: { label: string; value: strin
 
 export default function TransactionsPage({ companies }: { companies: Company[] }) {
   const [companyId, setCompanyId]     = useState('');
-  const [source, setSource]           = useState('');
-  const [sources, setSources]         = useState<string[]>([]);
+  const [sourceKey, setSourceKey]     = useState('');   // label used as dropdown key
+  const [sources, setSources]         = useState<{ label: string; source: string; bank_id: string | null }[]>([]);
   const [currency, setCurrency]       = useState('ALL');
   const [txType, setTxType]           = useState<'all' | 'credit' | 'debit'>('all');
   const [search, setSearch]           = useState('');
@@ -241,7 +241,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
         date_to: dateTo,
       });
       if (companyId)          params.set('company_id', companyId);
-      if (source)             params.set('source', source);
+      const selectedOpt = sources.find(s => s.label === sourceKey);
+      if (selectedOpt) {
+        if (selectedOpt.bank_id) params.set('bank_id', selectedOpt.bank_id);
+        else                     params.set('source',  selectedOpt.source);
+      }
       if (currency !== 'ALL') params.set('currency', currency);
       if (txType !== 'all')   params.set('type', txType);
       if (search)             params.set('search', search);
@@ -262,7 +266,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     } finally {
       setLoading(false);
     }
-  }, [page, companyId, source, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
+  }, [page, companyId, sourceKey, sources, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -350,12 +354,12 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           <div className="flex flex-col gap-1">
             <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Source</label>
             <select
-              value={source}
-              onChange={e => { setSource(e.target.value); resetPage(); }}
+              value={sourceKey}
+              onChange={e => { setSourceKey(e.target.value); resetPage(); }}
               className="bg-slate-700/60 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-w-[120px]"
             >
               <option value="">All Sources</option>
-              {sources.map(s => <option key={s} value={s}>{s}</option>)}
+              {sources.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
             </select>
           </div>
         )}
