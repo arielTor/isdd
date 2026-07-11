@@ -2314,7 +2314,7 @@ async function startServer() {
   // GET /api/transactions
   app.get("/api/transactions", corsMiddleware, requireAuth, async (req: any, res) => {
     const {
-      company_id, wallet_id, currency,
+      company_id, bank_id, wallet_id, currency,
       date_from, date_to,
       type: txType,
       search,
@@ -2343,6 +2343,7 @@ async function startServer() {
 
     if (source)                          { conditions.push('wt.source = ?');                              baseParams.push(source); }
     if (company_id)                      { conditions.push('wt.company_id = ?');                          baseParams.push(company_id); }
+    if (bank_id)                         { conditions.push('wt.bank_id = ?');                             baseParams.push(bank_id); }
     if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
