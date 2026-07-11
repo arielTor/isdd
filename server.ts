@@ -2318,7 +2318,7 @@ async function startServer() {
       date_from, date_to,
       type: txType,
       search,
-      source = 'ifx',
+      source = '',
       page = '1',
       limit: limitStr = '20',
       sort_by = 'date',
