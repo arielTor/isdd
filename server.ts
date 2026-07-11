@@ -2340,11 +2340,31 @@ async function startServer() {
         ORDER BY wt_src.source, bank_name
       `) as [any[], any];
 
-      const options = (rows as any[]).map((r: any) => ({
-        label:   r.bank_count > 1 ? (r.bank_name || r.bank_id) : r.source,
-        source:  r.source,
-        bank_id: r.bank_count > 1 ? r.bank_id : null,
-      }));
+      // Group by source
+      const bySource = new Map<string, any[]>();
+      for (const r of rows as any[]) {
+        if (!bySource.has(r.source)) bySource.set(r.source, []);
+        bySource.get(r.source)!.push(r);
+      }
+
+      // A source is expanded into bank entries only when it has multiple banks
+      // AND none of the bank names contain the source name — meaning the bank
+      // names are meaningfully different (e.g. finsite → Leumi, Discount).
+      // Sources like ifx whose banks are all named "IFX …" stay as one entry.
+      const options: { label: string; source: string; bank_id: string | null }[] = [];
+      for (const [src, bankRows] of bySource.entries()) {
+        const anyBankNameMatchesSrc = bankRows.some((r: any) =>
+          (r.bank_name || '').toLowerCase().includes(src.toLowerCase())
+        );
+        if (bankRows.length === 1 || anyBankNameMatchesSrc) {
+          options.push({ label: src, source: src, bank_id: null });
+        } else {
+          for (const r of bankRows) {
+            options.push({ label: r.bank_name || r.bank_id, source: src, bank_id: r.bank_id });
+          }
+        }
+      }
+      options.sort((a, b) => a.label.localeCompare(b.label));
 
       res.json(options);
     } catch (err: any) {
