@@ -66,14 +66,13 @@ const fmtDate = (d: string) => {
 const fmtAmount = (amount: number, currency: string, type: 'credit' | 'debit') => {
   const sym: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', ILS: '₪', USDT: '$' };
   const prefix = type === 'credit' ? '+' : '-';
-  return `${prefix}${sym[currency] || ''}${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  return `${prefix}${sym[currency] || ''}${Math.round(Math.abs(amount)).toLocaleString()}`;
 };
 
-const fmtMoney = (n: number) =>
-  `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const fmtMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
 
 const fmtUsd = (n: number | null) =>
-  n == null ? null : `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  n == null ? null : `$${Math.round(Math.abs(n)).toLocaleString()}`;
 
 // ── ClassifyCell ──────────────────────────────────────────────────────────────
 
