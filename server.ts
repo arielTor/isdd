@@ -2418,21 +2418,32 @@ async function startServer() {
       const [rates, dbConn] = await Promise.all([getUsdRates(), mysql.createConnection(dbConfig())]);
       conn = dbConn;
 
-      const [[summaryRow]] = await conn.execute(`
-        SELECT
-          COALESCE(SUM(CASE WHEN wt.type = 'credit' THEN wt.amount ELSE 0 END), 0) AS money_in,
-          COALESCE(SUM(CASE WHEN wt.type = 'debit'  THEN wt.amount ELSE 0 END), 0) AS money_out,
-          COUNT(*) AS tx_count
+      // Per-currency breakdown so we can convert to USD using live rates
+      const [summaryRows] = await conn.execute(`
+        SELECT wt.type, wt.currency,
+          COUNT(*) AS tx_count,
+          COALESCE(SUM(wt.amount), 0) AS total_amount
         FROM wallet_transactions wt ${where}
+        GROUP BY wt.type, wt.currency
       `, baseParams) as [any[], any];
 
       const [[countRow]] = await conn.execute(
         `SELECT COUNT(*) AS total FROM wallet_transactions wt ${where}`, baseParams
       ) as [any[], any];
 
-      const total    = Number(countRow.total)    || 0;
-      const moneyIn  = Number(summaryRow.money_in)  || 0;
-      const moneyOut = Number(summaryRow.money_out) || 0;
+      const STABLECOINS_SUMMARY = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
+      let moneyInUsd = 0, moneyOutUsd = 0;
+      for (const row of summaryRows as any[]) {
+        const rate = STABLECOINS_SUMMARY.has(row.currency) ? 1 : (rates[row.currency] ?? null);
+        if (rate === null) continue;
+        const usd = Number(row.total_amount) * rate;
+        if (row.type === 'credit') moneyInUsd  += usd;
+        else                       moneyOutUsd += usd;
+      }
+      moneyInUsd  = Math.round(moneyInUsd  * 100) / 100;
+      moneyOutUsd = Math.round(moneyOutUsd * 100) / 100;
+
+      const total = Number(countRow.total) || 0;
 
       const [rows] = await conn.execute(`
         SELECT
@@ -2460,7 +2471,7 @@ async function startServer() {
       res.json({
         transactions: txWithUsd,
         pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
-        summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
+        summary: { money_in: moneyInUsd, money_out: moneyOutUsd, net_change: Math.round((moneyInUsd - moneyOutUsd) * 100) / 100, tx_count: total },
       });
     } catch (err: any) {
       console.error(`[transactions] query error:`, err.message, '\n', err.stack);
