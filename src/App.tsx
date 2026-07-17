@@ -673,6 +673,20 @@ const PAGE_PERMS: { id: string; label: string }[] = [
   { id: 'upload',       label: 'Manual Data Upload' },
 ];
 
+// Compact relative label for a user's last sign-in (falls back to a local date).
+const formatLastLogin = (iso: string): string => {
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return '-';
+  const mins = Math.floor((Date.now() - then) / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
 // --- Entra Groups tab: map discovered Entra group Object IDs to roles ---
 type EntraGroup = { groupId: string; label: string | null; lastSeen?: string; roleIds: string[] };
 
@@ -681,6 +695,8 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
   const [samlEnabled, setSamlEnabled] = useState(true);
   const [addId, setAddId] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [pwLoginDisabled, setPwLoginDisabled] = useState(false);
+  const [savingPwLogin, setSavingPwLogin] = useState(false);
 
   const load = () =>
     fetch('/api/entra/groups', { credentials: 'include' })
@@ -688,6 +704,31 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
       .then(d => { setGroups(d.groups || []); if (typeof d.samlEnabled === 'boolean') setSamlEnabled(d.samlEnabled); })
       .catch(() => setGroups([]));
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    fetch('/api/auth/login-settings', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setPwLoginDisabled(!!d.passwordLoginDisabled); })
+      .catch(() => {});
+  }, []);
+
+  const togglePwLogin = async () => {
+    const next = !pwLoginDisabled;
+    setSavingPwLogin(true);
+    setPwLoginDisabled(next); // optimistic
+    try {
+      const res = await fetch('/api/auth/login-settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ passwordLoginDisabled: next }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setPwLoginDisabled(!next); // revert
+        if (d?.error) alert(d.error);
+      }
+    } catch { setPwLoginDisabled(!next); }
+    finally { setSavingPwLogin(false); }
+  };
 
   const save = async (groupId: string, patch: Partial<Pick<EntraGroup, 'label' | 'roleIds'>>) => {
     setSavingId(groupId);
@@ -715,6 +756,38 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
 
   return (
     <div className="space-y-4">
+      {/* Sign-in method: optionally require Microsoft SSO for everyone */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900">Require Microsoft sign-in</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              When on, the email &amp; password form is hidden on the login screen and only
+              &quot;Sign in with Microsoft&quot; is offered. Available only once SSO is configured, so no one can be locked out.
+            </p>
+            {pwLoginDisabled && (
+              <p className="text-[11px] font-semibold text-indigo-600 mt-2">Email &amp; password sign-in is currently disabled.</p>
+            )}
+          </div>
+          <button
+            role="switch"
+            aria-checked={pwLoginDisabled}
+            disabled={!samlEnabled || savingPwLogin}
+            onClick={togglePwLogin}
+            title={!samlEnabled ? 'Configure Microsoft SSO first' : undefined}
+            className={`relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${pwLoginDisabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${pwLoginDisabled ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+        {!samlEnabled && (
+          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs mt-3">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>SSO is not configured on this environment yet, so email &amp; password sign-in can't be disabled.</span>
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div>
           <h3 className="text-sm font-bold text-slate-900">Entra groups → roles</h3>
@@ -950,6 +1023,7 @@ const UserManagementPage = ({
                     <th className="px-6 py-3 border-b border-slate-100 text-center">User</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Role</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Status</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Last Login</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Access</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Actions</th>
                   </tr>
@@ -983,6 +1057,13 @@ const UserManagementPage = ({
                         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {user.lastLogin ? (
+                          <span className="text-[11px] text-slate-500" title={new Date(user.lastLogin).toLocaleString()}>{formatLastLogin(user.lastLogin)}</span>
+                        ) : (
+                          <span className="text-[11px] text-slate-300">Never</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-center">
                         {user.role === 'Admin' ? (
@@ -1033,7 +1114,7 @@ const UserManagementPage = ({
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-sm">No users found.</td></tr>
+                    <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 text-sm">No users found.</td></tr>
                   )}
                 </tbody>
               </table>

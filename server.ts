@@ -706,10 +706,26 @@ async function startServer() {
   });
 
   // Login
+  // Whether email/password sign-in has been switched off by an admin.
+  // Stored in app_settings; only ever enforced when SSO is actually available,
+  // so losing the SAML config can never lock everyone out.
+  const isPasswordLoginDisabled = async (): Promise<boolean> => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT v FROM app_settings WHERE k = 'password_login_disabled'"
+      )) as any;
+      return rows[0]?.v === "1";
+    } catch { return false; }
+    finally { await conn.end(); }
+  };
+
   app.post("/api/auth/login", corsMiddleware, async (req: any, res) => {
     const { email, password } = req.body;
     if (!email || !password)
       return res.status(400).json({ error: "Email and password required" });
+    if (SAML_ENABLED && await isPasswordLoginDisabled())
+      return res.status(403).json({ error: "Email and password sign-in is disabled. Please use \"Sign in with Microsoft\"." });
 
     let conn: any;
     try {
@@ -736,6 +752,9 @@ async function startServer() {
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid)
         return res.status(401).json({ error: "Invalid email or password" });
+
+      // Stamp last login (best-effort; never block sign-in on it).
+      try { await conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", [user.id]); } catch { /* ignore */ }
 
       // Load permissions
       const [perms] = (await conn.execute(
@@ -780,9 +799,38 @@ async function startServer() {
     res.json({ user: req.session.user });
   });
 
-  // Login screen uses this to decide whether to show "Sign in with Microsoft".
-  app.get("/api/auth/sso-status", corsMiddleware, (_req, res) => {
-    res.json({ samlEnabled: SAML_ENABLED });
+  // Login screen uses this to decide whether to show "Sign in with Microsoft"
+  // and whether the email/password form should be shown at all.
+  app.get("/api/auth/sso-status", corsMiddleware, async (_req, res) => {
+    // Effective value: only "disabled" when SSO can actually be used instead.
+    const passwordLoginDisabled = SAML_ENABLED && (await isPasswordLoginDisabled());
+    res.json({ samlEnabled: SAML_ENABLED, passwordLoginDisabled });
+  });
+
+  // Admin: read/update whether email/password sign-in is allowed.
+  app.get("/api/auth/login-settings", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    res.json({ samlEnabled: SAML_ENABLED, passwordLoginDisabled: await isPasswordLoginDisabled() });
+  });
+
+  app.post("/api/auth/login-settings", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const { passwordLoginDisabled } = req.body || {};
+    if (typeof passwordLoginDisabled !== "boolean")
+      return res.status(400).json({ error: "passwordLoginDisabled must be a boolean" });
+    // Guard against a total lockout: refuse to turn off password sign-in unless
+    // Microsoft SSO is configured and can serve as the alternative way in.
+    if (passwordLoginDisabled && !SAML_ENABLED)
+      return res.status(400).json({ error: "Cannot disable email/password sign-in while Microsoft SSO is not configured - everyone would be locked out." });
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute(
+        "INSERT INTO app_settings (k, v) VALUES ('password_login_disabled', ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
+        [passwordLoginDisabled ? "1" : "0"]
+      );
+      res.json({ ok: true, passwordLoginDisabled });
+    } catch (err: any) {
+      console.error("Login settings save error:", err.message);
+      res.status(500).json({ error: "Failed to save login settings" });
+    } finally { await conn.end(); }
   });
 
   if (SAML_ENABLED && samlStrategy) {
@@ -899,6 +947,9 @@ async function startServer() {
             );
           }
 
+          // Stamp last login (best-effort; never block sign-in on it).
+          try { await conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", [user.id]); } catch { /* ignore */ }
+
           // 4) Sync group-derived roles; preserve admin-assigned (manual) ones.
           await conn.execute("DELETE FROM user_roles WHERE user_id = ? AND source = 'group'", [user.id]);
           for (const rid of mappedRoleIds) {
@@ -976,7 +1027,7 @@ async function startServer() {
     try {
       conn = await mysql.createConnection(dbConfig());
       const [users] = (await conn.execute(
-        "SELECT id, name, email, role, status, auth_source FROM users ORDER BY name"
+        "SELECT id, name, email, role, status, auth_source, last_login FROM users ORDER BY name"
       )) as [any[], any];
       const [perms] = (await conn.execute(
         "SELECT user_id, company_id, bank_id FROM user_permissions"
@@ -988,6 +1039,7 @@ async function startServer() {
       const result = users.map((u: any) => ({
         ...u,
         authSource: u.auth_source || "password",
+        lastLogin: u.last_login || null,
         permissions: (perms as any[])
           .filter((p: any) => p.user_id === u.id)
           .map((p: any) => ({
@@ -2001,6 +2053,7 @@ async function startServer() {
           "ADD COLUMN department VARCHAR(255) NULL",
           "ADD COLUMN job_title VARCHAR(255) NULL",
           "ADD COLUMN auth_source VARCHAR(16) NOT NULL DEFAULT 'password'",
+          "ADD COLUMN last_login DATETIME NULL",
         ]) {
           try { await conn.execute(`ALTER TABLE users ${col}`); } catch { /* exists */ }
         }
@@ -2145,10 +2198,17 @@ async function startServer() {
     }
     const conn = await mysql.createConnection(dbConfig());
     try {
-      await conn.execute(
-        "INSERT INTO entra_groups (group_id, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label)",
-        [groupId, typeof label === "string" ? label : null]
-      );
+      if (typeof label === "string") {
+        // Label explicitly provided: set it (empty string clears it back to NULL).
+        await conn.execute(
+          "INSERT INTO entra_groups (group_id, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label)",
+          [groupId, label.trim() || null]
+        );
+      } else {
+        // No label in this request (e.g. a role-only toggle): ensure the row exists
+        // without overwriting an existing friendly name.
+        await conn.execute("INSERT IGNORE INTO entra_groups (group_id) VALUES (?)", [groupId]);
+      }
       if (Array.isArray(roleIds)) {
         await conn.execute("DELETE FROM entra_group_roles WHERE group_id = ?", [groupId]);
         for (const rid of roleIds) {
