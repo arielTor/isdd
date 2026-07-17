@@ -2458,7 +2458,7 @@ async function startServer() {
         LEFT JOIN companies c ON c.id = wt.company_id
         LEFT JOIN banks     b ON b.id = wt.bank_id
         ${where}
-        ORDER BY ${orderCol} ${orderDir}, wt.id ${orderDir}
+        ORDER BY ${orderCol} ${orderDir}, wt.created_at ${orderDir}
         LIMIT ${limitNum} OFFSET ${offset}
       `, baseParams) as [any[], any];
 
