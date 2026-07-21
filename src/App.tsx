@@ -3434,7 +3434,7 @@ export default function App() {
                                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span>
                                     </td>
                                     <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>
-                                      {CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}
+                                      {fmtBal(row.balance, row.currency)}
                                     </td>
                                     <td className="px-5 py-3 text-right font-mono text-slate-500">
                                       {row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '-'}
