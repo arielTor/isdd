@@ -542,7 +542,10 @@ async function startServer() {
         // value_usd=0 on a non-zero balance means the field was never populated —
         // fall back to live rate so newly-added wallets price correctly.
         // Negative balances are valid (overdrafts) and must not be discarded.
-        const hasDbValue      = dbValueUsd !== null && !(dbValueUsd === 0 && balance !== 0);
+        // Stablecoins always use the live rate (1.0) — DB value_usd may have been
+        // written with a non-1.0 market rate and must not override the peg.
+        const isStablecoin    = STABLECOINS.has(currency);
+        const hasDbValue      = !isStablecoin && dbValueUsd !== null && !(dbValueUsd === 0 && balance !== 0);
         const valueUsd        = hasDbValue ? dbValueUsd! : (rate !== undefined ? balance * rate : null);
         const valueUsdEstimated = !hasDbValue && rate !== undefined && valueUsd !== null;
 
