@@ -1285,7 +1285,10 @@ async function startServer() {
         const balance    = Number(row.wallet_balance ?? 0);
         const currency   = row.wallet_currency as string;
         const rate       = rates[currency];
-        const hasDbValue = dbValueUsd !== null;
+        // value_usd=0 with a non-zero balance means the snapshot was created before
+        // USD values were populated — fall back to live rate. Stablecoins always use 1.0.
+        const isStablecoin = STABLECOINS.has(currency);
+        const hasDbValue = !isStablecoin && dbValueUsd !== null && !(dbValueUsd === 0 && balance !== 0);
         const valueUsd   = hasDbValue ? dbValueUsd! : (rate !== undefined ? balance * rate : null);
         bank.bank_accounts.get(row.bank_account_id).wallets.push({
           id: row.wallet_id, currency, balance,
@@ -1365,9 +1368,13 @@ async function startServer() {
         const balance  = Number(row.balance) || 0;
         const currency = row.currency as string;
 
-        // value_usd authoritative → fall back to balance × live rate (same as snapshot API)
-        const usdVal = (row.value_usd != null && row.value_usd !== '')
-          ? Number(row.value_usd)
+        // value_usd=0 with real balance means snapshot was created before USD values were
+        // populated — fall back to live rate. Stablecoins always use 1.0.
+        const snapshotDbUsd = (row.value_usd != null && row.value_usd !== '') ? Number(row.value_usd) : null;
+        const snapshotIsStable = STABLECOINS.has(currency);
+        const snapshotHasValue = !snapshotIsStable && snapshotDbUsd !== null && !(snapshotDbUsd === 0 && balance !== 0);
+        const usdVal = snapshotHasValue
+          ? snapshotDbUsd!
           : (rates[currency] !== undefined ? balance * rates[currency] : 0);
 
         const entry = byDate.get(dateKey)!;
@@ -1394,8 +1401,11 @@ async function startServer() {
         for (const row of liveRows as any[]) {
           const balance  = Number(row.balance) || 0;
           const currency = row.currency as string;
-          const usdVal = (row.value_usd != null && row.value_usd !== '')
-            ? Number(row.value_usd)
+          const liveDbUsd = (row.value_usd != null && row.value_usd !== '') ? Number(row.value_usd) : null;
+          const liveIsStable = STABLECOINS.has(currency);
+          const liveHasValue = !liveIsStable && liveDbUsd !== null && !(liveDbUsd === 0 && balance !== 0);
+          const usdVal = liveHasValue
+            ? liveDbUsd!
             : (rates[currency] !== undefined ? balance * rates[currency] : 0);
           todayEntry.total += usdVal;
           if (CRYPTO_SET.has(currency)) todayEntry.crypto += usdVal;
