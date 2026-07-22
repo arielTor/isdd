@@ -87,6 +87,12 @@ const convertCurrency = (amount: number, from: string): { amount: number, label:
   };
 };
 
+// Currencies that carry meaningful decimal places — show 2dp in balance columns.
+const CRYPTO_CURRENCIES = new Set(['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT']);
+const fmtBal = (amount: number, currency: string) =>
+  (CURRENCY_SYMBOLS[currency] || '') + (CURRENCY_SYMBOLS[currency] ? '' : ' ') +
+  amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: CRYPTO_CURRENCIES.has(currency) ? 2 : 0 });
+
 // Microsoft 4-square logo (used to mark SSO accounts).
 const MicrosoftLogo = ({ size = 12 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 21 21" aria-hidden="true" className="shrink-0">
@@ -1631,7 +1637,7 @@ const BankDetailsModal = ({
               <div key={currency} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total {currency}</p>
                 <p className="text-xl font-bold text-slate-900 font-mono">
-                  {CURRENCY_SYMBOLS[currency] || ''} {total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  {fmtBal(total, currency)}
                 </p>
               </div>
             ))}
@@ -1669,7 +1675,7 @@ const BankDetailsModal = ({
                               </div>
                               <div className="text-right">
                                 <p className={`text-sm font-bold font-mono tracking-tight ${shouldHighlightRow(wallet.id) ? 'text-red-500 animate-pulse' : 'text-slate-900'}`}>
-                                   {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                   {fmtBal(wallet.balance || 0, wallet.currency)}
                                 </p>
                                 {hasDbUsd && (() => {
                                   const neg = (wallet.value_usd ?? 0) < 0;
@@ -1776,7 +1782,7 @@ const BankCard = ({ bank, onShowDetails, alerts }: { bank: Bank, onShowDetails: 
                 </td>
                 <td className={`px-5 py-3 border-b ${shouldHighlightRow(wallet.id) ? 'border-red-100' : 'border-slate-100'} text-right font-mono font-bold ${shouldHighlightRow(wallet.id) ? 'text-red-600 animate-pulse' : 'text-slate-700'}`}>
                   <div className="flex flex-col items-end">
-                    <span>{CURRENCY_SYMBOLS[wallet.currency] || ''} {wallet.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    <span>{fmtBal(wallet.balance, wallet.currency)}</span>
                     {convertCurrency(wallet.balance, wallet.currency) && (
                       <span className="text-[9px] text-slate-400 italic">
                         ≈ {convertCurrency(wallet.balance, wallet.currency)?.label} {convertCurrency(wallet.balance, wallet.currency)?.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -1934,7 +1940,7 @@ const CompanyDetailCard = ({
                     </td>
                     <td className="px-6 py-4 border-b border-slate-100 text-left text-slate-500 text-xs font-mono font-medium">{wallet.accountNumber}</td>
                     <td className={`px-6 py-4 border-b border-slate-100 text-right font-mono font-bold ${isAlertRow ? 'text-red-600 animate-pulse' : 'text-slate-900'}`}>
-                      {CURRENCY_SYMBOLS[wallet.currency] || ''} {(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      {fmtBal(wallet.balance ?? 0, wallet.currency)}
                     </td>
                     <td className="px-6 py-4 border-b border-slate-100 text-center">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wallet.currency === 'USD' || wallet.currency === 'USDT' ? 'bg-emerald-100 text-emerald-700' : wallet.currency === 'BTC' || wallet.currency === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
@@ -2043,7 +2049,7 @@ const CompanyDetailTable = ({ companies, alerts }: { companies: Company[]; alert
               ) : (<div className="text-[10px] text-slate-300 font-medium ml-2">↳ Continued</div>)}
             </td>
             <td className="px-5 py-3 border-b border-slate-100 text-left text-slate-500 text-xs font-mono hidden md:table-cell">{w.accountNumber}</td>
-            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono hidden md:table-cell ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{CURRENCY_SYMBOLS[w.currency] || ''} {(w.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td className={`px-5 py-3 border-b border-slate-100 text-right font-mono hidden md:table-cell ${(w.balance || 0) < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtBal(w.balance ?? 0, w.currency)}</td>
             <td className="px-3 md:px-5 py-3 border-b border-slate-100 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
             <td className={`px-3 md:px-5 py-3 border-b border-slate-100 text-right font-mono font-bold ${usd === null ? 'text-slate-300' : (usd < 0 ? 'text-red-600' : 'text-slate-900')}`}>{fmtUsdCell}</td>
           </tr>
@@ -3509,7 +3515,7 @@ export default function App() {
                                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currencyBadge(row.currency)}`}>{row.currency}</span>
                                     </td>
                                     <td className={`px-5 py-3 text-right font-mono ${row.balance < 0 ? 'text-red-600' : 'text-slate-700'}`}>
-                                      {CURRENCY_SYMBOLS[row.currency] || ''}{fmtN(row.balance)}
+                                      {fmtBal(row.balance, row.currency)}
                                     </td>
                                     <td className="px-5 py-3 text-right font-mono text-slate-500">
                                       {row.fxRate !== 0 ? row.fxRate.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 }) : '-'}

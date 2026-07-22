@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCcw, X, Download, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Company } from './types';
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const GEO_OPTIONS = ['GCC', 'LATAM', 'Mixed'] as const;
 type Geo = typeof GEO_OPTIONS[number];
@@ -28,6 +28,7 @@ const curBadge = (c: string) =>
   c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
   c === 'BTC' || c === 'ETH'  ? 'bg-orange-100 text-orange-700'   : 'bg-blue-100 text-blue-700';
 
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type SortKey = 'date' | 'amount' | 'amount_usd';
@@ -42,6 +43,7 @@ interface Transaction {
   transaction_date: string;
   type: 'credit' | 'debit';
   amount: number;
+  amount_usd: number | null;
   currency: string;
   other_party: string | null;
   reference: string | null;
@@ -51,7 +53,6 @@ interface Transaction {
   synced_at: string;
   geo: Geo | null;
   category: string | null;
-  amount_usd: number | null;
 }
 
 interface ApiResponse {
@@ -182,11 +183,142 @@ const fmtDate = (d: string) => {
 const fmtAmount = (amount: number, currency: string, type: 'credit' | 'debit') => {
   const sym: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', ILS: '₪', USDT: '$' };
   const prefix = type === 'credit' ? '+' : '-';
-  return `${prefix}${sym[currency] || ''}${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${prefix}${sym[currency] || ''}${Math.round(Math.abs(amount)).toLocaleString()}`;
 };
 
-const fmtMoney = (n: number) =>
-  `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
+
+const fmtUsd = (n: number | null) =>
+  n == null ? null : `$${Math.round(Math.abs(n)).toLocaleString()}`;
+
+// ── ClassifyCell ──────────────────────────────────────────────────────────────
+
+function ClassifyCell<T extends string>({
+  txId, field, value, options, colorMap, placeholder, onUpdate,
+}: {
+  txId: string;
+  field: 'geo' | 'category';
+  value: T | null;
+  options: readonly T[];
+  colorMap?: Record<string, string>;
+  placeholder: string;
+  onUpdate: (id: string, field: 'geo' | 'category', value: string | null) => void;
+}) {
+  const [open, setOpen]     = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [query, setQuery]   = useState('');
+  const ref                 = useRef<HTMLDivElement>(null);
+  const inputRef            = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) { setQuery(''); return; }
+    setTimeout(() => inputRef.current?.focus(), 50);
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const filtered   = options.filter(o => o.toLowerCase().includes(query.toLowerCase()));
+  const showSearch = options.length > 6;
+
+  const handleSelect = async (next: string | null) => {
+    setOpen(false);
+    if (next === value) return;
+    onUpdate(txId, field, next);   // optimistic
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/transactions/${txId}/classify`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: next }),
+      });
+      if (!r.ok) onUpdate(txId, field, value); // revert on DB error
+    } catch {
+      onUpdate(txId, field, value);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const chipClass = value && colorMap
+    ? (colorMap[value] ?? 'bg-slate-700/60 text-slate-300 border border-slate-600/40')
+    : 'bg-slate-700/60 text-slate-300 border border-slate-600/40';
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setOpen(v => !v)}
+          disabled={saving}
+          className={`px-2 py-0.5 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+            value ? chipClass : 'text-slate-600 hover:text-indigo-400'
+          } ${saving ? 'opacity-40' : ''}`}
+          title={value ? 'Click to change' : `Add ${placeholder}`}
+        >
+          {value ?? `+ ${placeholder}`}
+        </button>
+        {value && (
+          <button
+            onClick={e => { e.stopPropagation(); handleSelect(null); }}
+            className="text-slate-600 hover:text-rose-400 transition-colors"
+            title={`Clear ${field}`}
+          >
+            <X size={10} />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute z-40 top-full left-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-52 overflow-hidden">
+          {showSearch && (
+            <div className="p-2 border-b border-slate-700/50">
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search…"
+                className="w-full bg-slate-700/60 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-500"
+                onKeyDown={e => e.key === 'Escape' && setOpen(false)}
+              />
+            </div>
+          )}
+          <div className="max-h-52 overflow-y-auto py-1">
+            {filtered.length === 0
+              ? <div className="px-3 py-2 text-slate-500 text-xs">No match</div>
+              : filtered.map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => handleSelect(opt)}
+                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                    value === opt
+                      ? 'text-indigo-400 font-semibold bg-indigo-500/10'
+                      : 'text-slate-300 hover:bg-slate-700/60'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+          </div>
+          {value && (
+            <div className="border-t border-slate-700/50 py-1">
+              <button
+                onClick={() => handleSelect(null)}
+                className="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-slate-700/40 transition-colors"
+              >
+                ✕ Clear {field}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Summary card ──────────────────────────────────────────────────────────────
 
 // ── ClassifyCell ─────────────────────────────────────────────────────────────
 
@@ -328,6 +460,8 @@ const SummaryCard = ({ label, value, sub, color }: { label: string; value: strin
 
 export default function TransactionsPage({ companies }: { companies: Company[] }) {
   const [companyId, setCompanyId]     = useState('');
+  const [sourceKey, setSourceKey]     = useState('');
+  const [sources, setSources]         = useState<{ label: string; source: string; bank_id: string | null }[]>([]);
   const [currency, setCurrency]       = useState('ALL');
   const [txType, setTxType]           = useState<'all' | 'credit' | 'debit'>('all');
   const [search, setSearch]           = useState('');
@@ -342,19 +476,35 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [isMock, setIsMock]           = useState(false);
   const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const source = 'ifx';
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ source, page: String(page), limit: '20', date_from: dateFrom, date_to: dateTo });
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: '20',
+        date_from: dateFrom,
+        date_to: dateTo,
+      });
       if (companyId)          params.set('company_id', companyId);
+      const selectedOpt = sources.find(s => s.label === sourceKey);
+      if (selectedOpt) {
+        if (selectedOpt.bank_id) params.set('bank_id', selectedOpt.bank_id);
+        else                     params.set('source',  selectedOpt.source);
+      }
       if (currency !== 'ALL') params.set('currency', currency);
       if (txType !== 'all')   params.set('type', txType);
       if (search)             params.set('search', search);
+      if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
+
       const res = await fetch(`/api/transactions?${params}`);
       if (res.ok) {
         const json = await res.json();
+        if (sortBy === 'amount_usd') {
+          const dir = sortDir === 'asc' ? 1 : -1;
+          json.transactions = [...json.transactions].sort((a: Transaction, b: Transaction) =>
+            ((a.amount_usd ?? 0) - (b.amount_usd ?? 0)) * dir
+          );
+        }
         if (json.transactions?.length === 0 && page === 1 && !search && !companyId) {
           setIsMock(true);
           setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
@@ -371,9 +521,17 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     } finally {
       setLoading(false);
     }
-  }, [source, page, companyId, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
+  }, [page, companyId, sourceKey, sources, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    fetch('/api/transactions/sources')
+      .then(r => r.ok ? r.json() : [])
+      .then(setSources)
+      .catch(() => {});
+  }, []);
+
 
   const handleSearchInput = (v: string) => {
     setSearchInput(v);
@@ -395,7 +553,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   }, []);
 
   const exportCsv = useCallback(() => {
-    // In mock mode export all filtered rows; in API mode export current page
     const rows = isMock
       ? buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions
       : (data?.transactions ?? []);
@@ -431,7 +588,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const resetPage = () => setPage(1);
   const inputCls  = "border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400";
   const labelCls  = "text-slate-400 text-xs font-semibold uppercase tracking-wider";
-
   const { transactions = [], pagination, summary } = data || {};
 
   const SortIcon = ({ k }: { k: SortKey }) =>
@@ -450,6 +606,16 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
+
+        {sources.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className={labelCls}>Source</label>
+            <select value={sourceKey} onChange={e => { setSourceKey(e.target.value); resetPage(); }} className={`${inputCls} min-w-[120px]`}>
+              <option value="">All Sources</option>
+              {sources.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <label className={labelCls}>Currency</label>

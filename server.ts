@@ -542,7 +542,10 @@ async function startServer() {
         // value_usd=0 on a non-zero balance means the field was never populated —
         // fall back to live rate so newly-added wallets price correctly.
         // Negative balances are valid (overdrafts) and must not be discarded.
-        const hasDbValue      = dbValueUsd !== null && !(dbValueUsd === 0 && balance !== 0);
+        // Stablecoins always use the live rate (1.0) — DB value_usd may have been
+        // written with a non-1.0 market rate and must not override the peg.
+        const isStablecoin    = STABLECOINS.has(currency);
+        const hasDbValue      = !isStablecoin && dbValueUsd !== null && !(dbValueUsd === 0 && balance !== 0);
         const valueUsd        = hasDbValue ? dbValueUsd! : (rate !== undefined ? balance * rate : null);
         const valueUsdEstimated = !hasDbValue && rate !== undefined && valueUsd !== null;
 
@@ -1334,7 +1337,10 @@ async function startServer() {
         const balance    = Number(row.wallet_balance ?? 0);
         const currency   = row.wallet_currency as string;
         const rate       = rates[currency];
-        const hasDbValue = dbValueUsd !== null;
+        // value_usd=0 with a non-zero balance means the snapshot was created before
+        // USD values were populated — fall back to live rate. Stablecoins always use 1.0.
+        const isStablecoin = STABLECOINS.has(currency);
+        const hasDbValue = !isStablecoin && dbValueUsd !== null && !(dbValueUsd === 0 && balance !== 0);
         const valueUsd   = hasDbValue ? dbValueUsd! : (rate !== undefined ? balance * rate : null);
         bank.bank_accounts.get(row.bank_account_id).wallets.push({
           id: row.wallet_id, currency, balance,
@@ -1414,9 +1420,13 @@ async function startServer() {
         const balance  = Number(row.balance) || 0;
         const currency = row.currency as string;
 
-        // value_usd authoritative → fall back to balance × live rate (same as snapshot API)
-        const usdVal = (row.value_usd != null && row.value_usd !== '')
-          ? Number(row.value_usd)
+        // value_usd=0 with real balance means snapshot was created before USD values were
+        // populated — fall back to live rate. Stablecoins always use 1.0.
+        const snapshotDbUsd = (row.value_usd != null && row.value_usd !== '') ? Number(row.value_usd) : null;
+        const snapshotIsStable = STABLECOINS.has(currency);
+        const snapshotHasValue = !snapshotIsStable && snapshotDbUsd !== null && !(snapshotDbUsd === 0 && balance !== 0);
+        const usdVal = snapshotHasValue
+          ? snapshotDbUsd!
           : (rates[currency] !== undefined ? balance * rates[currency] : 0);
 
         const entry = byDate.get(dateKey)!;
@@ -1443,8 +1453,11 @@ async function startServer() {
         for (const row of liveRows as any[]) {
           const balance  = Number(row.balance) || 0;
           const currency = row.currency as string;
-          const usdVal = (row.value_usd != null && row.value_usd !== '')
-            ? Number(row.value_usd)
+          const liveDbUsd = (row.value_usd != null && row.value_usd !== '') ? Number(row.value_usd) : null;
+          const liveIsStable = STABLECOINS.has(currency);
+          const liveHasValue = !liveIsStable && liveDbUsd !== null && !(liveDbUsd === 0 && balance !== 0);
+          const usdVal = liveHasValue
+            ? liveDbUsd!
             : (rates[currency] !== undefined ? balance * rates[currency] : 0);
           todayEntry.total += usdVal;
           if (CRYPTO_SET.has(currency)) todayEntry.crypto += usdVal;
@@ -2371,17 +2384,86 @@ async function startServer() {
 
   // ── TRANSACTIONS ROUTES ───────────────────────────────────────────────────
 
+  // GET /api/transactions/sources
+  // Returns filter options for the Source dropdown.
+  // Sources with a single bank → { label: source, source, bank_id: null }
+  // Sources with multiple banks → one entry per bank → { label: bank_name, source, bank_id }
+  app.get("/api/transactions/sources", corsMiddleware, requireAuth, async (_req: any, res) => {
+    let conn: any;
+    try {
+      conn = await mysql.createConnection(dbConfig());
+      const [rows] = await conn.execute(`
+        SELECT
+          wt_src.source,
+          wt_src.bank_id,
+          b.name AS bank_name,
+          src_counts.bank_count
+        FROM (
+          SELECT DISTINCT source, bank_id
+          FROM wallet_transactions
+          WHERE source IS NOT NULL AND source != ''
+        ) wt_src
+        LEFT JOIN banks b ON b.id = wt_src.bank_id
+        JOIN (
+          SELECT source, COUNT(DISTINCT bank_id) AS bank_count
+          FROM wallet_transactions
+          WHERE source IS NOT NULL AND source != ''
+          GROUP BY source
+        ) src_counts ON src_counts.source = wt_src.source
+        ORDER BY wt_src.source, bank_name
+      `) as [any[], any];
+
+      // Group by source
+      const bySource = new Map<string, any[]>();
+      for (const r of rows as any[]) {
+        if (!bySource.has(r.source)) bySource.set(r.source, []);
+        bySource.get(r.source)!.push(r);
+      }
+
+      // A source is expanded into bank entries only when it has multiple banks
+      // AND none of the bank names contain the source name — meaning the bank
+      // names are meaningfully different (e.g. finsite → Leumi, Discount).
+      // Sources like ifx whose banks are all named "IFX …" stay as one entry.
+      const options: { label: string; source: string; bank_id: string | null }[] = [];
+      for (const [src, bankRows] of bySource.entries()) {
+        const anyBankNameMatchesSrc = bankRows.some((r: any) =>
+          (r.bank_name || '').toLowerCase().includes(src.toLowerCase())
+        );
+        if (bankRows.length === 1 || anyBankNameMatchesSrc) {
+          options.push({ label: src, source: src, bank_id: null });
+        } else {
+          for (const r of bankRows) {
+            options.push({ label: r.bank_name || r.bank_id, source: src, bank_id: r.bank_id });
+          }
+        }
+      }
+      options.sort((a, b) => a.label.localeCompare(b.label));
+
+      res.json(options);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally {
+      if (conn) conn.end();
+    }
+  });
+
   // GET /api/transactions
   app.get("/api/transactions", corsMiddleware, requireAuth, async (req: any, res) => {
     const {
-      company_id, wallet_id, currency,
+      company_id, bank_id, wallet_id, currency,
       date_from, date_to,
       type: txType,
       search,
-      source = 'ifx',
+      source = '',
       page = '1',
       limit: limitStr = '20',
+      sort_by = 'date',
+      sort_dir = 'desc',
     } = req.query as Record<string, string>;
+
+    const SORT_COLS: Record<string, string> = { date: 'wt.transaction_date', amount: 'wt.amount' };
+    const orderCol = SORT_COLS[sort_by] ?? 'wt.transaction_date';
+    const orderDir = sort_dir === 'asc' ? 'ASC' : 'DESC';
 
     const pageNum  = Math.max(1, parseInt(page, 10));
     const limitNum = Math.min(100, Math.max(1, parseInt(limitStr, 10)));
@@ -2397,6 +2479,7 @@ async function startServer() {
 
     if (source)                          { conditions.push('wt.source = ?');                              baseParams.push(source); }
     if (company_id)                      { conditions.push('wt.company_id = ?');                          baseParams.push(company_id); }
+    if (bank_id)                         { conditions.push('wt.bank_id = ?');                             baseParams.push(bank_id); }
     if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
@@ -2408,37 +2491,49 @@ async function startServer() {
       const [rates, dbConn] = await Promise.all([getUsdRates(), mysql.createConnection(dbConfig())]);
       conn = dbConn;
 
-      const [[summaryRow]] = await conn.execute(`
-        SELECT
-          COALESCE(SUM(CASE WHEN wt.type = 'credit' THEN wt.amount ELSE 0 END), 0) AS money_in,
-          COALESCE(SUM(CASE WHEN wt.type = 'debit'  THEN wt.amount ELSE 0 END), 0) AS money_out,
-          COUNT(*) AS tx_count
+      // Per-currency breakdown so we can convert to USD using live rates
+      const [summaryRows] = await conn.execute(`
+        SELECT wt.type, wt.currency,
+          COUNT(*) AS tx_count,
+          COALESCE(SUM(wt.amount), 0) AS total_amount
         FROM wallet_transactions wt ${where}
+        GROUP BY wt.type, wt.currency
       `, baseParams) as [any[], any];
 
       const [[countRow]] = await conn.execute(
         `SELECT COUNT(*) AS total FROM wallet_transactions wt ${where}`, baseParams
       ) as [any[], any];
 
-      const total    = Number(countRow.total)    || 0;
-      const moneyIn  = Number(summaryRow.money_in)  || 0;
-      const moneyOut = Number(summaryRow.money_out) || 0;
+      const STABLECOINS_SUMMARY = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
+      let moneyInUsd = 0, moneyOutUsd = 0;
+      for (const row of summaryRows as any[]) {
+        const rate = STABLECOINS_SUMMARY.has(row.currency) ? 1 : (rates[row.currency] ?? null);
+        if (rate === null) continue;
+        const usd = Number(row.total_amount) * rate;
+        if (row.type === 'credit') moneyInUsd  += usd;
+        else                       moneyOutUsd += usd;
+      }
+      moneyInUsd  = Math.round(moneyInUsd  * 100) / 100;
+      moneyOutUsd = Math.round(moneyOutUsd * 100) / 100;
+
+      const total = Number(countRow.total) || 0;
 
       const [rows] = await conn.execute(`
         SELECT
           wt.id, wt.wallet_id, wt.company_id, wt.bank_id,
           wt.transaction_date, wt.type, wt.amount, wt.currency,
           wt.other_party, wt.reference, wt.payment_scheme,
-          wt.balance_after, wt.source, wt.synced_at, wt.geo, wt.category,
+          wt.balance_after, wt.source, wt.synced_at,
+          wt.geo, wt.category,
           c.name AS company_name,
           b.name AS bank_name
         FROM wallet_transactions wt
         LEFT JOIN companies c ON c.id = wt.company_id
         LEFT JOIN banks     b ON b.id = wt.bank_id
         ${where}
-        ORDER BY wt.transaction_date DESC, wt.id DESC
-        LIMIT ? OFFSET ?
-      `, [...baseParams, limitNum, offset]) as [any[], any];
+        ORDER BY ${orderCol} ${orderDir}, wt.created_at ${orderDir}
+        LIMIT ${limitNum} OFFSET ${offset}
+      `, baseParams) as [any[], any];
 
       const STABLECOINS_SET = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
       const txWithUsd = (rows as any[]).map((row: any) => {
@@ -2449,10 +2544,11 @@ async function startServer() {
       res.json({
         transactions: txWithUsd,
         pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
-        summary: { money_in: moneyIn, money_out: moneyOut, net_change: moneyIn - moneyOut, tx_count: total },
+        summary: { money_in: moneyInUsd, money_out: moneyOutUsd, net_change: Math.round((moneyInUsd - moneyOutUsd) * 100) / 100, tx_count: total },
       });
     } catch (err: any) {
-      console.error(`[transactions] query error:`, err.message);
+      console.error(`[transactions] query error:`, err.message, '\n', err.stack);
+      res.setHeader('X-Query-Error', String(err.message).slice(0, 500));
       res.status(500).json({ error: "Query failed", detail: err.message });
     } finally {
       if (conn) conn.end();
@@ -2469,35 +2565,37 @@ async function startServer() {
     'TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement','Salary Israel',
     "G&A (Israel)",'Management - T','TAX','',
   ]);
-
   app.patch("/api/transactions/:id/classify", corsMiddleware, requireAuth, async (req: any, res) => {
     const { id } = req.params;
-    const { geo, category } = req.body as { geo?: string | null; category?: string | null };
+    const { geo, category } = req.body as { geo?: string; category?: string };
 
-    const geoVal      = geo      == null ? null : String(geo).trim();
-    const categoryVal = category == null ? null : String(category).trim();
+    const geoVal      = geo      === undefined ? undefined : (geo      ?? '');
+    const categoryVal = category === undefined ? undefined : (category ?? '');
 
-    if (geoVal      !== null && !VALID_GEOS.has(geoVal))       return res.status(400).json({ error: `Invalid geo: ${geoVal}` });
-    if (categoryVal !== null && !VALID_CATEGORIES.has(categoryVal)) return res.status(400).json({ error: `Invalid category: ${categoryVal}` });
+    if (geoVal !== undefined && !VALID_GEOS.has(geoVal)) {
+      return res.status(400).json({ error: `Invalid geo value: ${geoVal}` });
+    }
+    if (categoryVal !== undefined && !VALID_CATEGORIES.has(categoryVal)) {
+      return res.status(400).json({ error: `Invalid category value: ${categoryVal}` });
+    }
+
+    const updates: string[] = [];
+    const params: any[]     = [];
+    if (geoVal      !== undefined) { updates.push('geo = ?');      params.push(geoVal      || null); }
+    if (categoryVal !== undefined) { updates.push('category = ?'); params.push(categoryVal || null); }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(id);
 
     let conn: any;
     try {
       conn = await mysql.createConnection(dbConfig());
-      const updates: string[] = [];
-      const params: any[]     = [];
-      if (geo      !== undefined) { updates.push('geo = ?');      params.push(geoVal      || null); }
-      if (category !== undefined) { updates.push('category = ?'); params.push(categoryVal || null); }
-      if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
-
-      params.push(id);
-      const [result] = await conn.execute(
+      await conn.execute(
         `UPDATE wallet_transactions SET ${updates.join(', ')} WHERE id = ?`, params
-      ) as [any, any];
-
-      if (result.affectedRows === 0) return res.status(404).json({ error: 'Transaction not found' });
+      );
       res.json({ id, geo: geoVal || null, category: categoryVal || null });
     } catch (err: any) {
-      res.status(500).json({ error: 'Update failed', detail: err.message });
+      console.error(`[classify] update error:`, err.message);
+      res.status(500).json({ error: 'DB update failed', detail: err.message });
     } finally {
       if (conn) conn.end();
     }
@@ -2726,7 +2824,6 @@ async function startServer() {
             results.push({ wallet_id, balance, updated: true });
             updatedCount++;
           } else {
-            // Wallet ID not found — row exists check failed silently
             results.push({ wallet_id, balance, updated: false, error: 'wallet not found' });
             failedCount++;
           }
