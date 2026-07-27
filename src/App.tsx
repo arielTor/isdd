@@ -42,7 +42,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
 import { MOCK_COMPANIES } from './mockData';
-import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, ExchangeRate, RoleDef, UserPermission } from './types';
+import { CURRENCY_SYMBOLS, Company, Bank, BankAccount, User, UserRole, WalletAlert, RoleDef, UserPermission } from './types';
 import WidgetCanvas from './dashboard/WidgetCanvas';
 import { SparklineChart } from './dashboard/widgets';
 import type { SparkPoint } from './dashboard/widgets';
@@ -66,25 +66,13 @@ interface AuthUser {
   jobTitle?: string;
 }
 
-// --- Exchange Rates Mock ---
-const EXCHANGE_RATES: ExchangeRate[] = [
-  { base_currency: 'EUR', target_currency: 'USD', rate: 1.08 },
-  { base_currency: 'GBP', target_currency: 'USD', rate: 1.25 },
-  { base_currency: 'ILS', target_currency: 'USD', rate: 0.27 },
-  { base_currency: 'BTC', target_currency: 'USDT', rate: 64500.00 },
-  { base_currency: 'ETH', target_currency: 'USDT', rate: 3150.00 },
-];
-
-const convertCurrency = (amount: number, from: string): { amount: number, label: string } | null => {
+// Live rates are fetched from /api/liquidity and stored in component state (liveRates).
+// convertCurrency is defined inside the component to close over liveRates.
+const convertCurrencyWith = (rates: Record<string, number>, amount: number, from: string): { amount: number, label: string } | null => {
   if (from === 'USD' || from === 'USDT') return null;
-  const isCrypto = ['BTC', 'ETH'].includes(from);
-  const target = isCrypto ? 'USDT' : 'USD';
-  const rateObj = EXCHANGE_RATES.find(r => r.base_currency === from && r.target_currency === target);
-  if (!rateObj) return null;
-  return {
-    amount: amount * rateObj.rate,
-    label: target
-  };
+  const rate = rates[from];
+  if (!rate) return null;
+  return { amount: amount * rate, label: 'USD' };
 };
 
 // Currencies that carry meaningful decimal places — show 2dp in balance columns.
@@ -2373,6 +2361,9 @@ export default function App() {
   };
 
   // ── Company data ────────────────────────────────────────────────────────
+  const [liveRates, setLiveRates] = useState<Record<string, number>>({});
+  const convertCurrency = (amount: number, from: string) => convertCurrencyWith(liveRates, amount, from);
+
   const [companies, setCompanies] = useState<Company[]>(() => {
     const saved = localStorage.getItem('smarttool_data');
     if (!saved) return [];
@@ -2803,6 +2794,7 @@ export default function App() {
         } else {
           data = raw.dashboard_data || (Array.isArray(raw) ? raw : null);
         }
+        if (raw.rates && Object.keys(raw.rates).length > 0) setLiveRates(raw.rates);
 
         if (data && Array.isArray(data) && data.length > 0) {
           setCompanies(data);
@@ -2853,6 +2845,7 @@ export default function App() {
         
         const data = raw.data || raw.dashboard_data || (Array.isArray(raw) ? raw : null);
         const serverUpdate = raw.lastUpdateTime || 0;
+        if (raw.rates && Object.keys(raw.rates).length > 0) setLiveRates(raw.rates);
 
         if (data && Array.isArray(data) && data.length > 0) {
           // Only update if it's actually different to avoid flicker
@@ -2894,6 +2887,7 @@ export default function App() {
       const result = await res.json();
       const data = result.data || result.dashboard_data || (Array.isArray(result) ? result : null);
       const lastUpdate = result.lastUpdateTime || 0;
+      if (result.rates && Object.keys(result.rates).length > 0) setLiveRates(result.rates);
 
       if (data && Array.isArray(data) && data.length > 0) {
         console.log('%c [Sync] Data refreshed from DB.', 'color: #22c55e; font-weight: bold;');

@@ -68,8 +68,10 @@ async function startServer() {
   // Stores sessions in the `sessions` DB table so they survive restarts.
   // SAML-ready: only the login mechanism changes when switching to SAML;
   // session.user shape and all downstream middleware stay identical.
+  let pool: any; // initialised after dbConfig() below
+
   class MySQLSessionStore extends session.Store {
-    async _getConn() { return mysql.createConnection(dbConfig()); }
+    async _getConn() { return pool.getConnection(); }
 
     async _ensureTable() {
       const conn = await this._getConn();
@@ -82,7 +84,7 @@ async function startServer() {
             INDEX idx_expires (expires)
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
-      } finally { conn.end(); }
+      } finally { conn.release(); }
     }
 
     get(sid: string, cb: (err: any, session?: any) => void) {
@@ -93,7 +95,7 @@ async function startServer() {
           ) as [any[], any];
           if (!rows.length || Date.now() > rows[0].expires) return cb(null, null);
           cb(null, JSON.parse(rows[0].data));
-        } catch (e) { cb(e); } finally { conn.end(); }
+        } catch (e) { cb(e); } finally { conn.release(); }
       }).catch(cb);
     }
 
@@ -108,7 +110,7 @@ async function startServer() {
             [sid, expires, data]
           );
           cb();
-        } catch (e) { cb(e); } finally { conn.end(); }
+        } catch (e) { cb(e); } finally { conn.release(); }
       }).catch(cb);
     }
 
@@ -117,7 +119,7 @@ async function startServer() {
         try {
           await conn.execute("DELETE FROM sessions WHERE session_id = ?", [sid]);
           cb();
-        } catch (e) { cb(e); } finally { conn.end(); }
+        } catch (e) { cb(e); } finally { conn.release(); }
       }).catch(cb);
     }
 
@@ -129,7 +131,7 @@ async function startServer() {
             "UPDATE sessions SET expires = ? WHERE session_id = ?", [expires, sid]
           );
           cb();
-        } catch (e) { cb(e); } finally { conn.end(); }
+        } catch (e) { cb(e); } finally { conn.release(); }
       }).catch(cb);
     }
   }
@@ -378,6 +380,13 @@ async function startServer() {
     };
   }
 
+  pool = mysql.createPool({
+    ...dbConfig(),
+    connectionLimit: 10,
+    waitForConnections: true,
+    queueLimit: 0,
+  });
+
   // ── Helper: filter liquidity data by user permissions ────────────────────
   function filterByPermissions(
     data: any[],
@@ -480,7 +489,7 @@ async function startServer() {
   async function queryDatabase(): Promise<void> {
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
     } catch (err: any) {
       throw new Error(`DB connection failed: ${err.message}`);
     }
@@ -645,7 +654,7 @@ async function startServer() {
       fs.writeFileSync(DATA_FILE, JSON.stringify(latestData, null, 2));
       console.log(`✅ DB sync: ${rows.length} rows → ${data.length} companies`);
     } finally {
-      await conn.end();
+      await conn.release();
     }
   }
 
@@ -657,7 +666,7 @@ async function startServer() {
   app.get("/api/auth/setup-status", corsMiddleware, async (_req, res) => {
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       const [rows] = (await conn.execute(
         "SELECT COUNT(*) AS cnt FROM users WHERE password_hash IS NOT NULL"
       )) as [any[], any];
@@ -679,7 +688,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       const [check] = (await conn.execute(
         "SELECT COUNT(*) AS cnt FROM users WHERE password_hash IS NOT NULL"
       )) as [any[], any];
@@ -716,7 +725,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       const [users] = (await conn.execute(
         "SELECT * FROM users WHERE email = ? AND status = 'Active'",
         [email]
@@ -838,7 +847,7 @@ async function startServer() {
 
         let conn: any;
         try {
-          conn = await mysql.createConnection(dbConfig());
+          conn = await pool.getConnection();
 
           // 1) Record every group we saw (auto-discovery for the admin UI).
           for (const g of groups) {
@@ -977,7 +986,7 @@ async function startServer() {
   app.get("/api/users", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       const [users] = (await conn.execute(
         "SELECT id, name, email, role, status, auth_source FROM users ORDER BY name"
       )) as [any[], any];
@@ -1020,7 +1029,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
 
       // Check email not already taken
       const [existing] = (await conn.execute(
@@ -1072,7 +1081,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
 
       if (password) {
         const hash = await bcrypt.hash(password, 10);
@@ -1125,7 +1134,7 @@ async function startServer() {
     const { id } = req.params;
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       await conn.execute("DELETE FROM user_permissions WHERE user_id = ?", [id]);
       await conn.execute("DELETE FROM user_roles WHERE user_id = ?", [id]);
       await conn.execute("DELETE FROM users WHERE id = ?", [id]);
@@ -1146,7 +1155,7 @@ async function startServer() {
       return res.status(400).json({ error: "authSource must be 'password' or 'sso'" });
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       await conn.execute("UPDATE users SET auth_source = ? WHERE id = ?", [authSource, req.params.id]);
       res.json({ ok: true });
     } catch (err: any) {
@@ -1164,12 +1173,12 @@ async function startServer() {
   // Dashboard data - filtered per logged-in user's permissions
   app.get("/api/liquidity", corsMiddleware, requireAuth, (req: any, res) => {
     const user = req.session.user;
-    // Admins + users with no explicit permissions see everything
+    const rates = rateCache.usdRates;
     if (user.role === "Admin" || !user.permissions || user.permissions.length === 0) {
-      return res.json({ data: latestData, lastUpdateTime });
+      return res.json({ data: latestData, lastUpdateTime, rates });
     }
     const filtered = filterByPermissions(latestData, user.permissions);
-    res.json({ data: filtered, lastUpdateTime });
+    res.json({ data: filtered, lastUpdateTime, rates });
   });
 
   // All wallets for Manual Data Upload (Admin + Manager only, all banks regardless of is_verified)
@@ -1180,7 +1189,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       const [rows] = (await conn.execute(`
         SELECT
           c.id     AS company_id,
@@ -1219,7 +1228,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
 
       // Check whether any snapshot exists for this date
       const [check] = await conn.execute(
@@ -1327,7 +1336,7 @@ async function startServer() {
     const companyId = req.query.companyId as string | undefined;
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
 
       // Same crypto set used everywhere in the app
       const CRYPTO_SET = new Set(['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT']);
@@ -1458,7 +1467,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
     } catch (err: any) {
       console.error("Balance update - DB connection failed:", err.message);
       return res.status(500).json({ error: "Database unavailable - check server logs" });
@@ -1504,14 +1513,14 @@ async function startServer() {
       console.error("Balance update error:", err.message);
       res.status(500).json({ error: "Update failed - check server logs" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
   // ── Alerts DB table ───────────────────────────────────────────────────────
   (async () => {
     try {
-      const conn = await mysql.createConnection(dbConfig());
+      const conn = await pool.getConnection();
       try {
         await conn.execute(`
           CREATE TABLE IF NOT EXISTS wallet_alerts (
@@ -1528,7 +1537,7 @@ async function startServer() {
         `);
         console.log("[Alerts] wallet_alerts table ready");
       } catch (e: any) { console.warn("[Alerts] table init:", e.message); }
-      finally { conn.end(); }
+      finally { conn.release(); }
     } catch (e: any) {
       console.warn("[Alerts] DB not reachable on startup (alerts table skipped):", e.message);
     }
@@ -1537,7 +1546,7 @@ async function startServer() {
   // ── Per-user dashboard layout table ───────────────────────────────────────
   (async () => {
     try {
-      const conn = await mysql.createConnection(dbConfig());
+      const conn = await pool.getConnection();
       try {
         await conn.execute(`
           CREATE TABLE IF NOT EXISTS user_dashboard_layout (
@@ -1548,7 +1557,7 @@ async function startServer() {
         `);
         console.log("[Dashboard] user_dashboard_layout table ready");
       } catch (e: any) { console.warn("[Dashboard] table init:", e.message); }
-      finally { conn.end(); }
+      finally { conn.release(); }
     } catch (e: any) {
       console.warn("[Dashboard] DB not reachable on startup (layout table skipped):", e.message);
     }
@@ -1556,7 +1565,7 @@ async function startServer() {
 
   // GET /api/dashboard-layout - the current user's saved widget layout (null if none)
   app.get("/api/dashboard-layout", corsMiddleware, requireAuth, async (req: any, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute(
         "SELECT layout_json FROM user_dashboard_layout WHERE user_id = ?",
@@ -1570,7 +1579,7 @@ async function startServer() {
       console.error("Dashboard layout load error:", err.message);
       res.status(500).json({ error: "Failed to load layout" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
@@ -1580,7 +1589,7 @@ async function startServer() {
     if (!Array.isArray(layout)) {
       return res.status(400).json({ error: "layout must be an array" });
     }
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute(
         `INSERT INTO user_dashboard_layout (user_id, layout_json) VALUES (?, ?)
@@ -1592,7 +1601,7 @@ async function startServer() {
       console.error("Dashboard layout save error:", err.message);
       res.status(500).json({ error: "Failed to save layout" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
@@ -1600,7 +1609,7 @@ async function startServer() {
   // Each user can keep several dashboards and mark one as their main (default).
   (async () => {
     try {
-      const conn = await mysql.createConnection(dbConfig());
+      const conn = await pool.getConnection();
       try {
         await conn.execute(`
           CREATE TABLE IF NOT EXISTS user_dashboards (
@@ -1626,7 +1635,7 @@ async function startServer() {
         } catch (e: any) { console.warn("[Dashboards] legacy migration skipped:", e.message); }
         console.log("[Dashboards] user_dashboards table ready");
       } catch (e: any) { console.warn("[Dashboards] table init:", e.message); }
-      finally { conn.end(); }
+      finally { conn.release(); }
     } catch (e: any) {
       console.warn("[Dashboards] DB not reachable on startup (user_dashboards skipped):", e.message);
     }
@@ -1636,7 +1645,7 @@ async function startServer() {
 
   // GET /api/dashboards - all of the current user's dashboards (ordered; default first).
   app.get("/api/dashboards", corsMiddleware, requireAuth, async (req: any, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute(
         "SELECT id, name, layout_json, is_default, sort_order FROM user_dashboards WHERE user_id = ? ORDER BY is_default DESC, sort_order ASC, created_at ASC",
@@ -1652,7 +1661,7 @@ async function startServer() {
       console.error("Dashboards load error:", err.message);
       res.status(500).json({ error: "Failed to load dashboards" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
@@ -1663,7 +1672,7 @@ async function startServer() {
       return res.status(400).json({ error: "Name required (max 120 chars)" });
     }
     if (!Array.isArray(layout)) return res.status(400).json({ error: "layout must be an array" });
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const uid = req.session.user.id;
       // A new dashboard only becomes the main view when explicitly requested - the
@@ -1680,14 +1689,14 @@ async function startServer() {
       console.error("Dashboard create error:", err.message);
       res.status(500).json({ error: "Failed to create dashboard" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
   // POST /api/dashboards/clear-default - unset any custom main so the built-in
   // "All Companies" dashboard becomes the landing view again.
   app.post("/api/dashboards/clear-default", corsMiddleware, requireAuth, async (req: any, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute("UPDATE user_dashboards SET is_default = 0 WHERE user_id = ?", [req.session.user.id]);
       res.json({ ok: true });
@@ -1695,7 +1704,7 @@ async function startServer() {
       console.error("Dashboard clear-default error:", err.message);
       res.status(500).json({ error: "Failed to update dashboards" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
@@ -1706,7 +1715,7 @@ async function startServer() {
       return res.status(400).json({ error: "Name invalid (max 120 chars)" });
     }
     if (layout != null && !Array.isArray(layout)) return res.status(400).json({ error: "layout must be an array" });
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const uid = req.session.user.id;
       const [own] = (await conn.execute("SELECT id FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid])) as any;
@@ -1722,13 +1731,13 @@ async function startServer() {
       console.error("Dashboard update error:", err.message);
       res.status(500).json({ error: "Failed to update dashboard" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
   // DELETE /api/dashboards/:id - remove; if it was the main, promote the next one.
   app.delete("/api/dashboards/:id", corsMiddleware, requireAuth, async (req: any, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const uid = req.session.user.id;
       const [rows] = (await conn.execute("SELECT is_default FROM user_dashboards WHERE id = ? AND user_id = ?", [req.params.id, uid])) as any;
@@ -1744,7 +1753,7 @@ async function startServer() {
       console.error("Dashboard delete error:", err.message);
       res.status(500).json({ error: "Failed to delete dashboard" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
@@ -1754,7 +1763,7 @@ async function startServer() {
   // app_settings below and remains Admin-managed.
   (async () => {
     try {
-      const conn = await mysql.createConnection(dbConfig());
+      const conn = await pool.getConnection();
       try {
         await conn.execute(`
           CREATE TABLE IF NOT EXISTS user_settings (
@@ -1767,7 +1776,7 @@ async function startServer() {
         `);
         console.log("[Settings] user_settings table ready");
       } catch (e: any) { console.warn("[Settings] table init:", e.message); }
-      finally { conn.end(); }
+      finally { conn.release(); }
     } catch (e: any) {
       console.warn("[Settings] DB not reachable on startup (user_settings skipped):", e.message);
     }
@@ -1775,7 +1784,7 @@ async function startServer() {
 
   // GET /api/my-settings - the current user's personal preferences (theme + notifications).
   app.get("/api/my-settings", corsMiddleware, requireAuth, async (req: any, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute(
         "SELECT k, v FROM user_settings WHERE user_id = ?",
@@ -1792,7 +1801,7 @@ async function startServer() {
       console.error("My-settings load error:", err.message);
       res.json({ theme: null, notifyPush: false, notifyEmail: false });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
@@ -1802,7 +1811,7 @@ async function startServer() {
     if (theme != null && !["dark", "gray", "light"].includes(theme)) {
       return res.status(400).json({ error: "Theme invalid" });
     }
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const uid = req.session.user.id;
       const upsert = (k: string, v: string) => conn.execute(
@@ -1818,14 +1827,14 @@ async function startServer() {
       console.error("My-settings save error:", err.message);
       res.status(500).json({ error: "Failed to save settings" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
   // ── App settings (branding) table ─────────────────────────────────────────
   (async () => {
     try {
-      const conn = await mysql.createConnection(dbConfig());
+      const conn = await pool.getConnection();
       try {
         await conn.execute(`
           CREATE TABLE IF NOT EXISTS app_settings (
@@ -1836,7 +1845,7 @@ async function startServer() {
         `);
         console.log("[Branding] app_settings table ready");
       } catch (e: any) { console.warn("[Branding] table init:", e.message); }
-      finally { conn.end(); }
+      finally { conn.release(); }
     } catch (e: any) {
       console.warn("[Branding] DB not reachable on startup (settings table skipped):", e.message);
     }
@@ -1846,7 +1855,7 @@ async function startServer() {
   // GET /api/branding/public - logo + site name only, no auth (used by the login screen).
   // Deliberately excludes company logos and any other data.
   app.get("/api/branding/public", corsMiddleware, async (_req, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute(
         "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_logo_bg')"
@@ -1861,12 +1870,12 @@ async function startServer() {
     } catch {
       res.json({ siteName: "Liquidity Reports", logo: null, logoBg: "light" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
   app.get("/api/branding", corsMiddleware, requireAuth, async (_req, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute(
         "SELECT k, v FROM app_settings WHERE k IN ('brand_site_name', 'brand_logo', 'brand_theme', 'brand_logo_bg') OR k LIKE 'company_logo_%'"
@@ -1892,7 +1901,7 @@ async function startServer() {
       console.error("Branding load error:", err.message);
       res.json({ siteName: "Liquidity Reports", logo: null, theme: "dark", logoBg: "light", companyLogos: {} });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
@@ -1921,7 +1930,7 @@ async function startServer() {
         }
       }
     }
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const upsert = (k: string, v: string) => conn.execute(
         `INSERT INTO app_settings (k, v) VALUES (?, ?)
@@ -1943,14 +1952,14 @@ async function startServer() {
       console.error("Branding save error:", err.message);
       res.status(500).json({ error: "Failed to save branding" });
     } finally {
-      await conn.end();
+      await conn.release();
     }
   });
 
   // ── Roles table (custom roles + per-role company/bank access) ─────────────
   (async () => {
     try {
-      const conn = await mysql.createConnection(dbConfig());
+      const conn = await pool.getConnection();
       try {
         await conn.execute(`
           CREATE TABLE IF NOT EXISTS app_roles (
@@ -1996,7 +2005,7 @@ async function startServer() {
         }
         console.log("[Roles] app_roles + user_roles tables ready");
       } catch (e: any) { console.warn("[Roles] table init:", e.message); }
-      finally { conn.end(); }
+      finally { conn.release(); }
     } catch (e: any) {
       console.warn("[Roles] DB not reachable on startup (roles table skipped):", e.message);
     }
@@ -2005,7 +2014,7 @@ async function startServer() {
   // ── Entra SSO: profile columns + discovered groups + group→role mapping ────
   (async () => {
     try {
-      const conn = await mysql.createConnection(dbConfig());
+      const conn = await pool.getConnection();
       try {
         // Profile columns on the pre-existing users table (each guarded for in-place upgrade).
         for (const col of [
@@ -2036,7 +2045,7 @@ async function startServer() {
         `);
         console.log("[SSO] Entra tables ready");
       } catch (e: any) { console.warn("[SSO] table init:", e.message); }
-      finally { conn.end(); }
+      finally { conn.release(); }
     } catch (e: any) {
       console.warn("[SSO] DB not reachable on startup (Entra tables skipped):", e.message);
     }
@@ -2044,7 +2053,7 @@ async function startServer() {
 
   // GET /api/roles - list roles with parsed company/bank access
   app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute("SELECT id, name, builtin, permissions_json, pages_json FROM app_roles ORDER BY builtin DESC, name")) as any;
       const roles = (rows as any[]).map(r => {
@@ -2057,7 +2066,7 @@ async function startServer() {
     } catch (err: any) {
       console.error("Roles load error:", err.message);
       res.status(500).json({ error: "Failed to load roles" });
-    } finally { await conn.end(); }
+    } finally { await conn.release(); }
   });
 
   // POST /api/roles - create a custom role (Admin only)
@@ -2066,14 +2075,14 @@ async function startServer() {
     if (!name) return res.status(400).json({ error: "Role name is required" });
     if (name.length > 120) return res.status(400).json({ error: "Role name too long" });
     const id = `role_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e4).toString(36)}`;
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute("INSERT INTO app_roles (id, name, builtin, permissions_json) VALUES (?, ?, 0, '[]')", [id, name]);
       res.json({ ok: true, id });
     } catch (err: any) {
       console.error("Role create error:", err.message);
       res.status(500).json({ error: "Failed to create role" });
-    } finally { await conn.end(); }
+    } finally { await conn.release(); }
   });
 
   // PUT /api/roles/:id - update a role's name and/or company/bank access (Admin only)
@@ -2085,7 +2094,7 @@ async function startServer() {
     if (pages != null && !Array.isArray(pages)) {
       return res.status(400).json({ error: "pages must be an array" });
     }
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       if (typeof name === "string" && name.trim()) {
         await conn.execute("UPDATE app_roles SET name = ? WHERE id = ?", [name.trim(), req.params.id]);
@@ -2100,12 +2109,12 @@ async function startServer() {
     } catch (err: any) {
       console.error("Role update error:", err.message);
       res.status(500).json({ error: "Failed to update role" });
-    } finally { await conn.end(); }
+    } finally { await conn.release(); }
   });
 
   // DELETE /api/roles/:id - remove a custom role (built-in roles are protected)
   app.delete("/api/roles/:id", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute("SELECT builtin FROM app_roles WHERE id = ?", [req.params.id])) as any;
       if (rows.length && rows[0].builtin) return res.status(400).json({ error: "Built-in roles cannot be deleted" });
@@ -2116,13 +2125,13 @@ async function startServer() {
     } catch (err: any) {
       console.error("Role delete error:", err.message);
       res.status(500).json({ error: "Failed to delete role" });
-    } finally { await conn.end(); }
+    } finally { await conn.release(); }
   });
 
   // ── Entra group → role mapping (Admin only) ───────────────────────────────
   // GET /api/entra/groups - discovered Entra groups with their label + mapped roles.
   app.get("/api/entra/groups", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [groups] = (await conn.execute(
         "SELECT group_id, label, first_seen, last_seen FROM entra_groups ORDER BY last_seen DESC"
@@ -2143,7 +2152,7 @@ async function startServer() {
     } catch (err: any) {
       console.error("Entra groups load error:", err.message);
       res.status(500).json({ error: "Failed to load groups" });
-    } finally { await conn.end(); }
+    } finally { await conn.release(); }
   });
 
   // PUT /api/entra/groups/:groupId - set an admin label and/or the mapped roles.
@@ -2156,7 +2165,7 @@ async function startServer() {
     if (roleIds != null && (!Array.isArray(roleIds) || roleIds.some((r: any) => typeof r !== "string"))) {
       return res.status(400).json({ error: "roleIds must be an array of role ids" });
     }
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute(
         "INSERT INTO entra_groups (group_id, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label)",
@@ -2172,12 +2181,12 @@ async function startServer() {
     } catch (err: any) {
       console.error("Entra group save error:", err.message);
       res.status(500).json({ error: "Failed to save group mapping" });
-    } finally { await conn.end(); }
+    } finally { await conn.release(); }
   });
 
   // GET /api/alerts - list all alerts
   app.get("/api/alerts", corsMiddleware, requireAuth, async (_req, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = await conn.execute("SELECT * FROM wallet_alerts ORDER BY created_at DESC") as any;
       const alerts = (rows as any[]).map(r => ({
@@ -2186,13 +2195,13 @@ async function startServer() {
       }));
       res.json(alerts);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
-    finally { conn.end(); }
+    finally { conn.release(); }
   });
 
   // POST /api/alerts - create alert
   app.post("/api/alerts", corsMiddleware, requireAuth, async (req, res) => {
     const { id, companyId, bankId, walletId, threshold, email, isEnabled } = req.body;
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute(
         "INSERT INTO wallet_alerts (id, company_id, bank_id, wallet_id, threshold, email, is_enabled) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE threshold=VALUES(threshold), email=VALUES(email), is_enabled=VALUES(is_enabled)",
@@ -2200,35 +2209,35 @@ async function startServer() {
       );
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
-    finally { conn.end(); }
+    finally { conn.release(); }
   });
 
   // DELETE /api/alerts/:id - delete alert
   app.delete("/api/alerts/:id", corsMiddleware, requireAuth, async (req, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute("DELETE FROM wallet_alerts WHERE id=?", [req.params.id]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
-    finally { conn.end(); }
+    finally { conn.release(); }
   });
 
   // PUT /api/alerts/:id/toggle - enable/disable
   app.put("/api/alerts/:id/toggle", corsMiddleware, requireAuth, async (req, res) => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute("UPDATE wallet_alerts SET is_enabled = NOT is_enabled WHERE id=?", [req.params.id]);
       const [rows] = await conn.execute("SELECT is_enabled FROM wallet_alerts WHERE id=?", [req.params.id]) as any;
       res.json({ isEnabled: (rows as any[])[0]?.is_enabled === 1 });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
-    finally { conn.end(); }
+    finally { conn.release(); }
   });
 
   // ── Server-side alert checker ─────────────────────────────────────────────
   async function checkAlerts() {
     const webhookUrl = process.env.ZAPIER_NOTIFY_WEBHOOK;
     if (!webhookUrl) return;
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [alertRows] = await conn.execute("SELECT * FROM wallet_alerts WHERE is_enabled=1") as any;
       if (!(alertRows as any[]).length) return;
@@ -2279,7 +2288,7 @@ async function startServer() {
     } catch (e: any) {
       console.warn("[Alerts] checkAlerts error:", e.message);
     } finally {
-      conn.end();
+      conn.release();
     }
   }
 
@@ -2331,7 +2340,7 @@ async function startServer() {
   app.get("/api/transactions/sources", corsMiddleware, requireAuth, async (_req: any, res) => {
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       const [rows] = await conn.execute(`
         SELECT
           wt_src.source,
@@ -2383,7 +2392,7 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     } finally {
-      if (conn) conn.end();
+      if (conn) conn.release();
     }
   });
 
@@ -2431,7 +2440,7 @@ async function startServer() {
     const where = `WHERE ${conditions.join(' AND ')}`;
     let conn: any;
     try {
-      const [rates, dbConn] = await Promise.all([getUsdRates(), mysql.createConnection(dbConfig())]);
+      const [rates, dbConn] = await Promise.all([getUsdRates(), pool.getConnection()]);
       conn = dbConn;
 
       // Per-currency breakdown so we can convert to USD using live rates
@@ -2494,7 +2503,7 @@ async function startServer() {
       res.setHeader('X-Query-Error', String(err.message).slice(0, 500));
       res.status(500).json({ error: "Query failed", detail: err.message });
     } finally {
-      if (conn) conn.end();
+      if (conn) conn.release();
     }
   });
 
@@ -2531,7 +2540,7 @@ async function startServer() {
 
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       await conn.execute(
         `UPDATE wallet_transactions SET ${updates.join(', ')} WHERE id = ?`, params
       );
@@ -2540,7 +2549,7 @@ async function startServer() {
       console.error(`[classify] update error:`, err.message);
       res.status(500).json({ error: 'DB update failed', detail: err.message });
     } finally {
-      if (conn) conn.end();
+      if (conn) conn.release();
     }
   });
 
@@ -2553,7 +2562,7 @@ async function startServer() {
   }): Promise<void> {
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       await conn.execute(
         `INSERT INTO api_call_logs
            (direction, source, endpoint, method, status_code, request_body, response_body, duration_ms, ip_address)
@@ -2565,7 +2574,7 @@ async function startServer() {
     } catch {
       // Silently ignore — table may not exist yet; logging must never break the main endpoint
     } finally {
-      if (conn) conn.end();
+      if (conn) conn.release();
     }
   }
 
@@ -2597,7 +2606,7 @@ async function startServer() {
     const where = `WHERE ${conditions.join(' AND ')}`;
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
 
       const [[summaryRow]] = await conn.execute(`
         SELECT
@@ -2634,7 +2643,7 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: "Query failed", detail: err.message });
     } finally {
-      if (conn) conn.end();
+      if (conn) conn.release();
     }
   });
 
@@ -2684,7 +2693,7 @@ async function startServer() {
     let statusCode = 200;
     let conn: any;
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
       await conn.execute(
         `INSERT INTO wallet_transactions
           (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
@@ -2723,7 +2732,7 @@ async function startServer() {
         duration_ms: Date.now() - startMs, ip_address: ip,
       });
     } finally {
-      if (conn) conn.end();
+      if (conn) conn.release();
     }
   });
 
@@ -2753,7 +2762,7 @@ async function startServer() {
     let failedCount  = 0;
 
     try {
-      conn = await mysql.createConnection(dbConfig());
+      conn = await pool.getConnection();
 
       for (const item of updates) {
         const { wallet_id, balance } = item;
@@ -2780,7 +2789,7 @@ async function startServer() {
       console.error(`[${new Date().toISOString()}] [sync-balances] DB connection error:`, connErr.message);
       return res.status(500).json({ error: "DB connection failed", detail: connErr.message });
     } finally {
-      if (conn) conn.end();
+      if (conn) conn.release();
     }
 
     const total = updates.length;
