@@ -474,6 +474,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [data, setData]               = useState<ApiResponse | null>(null);
   const [loading, setLoading]         = useState(false);
   const [isMock, setIsMock]           = useState(false);
+  const [showMgFees, setShowMgFees]   = useState(false);
   const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -494,6 +495,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       if (currency !== 'ALL') params.set('currency', currency);
       if (txType !== 'all')   params.set('type', txType);
       if (search)             params.set('search', search);
+      if (showMgFees)         params.set('show_mg_fees', '1');
       if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
 
       const res = await fetch(`/api/transactions?${params}`);
@@ -521,7 +523,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     } finally {
       setLoading(false);
     }
-  }, [page, companyId, sourceKey, sources, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
+  }, [page, companyId, sourceKey, sources, currency, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -696,14 +698,30 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             {pagination ? `${pagination.total.toLocaleString()} transaction${pagination.total !== 1 ? 's' : ''}` : ''}
             {isMock ? ' (demo)' : ''}
           </span>
-          <button
-            onClick={exportCsv}
-            disabled={transactions.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Download size={13} />
-            Export CSV
-          </button>
+          <div className="flex items-center gap-3">
+            {/* MoneyGate Fee toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">MG Fees</span>
+              <button
+                role="switch"
+                aria-checked={showMgFees}
+                onClick={() => { setShowMgFees(v => !v); setPage(1); }}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
+                  showMgFees ? 'bg-indigo-500' : 'bg-slate-300'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${showMgFees ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+            </label>
+            <button
+              onClick={exportCsv}
+              disabled={transactions.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download size={13} />
+              Export CSV
+            </button>
+          </div>
         </div>
 
         {loading && !data ? (
