@@ -2404,6 +2404,7 @@ async function startServer() {
       type: txType,
       search,
       source = '',
+      show_mg_fees = '',
       page = '1',
       limit: limitStr = '20',
       sort_by = 'date',
@@ -2433,7 +2434,7 @@ async function startServer() {
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
     if (search)                          { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ?)'); baseParams.push(`%${search}%`, `%${search}%`); }
-
+    if (show_mg_fees !== '1')            { conditions.push("NOT (wt.source = 'moneygate' AND wt.reference = 'Fee')"); }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
     let conn: any;
