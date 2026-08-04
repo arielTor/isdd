@@ -2494,8 +2494,6 @@ async function startServer() {
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
     if (search)                          { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ?)'); baseParams.push(`%${search}%`, `%${search}%`); }
 
-    // Never surface MoneyGate fee rows — they are internal ledger entries, not real transactions
-    conditions.push("NOT (wt.source = 'moneygate' AND wt.reference = 'Fee')");
 
     const where = `WHERE ${conditions.join(' AND ')}`;
     let conn: any;
