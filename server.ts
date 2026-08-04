@@ -2439,7 +2439,7 @@ async function startServer() {
           (r.bank_name || '').toLowerCase().includes(src.toLowerCase())
         );
         if (bankRows.length === 1 || anyBankNameMatchesSrc) {
-          options.push({ label: src, source: src, bank_id: null });
+          options.push({ label: src, source: src, bank_id: bankRows[0].bank_id });
         } else {
           for (const r of bankRows) {
             options.push({ label: r.bank_name || r.bank_id, source: src, bank_id: r.bank_id });
