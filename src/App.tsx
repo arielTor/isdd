@@ -675,6 +675,8 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
   const [samlEnabled, setSamlEnabled] = useState(true);
   const [addId, setAddId] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [pwLoginDisabled, setPwLoginDisabled] = useState(false);
+  const [savingPwLogin, setSavingPwLogin] = useState(false);
 
   const load = () =>
     fetch('/api/entra/groups', { credentials: 'include' })
@@ -682,6 +684,31 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
       .then(d => { setGroups(d.groups || []); if (typeof d.samlEnabled === 'boolean') setSamlEnabled(d.samlEnabled); })
       .catch(() => setGroups([]));
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    fetch('/api/auth/login-settings', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setPwLoginDisabled(!!d.passwordLoginDisabled); })
+      .catch(() => {});
+  }, []);
+
+  const togglePwLogin = async () => {
+    const next = !pwLoginDisabled;
+    setSavingPwLogin(true);
+    setPwLoginDisabled(next); // optimistic
+    try {
+      const res = await fetch('/api/auth/login-settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ passwordLoginDisabled: next }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setPwLoginDisabled(!next); // revert
+        if (d?.error) alert(d.error);
+      }
+    } catch { setPwLoginDisabled(!next); }
+    finally { setSavingPwLogin(false); }
+  };
 
   const save = async (groupId: string, patch: Partial<Pick<EntraGroup, 'label' | 'roleIds'>>) => {
     setSavingId(groupId);
@@ -709,6 +736,38 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
 
   return (
     <div className="space-y-4">
+      {/* Sign-in method: optionally require Microsoft SSO for everyone */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900">Require Microsoft sign-in</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              When on, the email &amp; password form is hidden on the login screen and only
+              &quot;Sign in with Microsoft&quot; is offered. Available only once SSO is configured, so no one can be locked out.
+            </p>
+            {pwLoginDisabled && (
+              <p className="text-[11px] font-semibold text-indigo-600 mt-2">Email &amp; password sign-in is currently disabled.</p>
+            )}
+          </div>
+          <button
+            role="switch"
+            aria-checked={pwLoginDisabled}
+            disabled={!samlEnabled || savingPwLogin}
+            onClick={togglePwLogin}
+            title={!samlEnabled ? 'Configure Microsoft SSO first' : undefined}
+            className={`relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${pwLoginDisabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${pwLoginDisabled ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+        {!samlEnabled && (
+          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs mt-3">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>SSO is not configured on this environment yet, so email &amp; password sign-in can't be disabled.</span>
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div>
           <h3 className="text-sm font-bold text-slate-900">Entra groups → roles</h3>
