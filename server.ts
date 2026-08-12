@@ -224,6 +224,12 @@ async function startServer() {
           wantAssertionsSigned: true,
           wantAuthnResponseSigned: false,
           identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+          // Don't pin the authn method. By default passport-saml requests
+          // PasswordProtectedTransport, which makes Entra reject users who signed in
+          // with MFA, passwordless phone, or biometrics (Windows Hello) with
+          // AADSTS75011. Omitting RequestedAuthnContext lets Entra use whatever
+          // method the user actually authenticated with.
+          disableRequestedAuthnContext: true,
         }),
       },
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false),
