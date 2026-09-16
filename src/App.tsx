@@ -3047,8 +3047,16 @@ export default function App() {
     return <LoginScreen onLogin={(user) => setAuthUser(user)} />;
   }
 
+  const isSandbox = import.meta.env.MODE === 'staging';
+
   return (
-    <div className="flex h-screen w-full overflow-hidden selection:bg-indigo-600/10 selection:text-indigo-600 font-sans">
+    <div className="flex flex-col h-screen w-full overflow-hidden font-sans">
+      {isSandbox && (
+        <div className="flex-shrink-0 bg-amber-400 text-amber-950 text-xs font-semibold text-center py-1 tracking-wide z-50">
+          SANDBOX ENVIRONMENT — demo data only, no live DB connection
+        </div>
+      )}
+      <div className="flex flex-1 min-h-0 overflow-hidden selection:bg-indigo-600/10 selection:text-indigo-600">
       <Sidebar
         companies={companies}
         selectedCompanyId={selectedCompanyId}
@@ -3767,12 +3775,13 @@ export default function App() {
           roles={roles}
         />
 
-        <BankDetailsModal 
+        <BankDetailsModal
           bank={selectedBankDetails}
           isOpen={isBankDetailsModalOpen}
           onClose={() => setIsBankDetailsModalOpen(false)}
           alerts={alerts}
         />
+      </div>
       </div>
     </div>
   );
