@@ -601,35 +601,35 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
+                <tr className="bg-slate-800/50 border-b border-slate-700">
                   <th
                     onClick={() => handleSort('date')}
-                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-600 select-none"
+                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-300 select-none"
                   >
                     <div className="flex items-center gap-1">Date <SortIcon k="date" /></div>
                   </th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Payer</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Recipient</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Currency</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-500 whitespace-nowrap">Category</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">Category</th>
                   <th
                     onClick={() => handleSort('amount')}
-                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-600 select-none"
+                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-300 select-none"
                   >
                     <div className="flex items-center gap-1">Total Amount <SortIcon k="amount" /></div>
                   </th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">In/Out</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-700/50">
                 {transactions.map(tx => (
-                  <tr key={tx.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-4 py-1.5 text-slate-600 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-1.5 text-slate-800 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || '') : tx.company_name}>
-                      {tx.type === 'credit' ? (tx.other_party || <span className="text-slate-300">—</span>) : <span className="font-medium">{tx.company_name}</span>}
+                  <tr key={tx.id} className="hover:bg-slate-700/30 transition-colors">
+                    <td className="px-4 py-1.5 text-slate-400 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || '') : tx.company_name}>
+                      {tx.type === 'credit' ? (tx.other_party || <span className="text-slate-600">—</span>) : <span className="font-medium">{tx.company_name}</span>}
                     </td>
-                    <td className="px-4 py-1.5 text-slate-800 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || '') : tx.company_name}>
-                      {tx.type === 'debit' ? (tx.other_party || <span className="text-slate-300">—</span>) : <span className="font-medium">{tx.company_name}</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || '') : tx.company_name}>
+                      {tx.type === 'debit' ? (tx.other_party || <span className="text-slate-600">—</span>) : <span className="font-medium">{tx.company_name}</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
@@ -650,7 +650,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        tx.type === 'credit' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
+                        tx.type === 'credit' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
                       }`}>
                         {tx.type === 'credit' ? <ArrowDownLeft size={10} /> : <ArrowUpRight size={10} />}
                         {tx.type === 'credit' ? 'In' : 'Out'}
@@ -665,7 +665,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
 
         {/* Pagination */}
         {pagination && pagination.total > 0 && (
-          <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500">
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-700/50 text-xs text-slate-500">
             <span>
               Showing {((pagination.page - 1) * pagination.limit) + 1}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()} transactions
             </span>

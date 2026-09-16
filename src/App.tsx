@@ -3047,7 +3047,7 @@ export default function App() {
     return <LoginScreen onLogin={(user) => setAuthUser(user)} />;
   }
 
-  const isSandbox = import.meta.env.MODE === 'staging';
+  const isSandbox = import.meta.env.MODE !== 'production';
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden font-sans">
