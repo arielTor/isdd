@@ -430,10 +430,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       ? buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions
       : (data?.transactions ?? []);
 
-    const headers = ['Date', 'Description', 'Type', 'Amount', 'Currency', 'Amount USD', 'GEO', 'Category', 'Reference'];
+    const headers = ['Date', 'Payer', 'Recipient', 'Type', 'Amount', 'Currency', 'Amount USD', 'GEO', 'Category', 'Reference'];
     const csvRows = rows.map(tx => [
       tx.transaction_date,
-      tx.other_party ?? '',
+      tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name,
+      tx.type === 'debit'  ? (tx.other_party ?? '') : tx.company_name,
       tx.type,
       tx.type === 'credit' ? tx.amount : -tx.amount,
       tx.currency,
@@ -611,7 +612,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   >
                     <div className="flex items-center gap-1">Date <SortIcon k="date" /></div>
                   </th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Description</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Payer</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Recipient</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Type</th>
                   {/* Sortable: Amount */}
                   <th
@@ -637,8 +639,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-4 py-1.5 text-slate-600 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-1.5 text-slate-800 max-w-[180px] truncate text-xs" title={tx.other_party || ''}>
-                      {tx.other_party || <span className="text-slate-300">—</span>}
+                    <td className="px-4 py-1.5 text-slate-800 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || '') : tx.company_name}>
+                      {tx.type === 'credit' ? (tx.other_party || <span className="text-slate-300">—</span>) : <span className="font-medium">{tx.company_name}</span>}
+                    </td>
+                    <td className="px-4 py-1.5 text-slate-800 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || '') : tx.company_name}>
+                      {tx.type === 'debit' ? (tx.other_party || <span className="text-slate-300">—</span>) : <span className="font-medium">{tx.company_name}</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
