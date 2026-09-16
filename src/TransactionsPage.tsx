@@ -191,7 +191,7 @@ const fmtMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
 const fmtUsd = (n: number | null) =>
   n == null ? null : `$${Math.round(Math.abs(n)).toLocaleString()}`;
 
-// ── ClassifyCell ─────────────────────────────────────────────────────────────
+// ── ClassifyCell ──────────────────────────────────────────────────────────────
 
 function ClassifyCell<T extends string>({
   txId, field, value, options, colorMap, placeholder, onUpdate, isMock,
