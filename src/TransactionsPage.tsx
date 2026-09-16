@@ -430,18 +430,15 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       ? buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions
       : (data?.transactions ?? []);
 
-    const headers = ['Date', 'Payer', 'Recipient', 'Type', 'Amount', 'Currency', 'Amount USD', 'GEO', 'Category', 'Reference'];
+    const headers = ['Date', 'Payer', 'Recipient', 'Currency', 'Category', 'Total Amount', 'In/Out'];
     const csvRows = rows.map(tx => [
       tx.transaction_date,
       tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name,
       tx.type === 'debit'  ? (tx.other_party ?? '') : tx.company_name,
-      tx.type,
-      tx.type === 'credit' ? tx.amount : -tx.amount,
       tx.currency,
-      tx.amount_usd ?? '',
-      tx.geo ?? '',
       tx.category ?? '',
-      tx.reference ?? '',
+      tx.type === 'credit' ? tx.amount : -tx.amount,
+      tx.type === 'credit' ? 'In' : 'Out',
     ]);
 
     const csv = [headers, ...csvRows]
@@ -605,7 +602,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  {/* Sortable: Date */}
                   <th
                     onClick={() => handleSort('date')}
                     className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-600 select-none"
@@ -614,25 +610,15 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   </th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Payer</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Recipient</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Type</th>
-                  {/* Sortable: Amount */}
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Currency</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-500 whitespace-nowrap">Category</th>
                   <th
                     onClick={() => handleSort('amount')}
                     className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-600 select-none"
                   >
-                    <div className="flex items-center gap-1">Amount <SortIcon k="amount" /></div>
+                    <div className="flex items-center gap-1">Total Amount <SortIcon k="amount" /></div>
                   </th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Currency</th>
-                  {/* Sortable: Amount USD */}
-                  <th
-                    onClick={() => handleSort('amount_usd')}
-                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-600 select-none"
-                  >
-                    <div className="flex items-center gap-1">Amount USD <SortIcon k="amount_usd" /></div>
-                  </th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-500 whitespace-nowrap">GEO</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-500 whitespace-nowrap">Category</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Reference</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">In/Out</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -646,34 +632,9 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                       {tx.type === 'debit' ? (tx.other_party || <span className="text-slate-300">—</span>) : <span className="font-medium">{tx.company_name}</span>}
                     </td>
                     <td className="px-4 py-1.5">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        tx.type === 'credit' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
-                      }`}>
-                        {tx.type === 'credit' ? <ArrowDownLeft size={10} /> : <ArrowUpRight size={10} />}
-                        {tx.type === 'credit' ? 'In' : 'Out'}
-                      </span>
-                    </td>
-                    <td className={`px-4 py-1.5 font-mono font-semibold whitespace-nowrap text-xs ${
-                      tx.type === 'credit' ? 'text-emerald-600' : 'text-red-600'
-                    }`}>
-                      {fmtAmount(tx.amount, tx.currency, tx.type)}
-                    </td>
-                    <td className="px-4 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
                         {tx.currency}
                       </span>
-                    </td>
-                    <td className="px-4 py-1.5 font-mono text-slate-600 whitespace-nowrap text-xs">
-                      {tx.amount_usd != null
-                        ? `$${tx.amount_usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-                    <td className="px-4 py-1">
-                      <ClassifyCell
-                        txId={tx.id} field="geo" value={tx.geo}
-                        options={GEO_OPTIONS} colorMap={GEO_COLORS}
-                        placeholder="GEO" onUpdate={handleClassify} isMock={isMock}
-                      />
                     </td>
                     <td className="px-4 py-1">
                       <ClassifyCell
@@ -682,12 +643,18 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                         onUpdate={handleClassify} isMock={isMock}
                       />
                     </td>
-                    <td className="px-4 py-1.5 text-slate-400 max-w-[200px] text-xs">
-                      {tx.reference
-                        ? <span title={tx.reference} className="cursor-default truncate block">
-                            {tx.reference.length > 40 ? tx.reference.slice(0, 40) + '…' : tx.reference}
-                          </span>
-                        : <span className="text-slate-300">—</span>}
+                    <td className={`px-4 py-1.5 font-mono font-semibold whitespace-nowrap text-xs ${
+                      tx.type === 'credit' ? 'text-emerald-600' : 'text-red-600'
+                    }`}>
+                      {fmtAmount(tx.amount, tx.currency, tx.type)}
+                    </td>
+                    <td className="px-4 py-1.5">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        tx.type === 'credit' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
+                      }`}>
+                        {tx.type === 'credit' ? <ArrowDownLeft size={10} /> : <ArrowUpRight size={10} />}
+                        {tx.type === 'credit' ? 'In' : 'Out'}
+                      </span>
                     </td>
                   </tr>
                 ))}
