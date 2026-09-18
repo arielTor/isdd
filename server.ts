@@ -2277,6 +2277,47 @@ async function startServer() {
     }
   );
 
+  // POST /api/settings/classification-rules — add single rule (Admin only)
+  app.post('/api/settings/classification-rules', corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const { payer, recipient, account_wallet, category } = req.body ?? {};
+    if (!payer || !recipient || !category) {
+      res.status(400).json({ error: 'payer, recipient and category are required' });
+      return;
+    }
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute(
+        'INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category) VALUES (?, ?, ?, ?)',
+        [
+          normalizeName(payer),
+          normalizeName(recipient),
+          account_wallet ? normalizeName(account_wallet) : null,
+          category.trim(),
+        ]
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message ?? 'DB error' });
+    } finally {
+      conn.release();
+    }
+  });
+
+  // DELETE /api/settings/classification-rules/:id — delete single rule (Admin only)
+  app.delete('/api/settings/classification-rules/:id', corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute('DELETE FROM vendor_classification_rules WHERE id = ?', [id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message ?? 'DB error' });
+    } finally {
+      conn.release();
+    }
+  });
+
   // GET /api/settings/classification-rules ── end ────────────────────────────
 
   // GET /api/roles - list roles with parsed company/bank access
