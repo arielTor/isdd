@@ -1,4 +1,5 @@
 import express from "express";
+import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
@@ -2110,6 +2111,174 @@ async function startServer() {
     }
   })();
 
+  // ── Vendor Classification Rules ───────────────────────────────────────────
+  // Table: vendor_classification_rules
+  // Populated by Admin via CSV upload; used by sync-transactions to auto-set category.
+  (async () => {
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS vendor_classification_rules (
+            id           INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            payer        VARCHAR(255) NOT NULL,
+            recipient    VARCHAR(255) NOT NULL,
+            account_wallet VARCHAR(500) DEFAULT NULL,
+            category     VARCHAR(100) NOT NULL,
+            company_id   VARCHAR(50)  DEFAULT NULL,
+            created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_vcr_payer_recipient (payer(80), recipient(80))
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+        console.log("[Classification] vendor_classification_rules table ready");
+      } catch (e: any) { console.warn("[Classification] table init:", e.message); }
+      finally { conn.release(); }
+    } catch (e: any) {
+      console.warn("[Classification] DB not reachable on startup:", e.message);
+    }
+  })();
+
+  // Helper: normalize a name for matching (lowercase + trim)
+  const normalizeName = (s: string | null | undefined): string =>
+    (s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+  // Helper: find category for a transaction.
+  // Returns { category, ambiguous } where ambiguous=true means multiple candidates.
+  const classifyTransaction = async (
+    payer: string, recipient: string, accountWallet: string | null
+  ): Promise<{ category: string | null; ambiguous: boolean }> => {
+    const conn = await pool.getConnection();
+    try {
+      const np = normalizeName(payer);
+      const nr = normalizeName(recipient);
+
+      // 1. Try exact payer + recipient + account/wallet
+      if (accountWallet) {
+        const [rows] = (await conn.execute(
+          `SELECT DISTINCT category FROM vendor_classification_rules
+           WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
+             AND LOWER(TRIM(account_wallet)) = ?`,
+          [np, nr, normalizeName(accountWallet)]
+        )) as any;
+        if ((rows as any[]).length === 1) return { category: rows[0].category, ambiguous: false };
+        if ((rows as any[]).length > 1)  return { category: null, ambiguous: true };
+      }
+
+      // 2. Fallback: payer + recipient only
+      const [rows2] = (await conn.execute(
+        `SELECT DISTINCT category FROM vendor_classification_rules
+         WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?`,
+        [np, nr]
+      )) as any;
+      if ((rows2 as any[]).length === 1) return { category: rows2[0].category, ambiguous: false };
+      if ((rows2 as any[]).length > 1)  return { category: null, ambiguous: true };
+
+      return { category: null, ambiguous: false };
+    } finally {
+      conn.release();
+    }
+  };
+
+  // Helper: fire Zapier webhook for unclassified / ambiguous transactions
+  const notifyClassificationFailure = async (
+    tx: any, reason: 'not_found' | 'ambiguous'
+  ): Promise<void> => {
+    const WEBHOOK = 'https://hooks.zapier.com/hooks/catch/27155967/4dw4rfg/';
+    try {
+      await fetch(WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason,
+          transaction_id:   tx.id,
+          transaction_date: tx.transaction_date,
+          type:             tx.type,
+          amount:           tx.amount,
+          currency:         tx.currency,
+          payer:            tx.type === 'credit' ? (tx.other_party || '') : tx.company_name,
+          recipient:        tx.type === 'debit'  ? (tx.other_party || '') : tx.company_name,
+          reference:        tx.reference || '',
+          source:           tx.source,
+          company_id:       tx.company_id,
+        }),
+      });
+    } catch (e: any) {
+      console.warn('[Classification] webhook notify failed:', e.message);
+    }
+  };
+
+  // GET /api/settings/classification-rules
+  app.get('/api/settings/classification-rules', corsMiddleware, requireAuth, async (_req, res) => {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = (await conn.execute(
+        'SELECT id, payer, recipient, account_wallet, category, company_id, created_at FROM vendor_classification_rules ORDER BY payer, recipient'
+      )) as any;
+      res.json({ rules: rows });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+
+  // DELETE /api/settings/classification-rules — clear all rules (Admin only)
+  app.delete('/api/settings/classification-rules', corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute('DELETE FROM vendor_classification_rules');
+      res.json({ deleted: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+
+  // POST /api/settings/classification-rules/upload — bulk-replace from CSV (Admin only)
+  // Expects multipart/form-data with field "file" (CSV), or JSON body { rows: [{payer,recipient,account_wallet,category}] }
+  app.post('/api/settings/classification-rules/upload', corsMiddleware, requireAuth, requireAdmin,
+    multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }).single('file'),
+    async (req: any, res) => {
+      try {
+        let rows: { payer: string; recipient: string; account_wallet: string; category: string }[] = [];
+
+        if (req.file) {
+          // Parse CSV (columns: Payer, Recipient, Counterparty Account / Wallet, Category)
+          const text = req.file.buffer.toString('utf-8');
+          const lines = text.split(/\r?\n/).filter(l => l.trim());
+          const header = lines[0].toLowerCase();
+          const hasHeader = header.includes('payer') || header.includes('category');
+          const dataLines = hasHeader ? lines.slice(1) : lines;
+          for (const line of dataLines) {
+            const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+            if (cols.length < 4 || !cols[0] || !cols[3]) continue;
+            rows.push({ payer: cols[0], recipient: cols[1], account_wallet: cols[2] || '', category: cols[3] });
+          }
+        } else if (Array.isArray(req.body?.rows)) {
+          rows = req.body.rows;
+        } else {
+          return res.status(400).json({ error: 'Send a CSV file in "file" field or JSON body with "rows" array' });
+        }
+
+        if (!rows.length) return res.status(400).json({ error: 'No valid rows found in input' });
+
+        const conn = await pool.getConnection();
+        try {
+          await conn.execute('DELETE FROM vendor_classification_rules');
+          for (const r of rows) {
+            await conn.execute(
+              'INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category) VALUES (?, ?, ?, ?)',
+              [r.payer.trim(), r.recipient.trim(), r.account_wallet?.trim() || null, r.category.trim()]
+            );
+          }
+          res.json({ imported: rows.length });
+        } finally { conn.release(); }
+      } catch (err: any) {
+        console.error('[Classification] CSV upload error:', err.message);
+        res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
+  // GET /api/settings/classification-rules ── end ────────────────────────────
+
   // GET /api/roles - list roles with parsed company/bank access
   app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await pool.getConnection();
@@ -2774,7 +2943,33 @@ async function startServer() {
         values
       );
       console.log(`[${new Date().toISOString()}] [sync-transactions] upserted batch of ${transactions.length}`);
-      const responseBody = { inserted: transactions.length, skipped: 0 };
+
+      // ── Auto-classify: assign category from vendor_classification_rules ──
+      let classified = 0, unclassified = 0, ambiguous = 0;
+      for (const t of transactions) {
+        const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || t.company_id || '');
+        const recipient = t.type === 'debit'  ? (t.other_party || '') : (t.company_name || t.company_id || '');
+        const account   = t.reference || null;
+        const { category, ambiguous: isAmbiguous } = await classifyTransaction(payer, recipient, account);
+        if (category) {
+          // Only update category if not yet set (avoid overwriting manual classifications)
+          const updConn = await pool.getConnection();
+          try {
+            await updConn.execute(
+              'UPDATE wallet_transactions SET category = ? WHERE id = ? AND (category IS NULL OR category = "")',
+              [category, t.id]
+            );
+            classified++;
+          } finally { updConn.release(); }
+        } else {
+          if (isAmbiguous) ambiguous++; else unclassified++;
+          // Fire Zapier webhook asynchronously — don't block the response
+          notifyClassificationFailure(t, isAmbiguous ? 'ambiguous' : 'not_found').catch(() => {});
+        }
+      }
+      console.log(`[sync-transactions] classify: ${classified} ok, ${unclassified} not_found, ${ambiguous} ambiguous`);
+
+      const responseBody = { inserted: transactions.length, classified, unclassified, ambiguous };
       res.json(responseBody);
       logApiCall({
         direction: 'inbound', source: 'zapier',

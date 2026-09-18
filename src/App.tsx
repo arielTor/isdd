@@ -37,7 +37,8 @@ import {
   Image as ImageIcon,
   UploadCloud,
   Check,
-  Download
+  Download,
+  Tags
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
@@ -48,6 +49,7 @@ import { SparklineChart } from './dashboard/widgets';
 import type { SparkPoint } from './dashboard/widgets';
 import { downloadExcel } from './exportCsv';
 import UploadScreen from './UploadScreen';
+import ClassificationRulesPage from './ClassificationRulesPage';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
 import TransactionsPage from './TransactionsPage';
@@ -92,7 +94,7 @@ const MicrosoftLogo = ({ size = 12 }: { size?: number }) => (
 );
 
 // --- Types ---
-type Page = 'dashboard' | 'companies' | 'transactions' | 'psp' | 'api-monitor' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
+type Page = 'dashboard' | 'companies' | 'transactions' | 'psp' | 'api-monitor' | 'users' | 'alerts' | 'upload' | 'classification' | 'branding' | 'diagnostics' | 'notifications';
 
 // Backdrop colour for a logo badge - admin picks this in Appearance so logos
 // designed for light *or* dark backgrounds both render correctly.
@@ -130,7 +132,7 @@ const Sidebar = ({
   companyLogos: Record<string, string>,
 }) => {
   // Settings group starts collapsed; expand it if the user is already on a settings page.
-  const settingsIds = ['users', 'alerts', 'upload', 'branding', 'diagnostics'];
+  const settingsIds = ['users', 'alerts', 'upload', 'classification', 'branding', 'diagnostics'];
   const [settingsOpen, setSettingsOpen] = useState(() => settingsIds.includes(activePage));
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
@@ -144,6 +146,7 @@ const Sidebar = ({
     { id: 'users', icon: Users, label: 'User Management', roles: ['Admin'] },
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
+    { id: 'classification', icon: Tags, label: 'Accounting Categories', roles: ['Admin'] },
     { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin', 'Manager', 'Viewer'] },
     { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
@@ -2853,6 +2856,7 @@ export default function App() {
     if (activePage === 'users') return 'User Management';
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
+    if (activePage === 'classification') return 'Accounting Categories';
     if (activePage === 'branding') return 'Appearance';
     if (activePage === 'notifications') return 'Notifications';
     if (activePage === 'diagnostics') return 'Diagnostics';
@@ -3732,6 +3736,17 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
               >
                 <UploadScreen />
+              </motion.div>
+            )}
+
+            {activePage === 'classification' && authUser?.role === 'Admin' && (
+              <motion.div
+                key="classification"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <ClassificationRulesPage />
               </motion.div>
             )}
 
