@@ -2954,6 +2954,45 @@ async function startServer() {
 
   // ── INTERNAL ROUTES  (API-key auth, no user session required) ───────────────
 
+  // POST /api/internal/test-classify — classification dry-run, no DB upsert (Stage/dev only)
+  app.post('/api/internal/test-classify', async (req: any, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const expectedKey = process.env.INTERNAL_SYNC_API_KEY;
+    if (!expectedKey || req.headers['x-api-key'] !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    let { transactions } = req.body;
+    if (typeof transactions === 'string') {
+      try { transactions = JSON.parse(transactions); } catch { transactions = null; }
+    }
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return res.status(400).json({ error: 'transactions array required' });
+    }
+    const results: any[] = [];
+    for (const t of transactions) {
+      const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || t.company_id || '');
+      const recipient = t.type === 'debit'  ? (t.other_party || '') : (t.company_name || t.company_id || '');
+      const account   = t.reference || null;
+      const { category, ambiguous: isAmbiguous } = await classifyTransaction(payer, recipient, account);
+      if (!category) {
+        notifyClassificationFailure(t, isAmbiguous ? 'ambiguous' : 'not_found').catch(() => {});
+      }
+      results.push({
+        id:        t.id,
+        payer,
+        recipient,
+        category:  category ?? null,
+        status:    category ? 'classified' : (isAmbiguous ? 'ambiguous' : 'not_found'),
+      });
+    }
+    const classified   = results.filter(r => r.status === 'classified').length;
+    const not_found    = results.filter(r => r.status === 'not_found').length;
+    const ambiguous    = results.filter(r => r.status === 'ambiguous').length;
+    res.json({ summary: { total: results.length, classified, not_found, ambiguous }, results });
+  });
+
   // POST /api/internal/sync-transactions
   // Called by Zapier every hour with a batch of bank transactions from IFX/ibanq.
   // Upserts: re-sent transactions update mutable fields (amount, reference, etc.).
