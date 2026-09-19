@@ -589,7 +589,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 aria-checked={showMgFees}
                 onClick={() => { setShowMgFees(v => !v); setPage(1); }}
                 className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
-                  showMgFees ? 'bg-indigo-500' : 'bg-slate-300'
+                  showMgFees ? 'bg-indigo-500' : 'bg-slate-600'
                 }`}
               >
                 <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${showMgFees ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -598,7 +598,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             <button
               onClick={exportCsv}
               disabled={transactions.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download size={13} />
               Export CSV
