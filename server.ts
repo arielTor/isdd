@@ -729,14 +729,14 @@ async function startServer() {
   // Stored in app_settings; only ever enforced when SSO is actually available,
   // so losing the SAML config can never lock everyone out.
   const isPasswordLoginDisabled = async (): Promise<boolean> => {
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       const [rows] = (await conn.execute(
         "SELECT v FROM app_settings WHERE k = 'password_login_disabled'"
       )) as any;
       return rows[0]?.v === "1";
     } catch { return false; }
-    finally { await conn.end(); }
+    finally { conn.release(); }
   };
 
   app.post("/api/auth/login", corsMiddleware, async (req: any, res) => {
@@ -839,7 +839,7 @@ async function startServer() {
     // Microsoft SSO is configured and can serve as the alternative way in.
     if (passwordLoginDisabled && !SAML_ENABLED)
       return res.status(400).json({ error: "Cannot disable email/password sign-in while Microsoft SSO is not configured - everyone would be locked out." });
-    const conn = await mysql.createConnection(dbConfig());
+    const conn = await pool.getConnection();
     try {
       await conn.execute(
         "INSERT INTO app_settings (k, v) VALUES ('password_login_disabled', ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
@@ -849,7 +849,7 @@ async function startServer() {
     } catch (err: any) {
       console.error("Login settings save error:", err.message);
       res.status(500).json({ error: "Failed to save login settings" });
-    } finally { await conn.end(); }
+    } finally { conn.release(); }
   });
 
   if (SAML_ENABLED && samlStrategy) {

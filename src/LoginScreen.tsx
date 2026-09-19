@@ -244,7 +244,7 @@ function LoginForm({ onLogin, samlEnabled, passwordLoginDisabled, branding }: { 
 
       {passwordLoginDisabled ? (
         <p className="text-center text-xs text-slate-400 mt-5">
-          Email and password sign-in is disabled. Use Microsoft to sign in.
+          Use your company username to access the reports.
         </p>
       ) : (
       <form onSubmit={handleLogin} className="space-y-4">
