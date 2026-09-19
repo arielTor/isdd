@@ -2956,9 +2956,6 @@ async function startServer() {
 
   // POST /api/internal/test-classify — classification dry-run, no DB upsert (Stage/dev only)
   app.post('/api/internal/test-classify', async (req: any, res) => {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(404).json({ error: 'Not found' });
-    }
     const expectedKey = process.env.INTERNAL_SYNC_API_KEY;
     if (!expectedKey || req.headers['x-api-key'] !== expectedKey) {
       return res.status(401).json({ error: 'Unauthorized' });
