@@ -92,6 +92,7 @@ export interface User {
   roleIds?: string[]; // assigned roles (a user can hold several)
   password?: string; // only used when creating/updating - never returned by API
   authSource?: string; // 'sso' for Entra-provisioned users, else 'password'
+  lastLogin?: string | null; // ISO timestamp of the user's most recent sign-in, null if never
 }
 
 // A role with page access + company/bank access (managed in User Management → Roles).

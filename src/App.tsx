@@ -37,7 +37,8 @@ import {
   Image as ImageIcon,
   UploadCloud,
   Check,
-  Download
+  Download,
+  Tags
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
@@ -48,6 +49,7 @@ import { SparklineChart } from './dashboard/widgets';
 import type { SparkPoint } from './dashboard/widgets';
 import { downloadExcel } from './exportCsv';
 import UploadScreen from './UploadScreen';
+import ClassificationRulesPage from './ClassificationRulesPage';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
 import TransactionsPage from './TransactionsPage';
@@ -92,7 +94,7 @@ const MicrosoftLogo = ({ size = 12 }: { size?: number }) => (
 );
 
 // --- Types ---
-type Page = 'dashboard' | 'companies' | 'transactions' | 'psp' | 'api-monitor' | 'users' | 'alerts' | 'upload' | 'branding' | 'diagnostics' | 'notifications';
+type Page = 'dashboard' | 'companies' | 'transactions' | 'psp' | 'api-monitor' | 'users' | 'alerts' | 'upload' | 'classification' | 'branding' | 'diagnostics' | 'notifications';
 
 // Backdrop colour for a logo badge - admin picks this in Appearance so logos
 // designed for light *or* dark backgrounds both render correctly.
@@ -130,7 +132,7 @@ const Sidebar = ({
   companyLogos: Record<string, string>,
 }) => {
   // Settings group starts collapsed; expand it if the user is already on a settings page.
-  const settingsIds = ['users', 'alerts', 'upload', 'branding', 'diagnostics'];
+  const settingsIds = ['users', 'alerts', 'upload', 'classification', 'branding', 'diagnostics'];
   const [settingsOpen, setSettingsOpen] = useState(() => settingsIds.includes(activePage));
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
@@ -144,6 +146,7 @@ const Sidebar = ({
     { id: 'users', icon: Users, label: 'User Management', roles: ['Admin'] },
     { id: 'alerts', icon: BellRing, label: 'Alert Center', roles: ['Admin', 'Manager'] },
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
+    { id: 'classification', icon: Tags, label: 'Accounting Categories', roles: ['Admin'] },
     { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin', 'Manager', 'Viewer'] },
     { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
@@ -667,6 +670,20 @@ const PAGE_PERMS: { id: string; label: string }[] = [
   { id: 'upload',       label: 'Manual Data Upload' },
 ];
 
+// Compact relative label for a user's last sign-in (falls back to a local date).
+const formatLastLogin = (iso: string): string => {
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return '-';
+  const mins = Math.floor((Date.now() - then) / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
 // --- Entra Groups tab: map discovered Entra group Object IDs to roles ---
 type EntraGroup = { groupId: string; label: string | null; lastSeen?: string; roleIds: string[] };
 
@@ -675,6 +692,8 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
   const [samlEnabled, setSamlEnabled] = useState(true);
   const [addId, setAddId] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [pwLoginDisabled, setPwLoginDisabled] = useState(false);
+  const [savingPwLogin, setSavingPwLogin] = useState(false);
 
   const load = () =>
     fetch('/api/entra/groups', { credentials: 'include' })
@@ -682,6 +701,31 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
       .then(d => { setGroups(d.groups || []); if (typeof d.samlEnabled === 'boolean') setSamlEnabled(d.samlEnabled); })
       .catch(() => setGroups([]));
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    fetch('/api/auth/login-settings', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setPwLoginDisabled(!!d.passwordLoginDisabled); })
+      .catch(() => {});
+  }, []);
+
+  const togglePwLogin = async () => {
+    const next = !pwLoginDisabled;
+    setSavingPwLogin(true);
+    setPwLoginDisabled(next); // optimistic
+    try {
+      const res = await fetch('/api/auth/login-settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ passwordLoginDisabled: next }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setPwLoginDisabled(!next); // revert
+        if (d?.error) alert(d.error);
+      }
+    } catch { setPwLoginDisabled(!next); }
+    finally { setSavingPwLogin(false); }
+  };
 
   const save = async (groupId: string, patch: Partial<Pick<EntraGroup, 'label' | 'roleIds'>>) => {
     setSavingId(groupId);
@@ -709,6 +753,38 @@ const EntraGroupsTab = ({ roles }: { roles: RoleDef[] }) => {
 
   return (
     <div className="space-y-4">
+      {/* Sign-in method: optionally require Microsoft SSO for everyone */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900">Require Microsoft sign-in</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              When on, the email &amp; password form is hidden on the login screen and only
+              &quot;Sign in with Microsoft&quot; is offered. Available only once SSO is configured, so no one can be locked out.
+            </p>
+            {pwLoginDisabled && (
+              <p className="text-[11px] font-semibold text-indigo-600 mt-2">Email &amp; password sign-in is currently disabled.</p>
+            )}
+          </div>
+          <button
+            role="switch"
+            aria-checked={pwLoginDisabled}
+            disabled={!samlEnabled || savingPwLogin}
+            onClick={togglePwLogin}
+            title={!samlEnabled ? 'Configure Microsoft SSO first' : undefined}
+            className={`relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${pwLoginDisabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${pwLoginDisabled ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+        {!samlEnabled && (
+          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs mt-3">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>SSO is not configured on this environment yet, so email &amp; password sign-in can't be disabled.</span>
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div>
           <h3 className="text-sm font-bold text-slate-900">Entra groups → roles</h3>
@@ -944,6 +1020,7 @@ const UserManagementPage = ({
                     <th className="px-6 py-3 border-b border-slate-100 text-center">User</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Role</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Status</th>
+                    <th className="px-6 py-3 border-b border-slate-100 text-center">Last Login</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Access</th>
                     <th className="px-6 py-3 border-b border-slate-100 text-center">Actions</th>
                   </tr>
@@ -977,6 +1054,13 @@ const UserManagementPage = ({
                         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} /> {user.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {user.lastLogin ? (
+                          <span className="text-[11px] text-slate-500" title={new Date(user.lastLogin).toLocaleString()}>{formatLastLogin(user.lastLogin)}</span>
+                        ) : (
+                          <span className="text-[11px] text-slate-300">Never</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-center">
                         {user.role === 'Admin' ? (
@@ -1027,7 +1111,7 @@ const UserManagementPage = ({
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-sm">No users found.</td></tr>
+                    <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 text-sm">No users found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -2772,6 +2856,7 @@ export default function App() {
     if (activePage === 'users') return 'User Management';
     if (activePage === 'alerts') return 'Alert Configuration';
     if (activePage === 'upload') return 'Manual Data Upload';
+    if (activePage === 'classification') return 'Accounting Categories';
     if (activePage === 'branding') return 'Appearance';
     if (activePage === 'notifications') return 'Notifications';
     if (activePage === 'diagnostics') return 'Diagnostics';
@@ -2966,8 +3051,16 @@ export default function App() {
     return <LoginScreen onLogin={(user) => setAuthUser(user)} />;
   }
 
+  const isSandbox = import.meta.env.MODE !== 'production';
+
   return (
-    <div className="flex h-screen w-full overflow-hidden selection:bg-indigo-600/10 selection:text-indigo-600 font-sans">
+    <div className="flex flex-col h-screen w-full overflow-hidden font-sans">
+      {isSandbox && (
+        <div className="flex-shrink-0 bg-amber-400 text-amber-950 text-xs font-semibold text-center py-1 tracking-wide z-50">
+          SANDBOX ENVIRONMENT — demo data only, no live DB connection
+        </div>
+      )}
+      <div className="flex flex-1 min-h-0 overflow-hidden selection:bg-indigo-600/10 selection:text-indigo-600">
       <Sidebar
         companies={companies}
         selectedCompanyId={selectedCompanyId}
@@ -3646,6 +3739,17 @@ export default function App() {
               </motion.div>
             )}
 
+            {activePage === 'classification' && authUser?.role === 'Admin' && (
+              <motion.div
+                key="classification"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <ClassificationRulesPage />
+              </motion.div>
+            )}
+
             {activePage === 'branding' && (
               <motion.div
                 key="branding"
@@ -3686,12 +3790,13 @@ export default function App() {
           roles={roles}
         />
 
-        <BankDetailsModal 
+        <BankDetailsModal
           bank={selectedBankDetails}
           isOpen={isBankDetailsModalOpen}
           onClose={() => setIsBankDetailsModalOpen(false)}
           alerts={alerts}
         />
+      </div>
       </div>
     </div>
   );

@@ -163,7 +163,7 @@ function MicrosoftLogo() {
 
 const logoBgColor = (bg: string) => (bg === 'dark' ? '#0f172a' : bg === 'none' ? 'transparent' : '#ffffff');
 
-function LoginForm({ onLogin, samlEnabled, branding }: { onLogin: (user: any) => void; samlEnabled: boolean; branding: { siteName: string; logo: string | null; logoBg: string } }) {
+function LoginForm({ onLogin, samlEnabled, passwordLoginDisabled, branding }: { onLogin: (user: any) => void; samlEnabled: boolean; passwordLoginDisabled: boolean; branding: { siteName: string; logo: string | null; logoBg: string } }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -232,14 +232,21 @@ function LoginForm({ onLogin, samlEnabled, branding }: { onLogin: (user: any) =>
           >
             <MicrosoftLogo /> Sign in with Microsoft
           </a>
-          <div className="flex items-center gap-3 my-5">
-            <span className="flex-1 h-px bg-slate-200" />
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">or</span>
-            <span className="flex-1 h-px bg-slate-200" />
-          </div>
+          {!passwordLoginDisabled && (
+            <div className="flex items-center gap-3 my-5">
+              <span className="flex-1 h-px bg-slate-200" />
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">or</span>
+              <span className="flex-1 h-px bg-slate-200" />
+            </div>
+          )}
         </>
       )}
 
+      {passwordLoginDisabled ? (
+        <p className="text-center text-xs text-slate-400 mt-5">
+          Email and password sign-in is disabled. Use Microsoft to sign in.
+        </p>
+      ) : (
       <form onSubmit={handleLogin} className="space-y-4">
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email</label>
@@ -290,6 +297,7 @@ function LoginForm({ onLogin, samlEnabled, branding }: { onLogin: (user: any) =>
           {loading ? 'Signing in…' : 'Sign In'}
         </button>
       </form>
+      )}
     </>
   );
 }
@@ -299,6 +307,7 @@ function LoginForm({ onLogin, samlEnabled, branding }: { onLogin: (user: any) =>
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [mode, setMode] = useState<'checking' | 'setup' | 'login'>('checking');
   const [samlEnabled, setSamlEnabled] = useState(false);
+  const [passwordLoginDisabled, setPasswordLoginDisabled] = useState(false);
   const [branding, setBranding] = useState<{ siteName: string; logo: string | null; logoBg: string }>({ siteName: 'Liquidity Reports', logo: null, logoBg: 'light' });
 
   // On mount, check whether initial setup is needed + whether SSO is configured,
@@ -313,8 +322,8 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       });
     fetch('/api/auth/sso-status')
       .then(r => r.json())
-      .then(data => setSamlEnabled(!!data.samlEnabled))
-      .catch(() => setSamlEnabled(false));
+      .then(data => { setSamlEnabled(!!data.samlEnabled); setPasswordLoginDisabled(!!data.passwordLoginDisabled); })
+      .catch(() => { setSamlEnabled(false); setPasswordLoginDisabled(false); });
     fetch('/api/branding/public')
       .then(r => (r.ok ? r.json() : null))
       .then(b => { if (b) setBranding({ siteName: b.siteName || 'Liquidity Reports', logo: b.logo || null, logoBg: b.logoBg || 'light' }); })
@@ -335,7 +344,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <SetupWizard onDone={() => setMode('login')} />
           )}
           {mode === 'login' && (
-            <LoginForm onLogin={onLogin} samlEnabled={samlEnabled} branding={branding} />
+            <LoginForm onLogin={onLogin} samlEnabled={samlEnabled} passwordLoginDisabled={passwordLoginDisabled} branding={branding} />
           )}
         </div>
       </div>

@@ -1,4 +1,5 @@
 import express from "express";
+import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
@@ -224,6 +225,12 @@ async function startServer() {
           wantAssertionsSigned: true,
           wantAuthnResponseSigned: false,
           identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+          // Don't pin the authn method. By default passport-saml requests
+          // PasswordProtectedTransport, which makes Entra reject users who signed in
+          // with MFA, passwordless phone, or biometrics (Windows Hello) with
+          // AADSTS75011. Omitting RequestedAuthnContext lets Entra use whatever
+          // method the user actually authenticated with.
+          disableRequestedAuthnContext: true,
         }),
       },
       (profile: SamlProfile | null, done: any) => done(null, profile ?? false),
@@ -718,10 +725,26 @@ async function startServer() {
   });
 
   // Login
+  // Whether email/password sign-in has been switched off by an admin.
+  // Stored in app_settings; only ever enforced when SSO is actually available,
+  // so losing the SAML config can never lock everyone out.
+  const isPasswordLoginDisabled = async (): Promise<boolean> => {
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      const [rows] = (await conn.execute(
+        "SELECT v FROM app_settings WHERE k = 'password_login_disabled'"
+      )) as any;
+      return rows[0]?.v === "1";
+    } catch { return false; }
+    finally { await conn.end(); }
+  };
+
   app.post("/api/auth/login", corsMiddleware, async (req: any, res) => {
     const { email, password } = req.body;
     if (!email || !password)
       return res.status(400).json({ error: "Email and password required" });
+    if (SAML_ENABLED && await isPasswordLoginDisabled())
+      return res.status(403).json({ error: "Email and password sign-in is disabled. Please use \"Sign in with Microsoft\"." });
 
     let conn: any;
     try {
@@ -748,6 +771,9 @@ async function startServer() {
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid)
         return res.status(401).json({ error: "Invalid email or password" });
+
+      // Stamp last login (best-effort; never block sign-in on it).
+      try { await conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", [user.id]); } catch { /* ignore */ }
 
       // Load permissions
       const [perms] = (await conn.execute(
@@ -792,9 +818,38 @@ async function startServer() {
     res.json({ user: req.session.user });
   });
 
-  // Login screen uses this to decide whether to show "Sign in with Microsoft".
-  app.get("/api/auth/sso-status", corsMiddleware, (_req, res) => {
-    res.json({ samlEnabled: SAML_ENABLED });
+  // Login screen uses this to decide whether to show "Sign in with Microsoft"
+  // and whether the email/password form should be shown at all.
+  app.get("/api/auth/sso-status", corsMiddleware, async (_req, res) => {
+    // Effective value: only "disabled" when SSO can actually be used instead.
+    const passwordLoginDisabled = SAML_ENABLED && (await isPasswordLoginDisabled());
+    res.json({ samlEnabled: SAML_ENABLED, passwordLoginDisabled });
+  });
+
+  // Admin: read/update whether email/password sign-in is allowed.
+  app.get("/api/auth/login-settings", corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    res.json({ samlEnabled: SAML_ENABLED, passwordLoginDisabled: await isPasswordLoginDisabled() });
+  });
+
+  app.post("/api/auth/login-settings", corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const { passwordLoginDisabled } = req.body || {};
+    if (typeof passwordLoginDisabled !== "boolean")
+      return res.status(400).json({ error: "passwordLoginDisabled must be a boolean" });
+    // Guard against a total lockout: refuse to turn off password sign-in unless
+    // Microsoft SSO is configured and can serve as the alternative way in.
+    if (passwordLoginDisabled && !SAML_ENABLED)
+      return res.status(400).json({ error: "Cannot disable email/password sign-in while Microsoft SSO is not configured - everyone would be locked out." });
+    const conn = await mysql.createConnection(dbConfig());
+    try {
+      await conn.execute(
+        "INSERT INTO app_settings (k, v) VALUES ('password_login_disabled', ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
+        [passwordLoginDisabled ? "1" : "0"]
+      );
+      res.json({ ok: true, passwordLoginDisabled });
+    } catch (err: any) {
+      console.error("Login settings save error:", err.message);
+      res.status(500).json({ error: "Failed to save login settings" });
+    } finally { await conn.end(); }
   });
 
   if (SAML_ENABLED && samlStrategy) {
@@ -911,6 +966,9 @@ async function startServer() {
             );
           }
 
+          // Stamp last login (best-effort; never block sign-in on it).
+          try { await conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", [user.id]); } catch { /* ignore */ }
+
           // 4) Sync group-derived roles; preserve admin-assigned (manual) ones.
           await conn.execute("DELETE FROM user_roles WHERE user_id = ? AND source = 'group'", [user.id]);
           for (const rid of mappedRoleIds) {
@@ -988,7 +1046,7 @@ async function startServer() {
     try {
       conn = await pool.getConnection();
       const [users] = (await conn.execute(
-        "SELECT id, name, email, role, status, auth_source FROM users ORDER BY name"
+        "SELECT id, name, email, role, status, auth_source, last_login FROM users ORDER BY name"
       )) as [any[], any];
       const [perms] = (await conn.execute(
         "SELECT user_id, company_id, bank_id FROM user_permissions"
@@ -1000,6 +1058,7 @@ async function startServer() {
       const result = users.map((u: any) => ({
         ...u,
         authSource: u.auth_source || "password",
+        lastLogin: u.last_login || null,
         permissions: (perms as any[])
           .filter((p: any) => p.user_id === u.id)
           .map((p: any) => ({
@@ -2023,6 +2082,7 @@ async function startServer() {
           "ADD COLUMN department VARCHAR(255) NULL",
           "ADD COLUMN job_title VARCHAR(255) NULL",
           "ADD COLUMN auth_source VARCHAR(16) NOT NULL DEFAULT 'password'",
+          "ADD COLUMN last_login DATETIME NULL",
         ]) {
           try { await conn.execute(`ALTER TABLE users ${col}`); } catch { /* exists */ }
         }
@@ -2050,6 +2110,258 @@ async function startServer() {
       console.warn("[SSO] DB not reachable on startup (Entra tables skipped):", e.message);
     }
   })();
+
+  // ── Vendor Classification Rules ───────────────────────────────────────────
+  // Table: vendor_classification_rules
+  // Populated by Admin via CSV upload; used by sync-transactions to auto-set category.
+  (async () => {
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS vendor_classification_rules (
+            id           INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            payer        VARCHAR(255) NOT NULL,
+            recipient    VARCHAR(255) NOT NULL,
+            account_wallet VARCHAR(500) DEFAULT NULL,
+            category     VARCHAR(100) NOT NULL,
+            company_id   VARCHAR(50)  DEFAULT NULL,
+            created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_vcr_payer_recipient (payer(80), recipient(80))
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+        console.log("[Classification] vendor_classification_rules table ready");
+      } catch (e: any) { console.warn("[Classification] table init:", e.message); }
+      finally { conn.release(); }
+    } catch (e: any) {
+      console.warn("[Classification] DB not reachable on startup:", e.message);
+    }
+  })();
+
+  // Alias map: any variation → canonical form stored in vendor_classification_rules.
+  // Keys are lowercase; values must match exactly what was imported via CSV.
+  const VENDOR_ALIASES: Record<string, string> = {
+    'blue pine ltd':      'bluepine ltd',
+    'bluepine ltd':       'bluepine ltd',
+    'blue pine limited':  'bluepine ltd',
+    'blue pine ltd - a1': 'bluepine ltd - a1',
+    'bluepine ltd - a1':  'bluepine ltd - a1',
+    'blue pine - a1':     'bluepine ltd - a1',
+  };
+
+  // Helper: normalize a name for matching (lowercase + trim + alias resolution)
+  const normalizeName = (s: string | null | undefined): string => {
+    const base = (s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+    return VENDOR_ALIASES[base] ?? base;
+  };
+
+  // Helper: find category for a transaction.
+  // Returns { category, ambiguous } where ambiguous=true means multiple candidates.
+  const classifyTransaction = async (
+    payer: string, recipient: string, accountWallet: string | null
+  ): Promise<{ category: string | null; ambiguous: boolean }> => {
+    const conn = await pool.getConnection();
+    try {
+      const np = normalizeName(payer);
+      const nr = normalizeName(recipient);
+
+      // 1. Try exact payer + recipient + account/wallet
+      if (accountWallet) {
+        const [rows] = (await conn.execute(
+          `SELECT DISTINCT category FROM vendor_classification_rules
+           WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
+             AND LOWER(TRIM(account_wallet)) = ?`,
+          [np, nr, normalizeName(accountWallet)]
+        )) as any;
+        if ((rows as any[]).length === 1) return { category: rows[0].category, ambiguous: false };
+        if ((rows as any[]).length > 1)  return { category: null, ambiguous: true };
+      }
+
+      // 2. Fallback: payer + recipient only
+      const [rows2] = (await conn.execute(
+        `SELECT DISTINCT category FROM vendor_classification_rules
+         WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?`,
+        [np, nr]
+      )) as any;
+      if ((rows2 as any[]).length === 1) return { category: rows2[0].category, ambiguous: false };
+      if ((rows2 as any[]).length > 1)  return { category: null, ambiguous: true };
+
+      return { category: null, ambiguous: false };
+    } finally {
+      conn.release();
+    }
+  };
+
+  // Helper: fire Zapier webhook for unclassified / ambiguous transactions
+  const notifyClassificationFailure = async (
+    tx: any, reason: 'not_found' | 'ambiguous'
+  ): Promise<void> => {
+    const WEBHOOK = 'https://hooks.zapier.com/hooks/catch/27155967/4dw4rfg/';
+    try {
+      const params = new URLSearchParams({
+        reason,
+        transaction_id:   String(tx.id),
+        transaction_date: String(tx.transaction_date ?? ''),
+        type:             String(tx.type ?? ''),
+        amount:           String(tx.amount ?? ''),
+        currency:         String(tx.currency ?? ''),
+        payer:            tx.type === 'credit' ? (tx.other_party || '') : (tx.company_name || ''),
+        recipient:        tx.type === 'debit'  ? (tx.other_party || '') : (tx.company_name || ''),
+        reference:        tx.reference || '',
+        source:           String(tx.source ?? ''),
+        company_id:       String(tx.company_id ?? ''),
+      });
+      await fetch(WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+      });
+    } catch (e: any) {
+      console.warn('[Classification] webhook notify failed:', e.message);
+    }
+  };
+
+  // GET /api/settings/classification-rules
+  app.get('/api/settings/classification-rules', corsMiddleware, requireAuth, async (_req, res) => {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = (await conn.execute(
+        'SELECT id, payer, recipient, account_wallet, category, company_id, created_at FROM vendor_classification_rules ORDER BY payer, recipient'
+      )) as any;
+      res.json({ rules: rows });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+
+  // DELETE /api/settings/classification-rules — clear all rules (Admin only)
+  app.delete('/api/settings/classification-rules', corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute('DELETE FROM vendor_classification_rules');
+      res.json({ deleted: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+
+  // POST /api/settings/classification-rules/upload — bulk-replace from CSV (Admin only)
+  // Expects multipart/form-data with field "file" (CSV), or JSON body { rows: [{payer,recipient,account_wallet,category}] }
+  app.post('/api/settings/classification-rules/upload', corsMiddleware, requireAuth, requireAdmin,
+    multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }).single('file'),
+    async (req: any, res) => {
+      try {
+        let rows: { payer: string; recipient: string; account_wallet: string; category: string }[] = [];
+
+        if (req.file) {
+          // Parse CSV (columns: Payer, Recipient, Counterparty Account / Wallet, Category)
+          const text = req.file.buffer.toString('utf-8');
+          const lines = text.split(/\r?\n/).filter(l => l.trim());
+          const header = lines[0].toLowerCase();
+          const hasHeader = header.includes('payer') || header.includes('category');
+          const dataLines = hasHeader ? lines.slice(1) : lines;
+          for (const line of dataLines) {
+            const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+            if (cols.length < 4 || !cols[0] || !cols[3]) continue;
+            rows.push({ payer: cols[0], recipient: cols[1], account_wallet: cols[2] || '', category: cols[3] });
+          }
+        } else if (Array.isArray(req.body?.rows)) {
+          rows = req.body.rows;
+        } else {
+          return res.status(400).json({ error: 'Send a CSV file in "file" field or JSON body with "rows" array' });
+        }
+
+        if (!rows.length) return res.status(400).json({ error: 'No valid rows found in input' });
+
+        const conn = await pool.getConnection();
+        try {
+          await conn.execute('DELETE FROM vendor_classification_rules');
+          for (const r of rows) {
+            await conn.execute(
+              'INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category) VALUES (?, ?, ?, ?)',
+              [r.payer.trim(), r.recipient.trim(), r.account_wallet?.trim() || null, r.category.trim()]
+            );
+          }
+          res.json({ imported: rows.length });
+        } finally { conn.release(); }
+      } catch (err: any) {
+        console.error('[Classification] CSV upload error:', err.message);
+        res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
+  // POST /api/settings/classification-rules — add single rule (Admin only)
+  app.post('/api/settings/classification-rules', corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const { payer, recipient, account_wallet, category } = req.body ?? {};
+    if (!payer || !recipient || !category) {
+      res.status(400).json({ error: 'payer, recipient and category are required' });
+      return;
+    }
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute(
+        'INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category) VALUES (?, ?, ?, ?)',
+        [
+          normalizeName(payer),
+          normalizeName(recipient),
+          account_wallet ? normalizeName(account_wallet) : null,
+          category.trim(),
+        ]
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message ?? 'DB error' });
+    } finally {
+      conn.release();
+    }
+  });
+
+  // PUT /api/settings/classification-rules/:id — update single rule (Admin only)
+  app.put('/api/settings/classification-rules/:id', corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+    const { payer, recipient, account_wallet, category } = req.body ?? {};
+    if (!payer || !recipient || !category) {
+      res.status(400).json({ error: 'payer, recipient and category are required' });
+      return;
+    }
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute(
+        'UPDATE vendor_classification_rules SET payer = ?, recipient = ?, account_wallet = ?, category = ? WHERE id = ?',
+        [
+          normalizeName(payer),
+          normalizeName(recipient),
+          account_wallet ? normalizeName(account_wallet) : null,
+          category.trim(),
+          id,
+        ]
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message ?? 'DB error' });
+    } finally {
+      conn.release();
+    }
+  });
+
+  // DELETE /api/settings/classification-rules/:id — delete single rule (Admin only)
+  app.delete('/api/settings/classification-rules/:id', corsMiddleware, requireAuth, requireAdmin, async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute('DELETE FROM vendor_classification_rules WHERE id = ?', [id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message ?? 'DB error' });
+    } finally {
+      conn.release();
+    }
+  });
+
+  // GET /api/settings/classification-rules ── end ────────────────────────────
 
   // GET /api/roles - list roles with parsed company/bank access
   app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
@@ -2167,10 +2479,17 @@ async function startServer() {
     }
     const conn = await pool.getConnection();
     try {
-      await conn.execute(
-        "INSERT INTO entra_groups (group_id, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label)",
-        [groupId, typeof label === "string" ? label : null]
-      );
+      if (typeof label === "string") {
+        // Label explicitly provided: set it (empty string clears it back to NULL).
+        await conn.execute(
+          "INSERT INTO entra_groups (group_id, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label)",
+          [groupId, label.trim() || null]
+        );
+      } else {
+        // No label in this request (e.g. a role-only toggle): ensure the row exists
+        // without overwriting an existing friendly name.
+        await conn.execute("INSERT IGNORE INTO entra_groups (group_id) VALUES (?)", [groupId]);
+      }
       if (Array.isArray(roleIds)) {
         await conn.execute("DELETE FROM entra_group_roles WHERE group_id = ?", [groupId]);
         for (const rid of roleIds) {
@@ -2486,9 +2805,9 @@ async function startServer() {
         LIMIT ${limitNum} OFFSET ${offset}
       `, baseParams) as [any[], any];
 
-      const STABLECOINS_TX = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
+      const STABLECOINS_SET = new Set(['USD', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI']);
       const txWithUsd = (rows as any[]).map((row: any) => {
-        const rate = STABLECOINS_TX.has(row.currency) ? 1 : (rates[row.currency] ?? null);
+        const rate = STABLECOINS_SET.has(row.currency) ? 1 : (rates[row.currency] ?? null);
         return { ...row, amount_usd: rate !== null ? Math.round(row.amount * rate * 100) / 100 : null };
       });
 
@@ -2508,14 +2827,6 @@ async function startServer() {
 
   // PATCH /api/transactions/:id/classify — set geo + category on a transaction
   const VALID_GEOS = new Set(['GCC', 'LATAM', 'Mixed', '']);
-  const VALID_CATEGORIES = new Set([
-    'ACC Service providers','Aff comp','BOP',"BTW ACC's","BTW CMP's",'CC','CC Upload',
-    'Client Deposit','Client WD','Fee','internal','LEG License expenses','Leq','Management',
-    'Management - C','Management - I','MRKT Services','MRKT Services Tools','MRKT Spend',
-    'MRKT Tools','Return','SAL IT','SAL Management','SAL MKT','Settlement','TECH Platforms',
-    'TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement','Salary Israel',
-    "G&A (Israel)",'Management - T','TAX','',
-  ]);
   app.patch("/api/transactions/:id/classify", corsMiddleware, requireAuth, async (req: any, res) => {
     const { id } = req.params;
     const { geo, category } = req.body as { geo?: string; category?: string };
@@ -2526,9 +2837,7 @@ async function startServer() {
     if (geoVal !== undefined && !VALID_GEOS.has(geoVal)) {
       return res.status(400).json({ error: `Invalid geo value: ${geoVal}` });
     }
-    if (categoryVal !== undefined && !VALID_CATEGORIES.has(categoryVal)) {
-      return res.status(400).json({ error: `Invalid category value: ${categoryVal}` });
-    }
+    // Category is free-text — any non-empty string or null (clear) is accepted
 
     const updates: string[] = [];
     const params: any[]     = [];
@@ -2543,6 +2852,38 @@ async function startServer() {
       await conn.execute(
         `UPDATE wallet_transactions SET ${updates.join(', ')} WHERE id = ?`, params
       );
+
+      // Auto-create classification rule when a new category is manually set
+      if (categoryVal) {
+        const [txRows] = (await conn.execute(
+          `SELECT type, other_party, company_name, reference, company_id FROM wallet_transactions WHERE id = ?`,
+          [id]
+        )) as any[];
+        if (txRows.length) {
+          const tx = txRows[0];
+          const payer     = tx.type === 'credit' ? (tx.other_party  || '') : (tx.company_name || '');
+          const recipient = tx.type === 'debit'  ? (tx.other_party  || '') : (tx.company_name || '');
+          const np = normalizeName(payer);
+          const nr = normalizeName(recipient);
+
+          const [existing] = (await conn.execute(
+            `SELECT id FROM vendor_classification_rules
+             WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
+             LIMIT 1`,
+            [np, nr]
+          )) as any[];
+
+          if (!(existing as any[]).length && (np || nr)) {
+            await conn.execute(
+              `INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category, company_id)
+               VALUES (?, ?, ?, ?, ?)`,
+              [payer || '', recipient || '', null, categoryVal, tx.company_id || null]
+            );
+            console.log(`[classify] auto-created rule: "${payer}" → "${recipient}" = "${categoryVal}"`);
+          }
+        }
+      }
+
       res.json({ id, geo: geoVal || null, category: categoryVal || null });
     } catch (err: any) {
       console.error(`[classify] update error:`, err.message);
@@ -2648,6 +2989,42 @@ async function startServer() {
 
   // ── INTERNAL ROUTES  (API-key auth, no user session required) ───────────────
 
+  // POST /api/internal/test-classify — classification dry-run, no DB upsert (Stage/dev only)
+  app.post('/api/internal/test-classify', async (req: any, res) => {
+    const expectedKey = process.env.INTERNAL_SYNC_API_KEY;
+    if (!expectedKey || req.headers['x-api-key'] !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    let { transactions } = req.body;
+    if (typeof transactions === 'string') {
+      try { transactions = JSON.parse(transactions); } catch { transactions = null; }
+    }
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return res.status(400).json({ error: 'transactions array required' });
+    }
+    const results: any[] = [];
+    for (const t of transactions) {
+      const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || t.company_id || '');
+      const recipient = t.type === 'debit'  ? (t.other_party || '') : (t.company_name || t.company_id || '');
+      const account   = t.reference || null;
+      const { category, ambiguous: isAmbiguous } = await classifyTransaction(payer, recipient, account);
+      if (!category) {
+        notifyClassificationFailure(t, isAmbiguous ? 'ambiguous' : 'not_found').catch(() => {});
+      }
+      results.push({
+        id:        t.id,
+        payer,
+        recipient,
+        category:  category ?? null,
+        status:    category ? 'classified' : (isAmbiguous ? 'ambiguous' : 'not_found'),
+      });
+    }
+    const classified   = results.filter(r => r.status === 'classified').length;
+    const not_found    = results.filter(r => r.status === 'not_found').length;
+    const ambiguous    = results.filter(r => r.status === 'ambiguous').length;
+    res.json({ summary: { total: results.length, classified, not_found, ambiguous }, results });
+  });
+
   // POST /api/internal/sync-transactions
   // Called by Zapier every hour with a batch of bank transactions from IFX/ibanq.
   // Upserts: re-sent transactions update mutable fields (amount, reference, etc.).
@@ -2676,13 +3053,13 @@ async function startServer() {
         t.bank_id,
         t.transaction_date,
         t.type,
-        t.amount,
+        typeof t.amount === 'number' ? Math.round(t.amount * 100) / 100 : t.amount,
         t.currency,
-        t.other_party   ?? null,
-        t.reference     ?? null,
-        t.payment_scheme ?? null,
-        t.balance_after ?? null,
-        t.source        ?? "ifx",
+        t.other_party    || null,
+        t.reference      || null,
+        t.payment_scheme || null,
+        t.balance_after != null ? Math.round(t.balance_after * 100) / 100 : null,
+        t.source         || "ifx",
         t.synced_at ? new Date(t.synced_at).toISOString().slice(0, 19).replace('T', ' ') : null,
       );
     }
@@ -2708,7 +3085,33 @@ async function startServer() {
         values
       );
       console.log(`[${new Date().toISOString()}] [sync-transactions] upserted batch of ${transactions.length}`);
-      const responseBody = { inserted: transactions.length, skipped: 0 };
+
+      // ── Auto-classify: assign category from vendor_classification_rules ──
+      let classified = 0, unclassified = 0, ambiguous = 0;
+      for (const t of transactions) {
+        const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || t.company_id || '');
+        const recipient = t.type === 'debit'  ? (t.other_party || '') : (t.company_name || t.company_id || '');
+        const account   = t.reference || null;
+        const { category, ambiguous: isAmbiguous } = await classifyTransaction(payer, recipient, account);
+        if (category) {
+          // Only update category if not yet set (avoid overwriting manual classifications)
+          const updConn = await pool.getConnection();
+          try {
+            await updConn.execute(
+              'UPDATE wallet_transactions SET category = ? WHERE id = ? AND (category IS NULL OR category = "")',
+              [category, t.id]
+            );
+            classified++;
+          } finally { updConn.release(); }
+        } else {
+          if (isAmbiguous) ambiguous++; else unclassified++;
+          // Fire Zapier webhook asynchronously — don't block the response
+          notifyClassificationFailure(t, isAmbiguous ? 'ambiguous' : 'not_found').catch(() => {});
+        }
+      }
+      console.log(`[sync-transactions] classify: ${classified} ok, ${unclassified} not_found, ${ambiguous} ambiguous`);
+
+      const responseBody = { inserted: transactions.length, classified, unclassified, ambiguous };
       res.json(responseBody);
       logApiCall({
         direction: 'inbound', source: 'zapier',
