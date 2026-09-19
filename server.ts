@@ -2697,9 +2697,16 @@ async function startServer() {
         const anyBankNameMatchesSrc = bankRows.some((r: any) =>
           (r.bank_name || '').toLowerCase().includes(src.toLowerCase())
         );
-        if (bankRows.length === 1 || anyBankNameMatchesSrc) {
+        if (bankRows.length === 1) {
+          // Single bank for this source — safe to filter by bank_id
           options.push({ label: src, source: src, bank_id: bankRows[0].bank_id });
+        } else if (anyBankNameMatchesSrc) {
+          // Multiple banks but names redundantly contain the source name (e.g. "XBO SmartTool", "XBO BluePine")
+          // Use source-only filter (bank_id: null) so the frontend sends source=xbo instead of
+          // arbitrarily picking one company's bank_id which would break cross-company filtering
+          options.push({ label: src, source: src, bank_id: null });
         } else {
+          // Multiple meaningfully different banks — expand to one entry per bank
           for (const r of bankRows) {
             options.push({ label: r.bank_name || r.bank_id, source: src, bank_id: r.bank_id });
           }
