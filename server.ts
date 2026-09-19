@@ -2185,22 +2185,23 @@ async function startServer() {
   ): Promise<void> => {
     const WEBHOOK = 'https://hooks.zapier.com/hooks/catch/27155967/4dw4rfg/';
     try {
+      const params = new URLSearchParams({
+        reason,
+        transaction_id:   String(tx.id),
+        transaction_date: String(tx.transaction_date ?? ''),
+        type:             String(tx.type ?? ''),
+        amount:           String(tx.amount ?? ''),
+        currency:         String(tx.currency ?? ''),
+        payer:            tx.type === 'credit' ? (tx.other_party || '') : (tx.company_name || ''),
+        recipient:        tx.type === 'debit'  ? (tx.other_party || '') : (tx.company_name || ''),
+        reference:        tx.reference || '',
+        source:           String(tx.source ?? ''),
+        company_id:       String(tx.company_id ?? ''),
+      });
       await fetch(WEBHOOK, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reason,
-          transaction_id:   tx.id,
-          transaction_date: tx.transaction_date,
-          type:             tx.type,
-          amount:           tx.amount,
-          currency:         tx.currency,
-          payer:            tx.type === 'credit' ? (tx.other_party || '') : tx.company_name,
-          recipient:        tx.type === 'debit'  ? (tx.other_party || '') : tx.company_name,
-          reference:        tx.reference || '',
-          source:           tx.source,
-          company_id:       tx.company_id,
-        }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
       });
     } catch (e: any) {
       console.warn('[Classification] webhook notify failed:', e.message);
