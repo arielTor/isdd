@@ -391,7 +391,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             ((a.amount_usd ?? 0) - (b.amount_usd ?? 0)) * dir
           );
         }
-        if (json.transactions?.length === 0 && page === 1 && !search && !companyId) {
+        const noFiltersActive = page === 1 && !search && !companyId && !sourceKey && currency === 'ALL' && txType === 'all';
+        if (json.transactions?.length === 0 && noFiltersActive) {
           setIsMock(true);
           setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
         } else {
