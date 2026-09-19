@@ -2138,9 +2138,22 @@ async function startServer() {
     }
   })();
 
-  // Helper: normalize a name for matching (lowercase + trim)
-  const normalizeName = (s: string | null | undefined): string =>
-    (s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+  // Alias map: any variation → canonical form stored in vendor_classification_rules.
+  // Keys are lowercase; values must match exactly what was imported via CSV.
+  const VENDOR_ALIASES: Record<string, string> = {
+    'blue pine ltd':      'bluepine ltd',
+    'bluepine ltd':       'bluepine ltd',
+    'blue pine limited':  'bluepine ltd',
+    'blue pine ltd - a1': 'bluepine ltd - a1',
+    'bluepine ltd - a1':  'bluepine ltd - a1',
+    'blue pine - a1':     'bluepine ltd - a1',
+  };
+
+  // Helper: normalize a name for matching (lowercase + trim + alias resolution)
+  const normalizeName = (s: string | null | undefined): string => {
+    const base = (s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+    return VENDOR_ALIASES[base] ?? base;
+  };
 
   // Helper: find category for a transaction.
   // Returns { category, ambiguous } where ambiguous=true means multiple candidates.
