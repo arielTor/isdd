@@ -2827,14 +2827,6 @@ async function startServer() {
 
   // PATCH /api/transactions/:id/classify — set geo + category on a transaction
   const VALID_GEOS = new Set(['GCC', 'LATAM', 'Mixed', '']);
-  const VALID_CATEGORIES = new Set([
-    'ACC Service providers','Aff comp','BOP',"BTW ACC's","BTW CMP's",'CC','CC Upload',
-    'Client Deposit','Client WD','Fee','internal','LEG License expenses','Leq','Management',
-    'Management - C','Management - I','MRKT Services','MRKT Services Tools','MRKT Spend',
-    'MRKT Tools','Return','SAL IT','SAL Management','SAL MKT','Settlement','TECH Platforms',
-    'TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement','Salary Israel',
-    "G&A (Israel)",'Management - T','TAX','',
-  ]);
   app.patch("/api/transactions/:id/classify", corsMiddleware, requireAuth, async (req: any, res) => {
     const { id } = req.params;
     const { geo, category } = req.body as { geo?: string; category?: string };
@@ -2845,9 +2837,7 @@ async function startServer() {
     if (geoVal !== undefined && !VALID_GEOS.has(geoVal)) {
       return res.status(400).json({ error: `Invalid geo value: ${geoVal}` });
     }
-    if (categoryVal !== undefined && !VALID_CATEGORIES.has(categoryVal)) {
-      return res.status(400).json({ error: `Invalid category value: ${categoryVal}` });
-    }
+    // Category is free-text — any non-empty string or null (clear) is accepted
 
     const updates: string[] = [];
     const params: any[]     = [];
@@ -2862,6 +2852,38 @@ async function startServer() {
       await conn.execute(
         `UPDATE wallet_transactions SET ${updates.join(', ')} WHERE id = ?`, params
       );
+
+      // Auto-create classification rule when a new category is manually set
+      if (categoryVal) {
+        const [txRows] = (await conn.execute(
+          `SELECT type, other_party, company_name, reference, company_id FROM wallet_transactions WHERE id = ?`,
+          [id]
+        )) as any[];
+        if (txRows.length) {
+          const tx = txRows[0];
+          const payer     = tx.type === 'credit' ? (tx.other_party  || '') : (tx.company_name || '');
+          const recipient = tx.type === 'debit'  ? (tx.other_party  || '') : (tx.company_name || '');
+          const np = normalizeName(payer);
+          const nr = normalizeName(recipient);
+
+          const [existing] = (await conn.execute(
+            `SELECT id FROM vendor_classification_rules
+             WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
+             LIMIT 1`,
+            [np, nr]
+          )) as any[];
+
+          if (!(existing as any[]).length && (np || nr)) {
+            await conn.execute(
+              `INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category, company_id)
+               VALUES (?, ?, ?, ?, ?)`,
+              [payer || '', recipient || '', null, categoryVal, tx.company_id || null]
+            );
+            console.log(`[classify] auto-created rule: "${payer}" → "${recipient}" = "${categoryVal}"`);
+          }
+        }
+      }
+
       res.json({ id, geo: geoVal || null, category: categoryVal || null });
     } catch (err: any) {
       console.error(`[classify] update error:`, err.message);

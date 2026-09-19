@@ -7,7 +7,8 @@ import { Company } from './types';
 const GEO_OPTIONS = ['GCC', 'LATAM', 'Mixed'] as const;
 type Geo = typeof GEO_OPTIONS[number];
 
-const CATEGORY_OPTIONS = [
+// Populated dynamically from /api/settings/classification-rules
+const CATEGORY_OPTIONS_FALLBACK = [
   'ACC Service providers','Aff comp','BOP',"BTW ACC's","BTW CMP's",'CC','CC Upload',
   'Client Deposit','Client WD','Fee','internal','LEG License expenses','Leq','Management',
   'Management - C','Management - I','MRKT Services','MRKT Services Tools','MRKT Spend',
@@ -346,7 +347,19 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [loading, setLoading]         = useState(false);
   const [isMock, setIsMock]           = useState(false);
   const [showMgFees, setShowMgFees]   = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([...CATEGORY_OPTIONS_FALLBACK]);
   const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    fetch('/api/settings/classification-rules')
+      .then(r => r.ok ? r.json() : null)
+      .then((rules: { category: string }[] | null) => {
+        if (!rules) return;
+        const unique = [...new Set(rules.map(r => r.category).filter(Boolean))].sort();
+        if (unique.length > 0) setCategoryOptions(unique);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -639,7 +652,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                     <td className="px-4 py-1">
                       <ClassifyCell
                         txId={tx.id} field="category" value={tx.category as any}
-                        options={CATEGORY_OPTIONS} placeholder="Category"
+                        options={categoryOptions as any} placeholder="Category"
                         onUpdate={handleClassify} isMock={isMock}
                       />
                     </td>
