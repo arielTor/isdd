@@ -168,10 +168,10 @@ export default function ClassificationRulesPage() {
   const searchLower = search.toLowerCase().trim();
   const filteredRules = searchLower
     ? rules.filter(r =>
-        r.payer.toLowerCase().includes(searchLower) ||
-        r.recipient.toLowerCase().includes(searchLower) ||
+        (r.payer ?? '').toLowerCase().includes(searchLower) ||
+        (r.recipient ?? '').toLowerCase().includes(searchLower) ||
         (r.account_wallet ?? '').toLowerCase().includes(searchLower) ||
-        r.category.toLowerCase().includes(searchLower)
+        (r.category ?? '').toLowerCase().includes(searchLower)
       )
     : rules;
 
