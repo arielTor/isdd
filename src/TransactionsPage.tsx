@@ -451,7 +451,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       ? buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions
       : (data?.transactions ?? []);
 
-    const headers = ['Date', 'Payer', 'Recipient', 'Currency', 'Category', 'Total Amount', 'In/Out'];
+    const headers = ['Date', 'Payer', 'Recipient', 'Currency', 'Category', 'Total Amount', 'Amount USD', 'In/Out'];
     const csvRows = rows.map(tx => [
       tx.transaction_date,
       tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name,
@@ -459,6 +459,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       tx.currency,
       tx.category ?? '',
       tx.type === 'credit' ? tx.amount : -tx.amount,
+      (tx.currency === 'USD' || tx.currency === 'USDT') ? '' : (tx.amount_usd != null ? (tx.type === 'credit' ? tx.amount_usd : -tx.amount_usd) : ''),
       tx.type === 'credit' ? 'In' : 'Out',
     ]);
 
@@ -639,6 +640,12 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   >
                     <div className="flex items-center gap-1">Total Amount <SortIcon k="amount" /></div>
                   </th>
+                  <th
+                    onClick={() => handleSort('amount_usd')}
+                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-300 select-none"
+                  >
+                    <div className="flex items-center gap-1">Amount USD <SortIcon k="amount_usd" /></div>
+                  </th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">In/Out</th>
                 </tr>
               </thead>
@@ -670,6 +677,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                       tx.type === 'credit' ? 'text-emerald-600' : 'text-red-600'
                     }`}>
                       {fmtAmount(tx.amount, tx.currency, tx.type)}
+                    </td>
+                    <td className="px-4 py-1.5 font-mono text-xs text-slate-400 whitespace-nowrap">
+                      {tx.currency === 'USD' || tx.currency === 'USDT'
+                        ? null
+                        : fmtUsd(tx.amount_usd) ?? <span className="text-slate-600">—</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
