@@ -459,7 +459,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       tx.currency,
       tx.category ?? '',
       tx.type === 'credit' ? tx.amount : -tx.amount,
-      (tx.currency === 'USD' || tx.currency === 'USDT') ? '' : (tx.amount_usd != null ? (tx.type === 'credit' ? tx.amount_usd : -tx.amount_usd) : ''),
+      tx.amount_usd != null ? (tx.type === 'credit' ? tx.amount_usd : -tx.amount_usd) : '',
       tx.type === 'credit' ? 'In' : 'Out',
     ]);
 
@@ -679,9 +679,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                       {fmtAmount(tx.amount, tx.currency, tx.type)}
                     </td>
                     <td className="px-4 py-1.5 font-mono text-xs text-slate-400 whitespace-nowrap">
-                      {tx.currency === 'USD' || tx.currency === 'USDT'
-                        ? null
-                        : fmtUsd(tx.amount_usd) ?? <span className="text-slate-600">—</span>}
+                      {fmtUsd(tx.amount_usd) ?? <span className="text-slate-600">—</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
