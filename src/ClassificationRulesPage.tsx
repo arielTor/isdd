@@ -315,13 +315,20 @@ export default function ClassificationRulesPage() {
       <div className="rounded-xl bg-slate-800/50 border border-slate-700/50 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[18%]" />
+              <col className="w-[28%]" />
+              <col className="w-[22%]" />
+              <col className="w-[10%]" />
+            </colgroup>
             <thead>
               <tr className="bg-slate-800/80 border-b border-slate-700">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Payer</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Recipient</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Account / Wallet</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Category</th>
-                <th className="px-3 py-3 w-16" />
+                <th className="px-3 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
@@ -353,14 +360,14 @@ export default function ClassificationRulesPage() {
                   const isSavingEdit = savingEditId === rule.id;
                   return (
                     <tr key={rule.id} className={`transition-colors ${isEditing ? 'bg-slate-700/40' : 'hover:bg-slate-700/30'}`}>
-                      <td className="px-4 py-2">
-                        {isEditing ? cellInput('payer') : <span className="text-slate-200">{rule.payer}</span>}
+                      <td className="px-4 py-2 max-w-0">
+                        {isEditing ? cellInput('payer') : <span className="text-slate-200 block truncate" title={rule.payer}>{rule.payer}</span>}
                       </td>
-                      <td className="px-4 py-2">
-                        {isEditing ? cellInput('recipient') : <span className="text-slate-200">{rule.recipient}</span>}
+                      <td className="px-4 py-2 max-w-0">
+                        {isEditing ? cellInput('recipient') : <span className="text-slate-200 block truncate" title={rule.recipient}>{rule.recipient}</span>}
                       </td>
-                      <td className="px-4 py-2">
-                        {isEditing ? cellInput('account_wallet', 'optional') : <span className="text-slate-400">{rule.account_wallet || '—'}</span>}
+                      <td className="px-4 py-2 max-w-0">
+                        {isEditing ? cellInput('account_wallet', 'optional') : <span className="text-slate-400 block truncate font-mono text-xs" title={rule.account_wallet || ''}>{rule.account_wallet || '—'}</span>}
                       </td>
                       <td className="px-4 py-2">
                         {isEditing ? cellInput('category') : (
