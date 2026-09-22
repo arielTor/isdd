@@ -311,6 +311,16 @@ export default function ClassificationRulesPage() {
         )}
       </div>
 
+      {/* Filter result count */}
+      {search && !loading && (
+        <p className="text-xs text-slate-400 -mt-2">
+          {filteredRules.length === 0
+            ? <span className="text-amber-400">No rules match "{search}"</span>
+            : <><span className="text-slate-200 font-medium">{filteredRules.length.toLocaleString()}</span> of {rules.length.toLocaleString()} rules match <span className="text-indigo-400">"{search}"</span></>
+          }
+        </p>
+      )}
+
       {/* Table */}
       <div className="rounded-xl bg-slate-800/50 border border-slate-700/50 overflow-hidden">
         <div className="overflow-x-auto">
