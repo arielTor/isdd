@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, Trash2, Tags, AlertTriangle, CheckCircle2, RefreshCcw, Plus, X, FileText, Pencil, Check } from 'lucide-react';
+import { Upload, Trash2, Tags, AlertTriangle, CheckCircle2, RefreshCcw, Plus, X, FileText, Pencil, Check, Search } from 'lucide-react';
 
 interface Rule {
   id: number;
@@ -27,6 +27,7 @@ export default function ClassificationRulesPage() {
   const [editForm, setEditForm] = useState<EditState>(EMPTY_FORM);
   const [savingEditId, setSavingEditId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [search, setSearch] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const showToast = (type: 'success' | 'error', msg: string) => {
@@ -164,6 +165,16 @@ export default function ClassificationRulesPage() {
     }
   };
 
+  const searchLower = search.toLowerCase().trim();
+  const filteredRules = searchLower
+    ? rules.filter(r =>
+        r.payer.toLowerCase().includes(searchLower) ||
+        r.recipient.toLowerCase().includes(searchLower) ||
+        (r.account_wallet ?? '').toLowerCase().includes(searchLower) ||
+        r.category.toLowerCase().includes(searchLower)
+      )
+    : rules;
+
   const cellInput = (field: keyof EditState, placeholder?: string) => (
     <input
       type="text"
@@ -283,6 +294,23 @@ export default function ClassificationRulesPage() {
         </div>
       )}
 
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by payer, recipient, account / wallet, or category…"
+          className="w-full pl-9 pr-9 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-200 text-sm placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       {/* Table */}
       <div className="rounded-xl bg-slate-800/50 border border-slate-700/50 overflow-hidden">
         <div className="overflow-x-auto">
@@ -312,8 +340,15 @@ export default function ClassificationRulesPage() {
                     <p className="text-xs mt-1">Upload a CSV or add rules manually.</p>
                   </td>
                 </tr>
+              ) : filteredRules.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-12 text-slate-500">
+                    <Search className="w-7 h-7 mx-auto mb-2 opacity-30" />
+                    <p>No rules match <span className="text-slate-400">"{search}"</span></p>
+                  </td>
+                </tr>
               ) : (
-                rules.map((rule) => {
+                filteredRules.map((rule) => {
                   const isEditing = editingId === rule.id;
                   const isSavingEdit = savingEditId === rule.id;
                   return (
