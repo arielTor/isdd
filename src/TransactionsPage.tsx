@@ -646,10 +646,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-700/30 transition-colors">
                     <td className="px-4 py-1.5 text-slate-400 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || ifxPartyFallback(tx) || '') : tx.company_name}>
-                      {tx.type === 'credit'
-                        ? (tx.other_party || ifxPartyFallback(tx) || <span className="text-slate-600">—</span>)
-                        : <span className="font-medium">{tx.company_name}</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || '') : tx.company_name}>
+                      {tx.type === 'credit' ? (tx.other_party || <span className="text-slate-600">—</span>) : <span className="font-medium">{tx.company_name}</span>}
                     </td>
                     <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || ifxPartyFallback(tx) || '') : tx.company_name}>
                       {tx.type === 'debit'
