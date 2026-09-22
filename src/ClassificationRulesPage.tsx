@@ -166,6 +166,14 @@ export default function ClassificationRulesPage() {
   };
 
   const searchLower = search.toLowerCase().trim();
+
+  const highlight = (text: string | null) => {
+    const str = text ?? '';
+    if (!searchLower || !str.toLowerCase().includes(searchLower)) return <>{str}</>;
+    const idx = str.toLowerCase().indexOf(searchLower);
+    return <>{str.slice(0, idx)}<mark className="bg-yellow-400/40 text-yellow-200 rounded px-0.5">{str.slice(idx, idx + searchLower.length)}</mark>{str.slice(idx + searchLower.length)}</>;
+  };
+
   const filteredRules = searchLower
     ? rules.filter(r =>
         (r.payer ?? '').toLowerCase().includes(searchLower) ||
@@ -371,18 +379,18 @@ export default function ClassificationRulesPage() {
                   return (
                     <tr key={rule.id} className={`transition-colors ${isEditing ? 'bg-slate-700/40' : 'hover:bg-slate-700/30'}`}>
                       <td className="px-4 py-2 max-w-0">
-                        {isEditing ? cellInput('payer') : <span className="text-slate-200 block truncate" title={rule.payer}>{rule.payer}</span>}
+                        {isEditing ? cellInput('payer') : <span className="text-slate-200 block truncate" title={rule.payer}>{highlight(rule.payer)}</span>}
                       </td>
                       <td className="px-4 py-2 max-w-0">
-                        {isEditing ? cellInput('recipient') : <span className="text-slate-200 block truncate" title={rule.recipient}>{rule.recipient}</span>}
+                        {isEditing ? cellInput('recipient') : <span className="text-slate-200 block truncate" title={rule.recipient}>{highlight(rule.recipient)}</span>}
                       </td>
                       <td className="px-4 py-2 max-w-0">
-                        {isEditing ? cellInput('account_wallet', 'optional') : <span className="text-slate-400 block truncate font-mono text-xs" title={rule.account_wallet || ''}>{rule.account_wallet || '—'}</span>}
+                        {isEditing ? cellInput('account_wallet', 'optional') : <span className="text-slate-400 block truncate font-mono text-xs" title={rule.account_wallet || ''}>{rule.account_wallet ? highlight(rule.account_wallet) : '—'}</span>}
                       </td>
                       <td className="px-4 py-2">
                         {isEditing ? cellInput('category') : (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
-                            {rule.category}
+                            {highlight(rule.category)}
                           </span>
                         )}
                       </td>
