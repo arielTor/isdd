@@ -352,7 +352,7 @@ export default function ClassificationRulesPage() {
                   const isEditing = editingId === rule.id;
                   const isSavingEdit = savingEditId === rule.id;
                   return (
-                    <tr key={rule.id} className={`transition-colors group ${isEditing ? 'bg-slate-700/40' : 'hover:bg-slate-700/30'}`}>
+                    <tr key={rule.id} className={`transition-colors ${isEditing ? 'bg-slate-700/40' : 'hover:bg-slate-700/30'}`}>
                       <td className="px-4 py-2">
                         {isEditing ? cellInput('payer') : <span className="text-slate-200">{rule.payer}</span>}
                       </td>
@@ -382,7 +382,7 @@ export default function ClassificationRulesPage() {
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          <div className="flex items-center justify-end gap-1">
                             <button onClick={() => startEdit(rule)}
                               className="p-1.5 rounded text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all" title="Edit rule">
                               <Pencil className="w-3.5 h-3.5" />
