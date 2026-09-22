@@ -62,6 +62,13 @@ interface ApiResponse {
   summary: { money_in: number; money_out: number; net_change: number; tx_count: number };
 }
 
+// For IFX transactions with no other_party, use the first word of reference as a fallback display name
+const ifxPartyFallback = (tx: Transaction): string | null => {
+  if (tx.source !== 'ifx' || !tx.reference) return null;
+  const first = tx.reference.trim().split(/\s+/)[0];
+  return first || null;
+};
+
 // ── Mock data (used when the API is unreachable / Stage has no DB) ────────────
 
 const d = (daysAgo: number) => {
@@ -639,11 +646,15 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-700/30 transition-colors">
                     <td className="px-4 py-1.5 text-slate-400 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || '') : tx.company_name}>
-                      {tx.type === 'credit' ? (tx.other_party || <span className="text-slate-600">—</span>) : <span className="font-medium">{tx.company_name}</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || ifxPartyFallback(tx) || '') : tx.company_name}>
+                      {tx.type === 'credit'
+                        ? (tx.other_party || ifxPartyFallback(tx) || <span className="text-slate-600">—</span>)
+                        : <span className="font-medium">{tx.company_name}</span>}
                     </td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || '') : tx.company_name}>
-                      {tx.type === 'debit' ? (tx.other_party || <span className="text-slate-600">—</span>) : <span className="font-medium">{tx.company_name}</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || ifxPartyFallback(tx) || '') : tx.company_name}>
+                      {tx.type === 'debit'
+                        ? (tx.other_party || ifxPartyFallback(tx) || <span className="text-slate-600">—</span>)
+                        : <span className="font-medium">{tx.company_name}</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
