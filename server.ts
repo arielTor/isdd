@@ -2808,7 +2808,7 @@ async function startServer() {
         LEFT JOIN companies c ON c.id = wt.company_id
         LEFT JOIN banks     b ON b.id = wt.bank_id
         ${where}
-        ORDER BY ${orderCol} ${orderDir}, wt.created_at ${orderDir}
+        ORDER BY ${orderCol} ${orderDir}, wt.synced_at ${orderDir}
         LIMIT ${limitNum} OFFSET ${offset}
       `, baseParams) as [any[], any];
 
@@ -2860,41 +2860,46 @@ async function startServer() {
         `UPDATE wallet_transactions SET ${updates.join(', ')} WHERE id = ?`, params
       );
 
-      // Auto-create classification rule when a new category is manually set
+      // Respond immediately — category is saved; rule creation is best-effort
+      res.json({ id, geo: geoVal || null, category: categoryVal || null });
+
+      // Auto-create classification rule (non-fatal — never blocks the response)
       if (categoryVal) {
-        const [txRows] = (await conn.execute(
-          `SELECT wt.type, wt.other_party, wt.reference, wt.company_id, c.name AS company_name
-           FROM wallet_transactions wt
-           LEFT JOIN companies c ON c.id = wt.company_id
-           WHERE wt.id = ?`,
-          [id]
-        )) as any[];
-        if (txRows.length) {
-          const tx = txRows[0];
-          const payer     = tx.type === 'credit' ? (tx.other_party  || '') : (tx.company_name || '');
-          const recipient = tx.type === 'debit'  ? (tx.other_party  || '') : (tx.company_name || '');
-          const np = normalizeName(payer);
-          const nr = normalizeName(recipient);
-
-          const [existing] = (await conn.execute(
-            `SELECT id FROM vendor_classification_rules
-             WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
-             LIMIT 1`,
-            [np, nr]
+        try {
+          const [txRows] = (await conn.execute(
+            `SELECT wt.type, wt.other_party, wt.reference, wt.company_id, c.name AS company_name
+             FROM wallet_transactions wt
+             LEFT JOIN companies c ON c.id = wt.company_id
+             WHERE wt.id = ?`,
+            [id]
           )) as any[];
+          if (txRows.length) {
+            const tx = txRows[0];
+            const payer     = tx.type === 'credit' ? (tx.other_party  || '') : (tx.company_name || '');
+            const recipient = tx.type === 'debit'  ? (tx.other_party  || '') : (tx.company_name || '');
+            const np = normalizeName(payer);
+            const nr = normalizeName(recipient);
 
-          if (!(existing as any[]).length && (np || nr)) {
-            await conn.execute(
-              `INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category, company_id)
-               VALUES (?, ?, ?, ?, ?)`,
-              [payer || '', recipient || '', null, categoryVal, tx.company_id || null]
-            );
-            console.log(`[classify] auto-created rule: "${payer}" → "${recipient}" = "${categoryVal}"`);
+            const [existing] = (await conn.execute(
+              `SELECT id FROM vendor_classification_rules
+               WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
+               LIMIT 1`,
+              [np, nr]
+            )) as any[];
+
+            if (!(existing as any[]).length && (np || nr)) {
+              await conn.execute(
+                `INSERT INTO vendor_classification_rules (payer, recipient, account_wallet, category, company_id)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [payer || '', recipient || '', null, categoryVal, tx.company_id || null]
+              );
+              console.log(`[classify] auto-created rule: "${payer}" → "${recipient}" = "${categoryVal}"`);
+            }
           }
+        } catch (ruleErr: any) {
+          console.warn(`[classify] auto-rule creation failed (non-fatal):`, ruleErr.message);
         }
       }
-
-      res.json({ id, geo: geoVal || null, category: categoryVal || null });
     } catch (err: any) {
       console.error(`[classify] update error:`, err.message);
       res.status(500).json({ error: 'DB update failed', detail: err.message });
