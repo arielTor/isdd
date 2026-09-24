@@ -682,7 +682,7 @@ async function startServer() {
       // DB unreachable - surface setup page so admin can diagnose
       res.json({ needsSetup: true });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -720,7 +720,7 @@ async function startServer() {
       console.error("Setup error:", err.message);
       res.status(500).json({ error: "Setup failed - check server logs" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -802,7 +802,7 @@ async function startServer() {
       console.error("Login error:", err.message);
       res.status(500).json({ error: "Login failed - check server logs" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1030,7 +1030,7 @@ async function startServer() {
           console.error("SAML callback error:", err.message);
           res.redirect("/?sso=error");
         } finally {
-          conn?.end();
+          conn?.release();
         }
       }
     );
@@ -1073,7 +1073,7 @@ async function startServer() {
       console.error("GET /api/users error:", err.message);
       res.status(500).json({ error: "Failed to load users" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1129,7 +1129,7 @@ async function startServer() {
       console.error("POST /api/users error:", err.message);
       res.status(500).json({ error: "Failed to create user" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1184,7 +1184,7 @@ async function startServer() {
       console.error("PUT /api/users/:id error:", err.message);
       res.status(500).json({ error: "Failed to update user" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1202,7 +1202,7 @@ async function startServer() {
       console.error("DELETE /api/users/:id error:", err.message);
       res.status(500).json({ error: "Failed to delete user" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1221,7 +1221,7 @@ async function startServer() {
       console.error("PUT /api/users/:id/auth-source error:", err.message);
       res.status(500).json({ error: "Failed to update account type" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1275,7 +1275,7 @@ async function startServer() {
       console.error("GET /api/wallets error:", err.message);
       res.status(500).json({ error: "Failed to load wallets" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1381,7 +1381,7 @@ async function startServer() {
       console.error("GET /api/liquidity/snapshot error:", err.message);
       res.status(500).json({ error: "Failed to load snapshot" });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
@@ -1492,7 +1492,7 @@ async function startServer() {
       console.error("[portfolio-history] error:", e.message);
       res.status(500).json({ error: e.message });
     } finally {
-      conn?.end();
+      conn?.release();
     }
   });
 
