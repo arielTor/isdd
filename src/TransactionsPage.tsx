@@ -565,8 +565,12 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
 
       {/* Mock mode banner */}
       {isMock && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-xs font-semibold">
-          <span>⚠️</span> Showing demo data — no database connection on this environment. Classifications are local-only and reset on refresh.
+        <div className="flex items-center gap-3 px-5 py-3 bg-red-600 rounded-xl text-white text-sm font-semibold shadow-lg">
+          <span className="text-lg">⚠️</span>
+          <div>
+            <span className="font-bold">Demo mode — no database connected.</span>
+            <span className="font-normal ml-2">You are viewing sample data. Category and GEO changes will NOT be saved.</span>
+          </div>
         </div>
       )}
 
