@@ -2863,7 +2863,10 @@ async function startServer() {
       // Auto-create classification rule when a new category is manually set
       if (categoryVal) {
         const [txRows] = (await conn.execute(
-          `SELECT type, other_party, company_name, reference, company_id FROM wallet_transactions WHERE id = ?`,
+          `SELECT wt.type, wt.other_party, wt.reference, wt.company_id, c.name AS company_name
+           FROM wallet_transactions wt
+           LEFT JOIN companies c ON c.id = wt.company_id
+           WHERE wt.id = ?`,
           [id]
         )) as any[];
         if (txRows.length) {
