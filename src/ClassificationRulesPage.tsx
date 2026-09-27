@@ -14,6 +14,15 @@ interface Rule {
 type EditState = { payer: string; recipient: string; account_wallet: string; category: string };
 const EMPTY_FORM = { payer: '', recipient: '', account_wallet: '', category: '' };
 
+const CATEGORY_OPTIONS = [
+  'ACC Service providers','Aff comp','BOP',"BTW ACC's","BTW CMP's",'CC','CC Upload',
+  'Client Deposit','Client WD','Fee','internal','LEG License expenses','Leq','Management',
+  'Management - C','Management - I','Management - T','MRKT Services','MRKT Services Tools',
+  'MRKT Spend','MRKT Tools','Return','SAL IT','SAL Management','SAL MKT','Settlement',
+  'TECH Platforms','TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement',
+  'Salary Israel',"G&A (Israel)",'TAX',
+];
+
 export default function ClassificationRulesPage() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +192,16 @@ export default function ClassificationRulesPage() {
       )
     : rules;
 
-  const cellInput = (field: keyof EditState, placeholder?: string) => (
+  const cellInput = (field: keyof EditState, placeholder?: string) => field === 'category' ? (
+    <select
+      value={editForm.category}
+      onChange={e => setEditForm(prev => ({ ...prev, category: e.target.value }))}
+      className="w-full px-2 py-1 rounded bg-slate-900/80 border border-indigo-500/50 text-slate-200 text-sm focus:outline-none focus:border-indigo-400"
+    >
+      <option value="">Select…</option>
+      {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+    </select>
+  ) : (
     <input
       type="text"
       value={editForm[field]}
@@ -274,7 +292,6 @@ export default function ClassificationRulesPage() {
               { key: 'payer', label: 'Payer', required: true, placeholder: 'e.g. Blue Pine Ltd' },
               { key: 'recipient', label: 'Recipient', required: true, placeholder: 'e.g. XBO' },
               { key: 'account_wallet', label: 'Account / Wallet', required: false, placeholder: 'optional' },
-              { key: 'category', label: 'Category', required: true, placeholder: 'e.g. Trading Revenue' },
             ] as const).map(({ key, label, required, placeholder }) => (
               <div key={key} className="space-y-1">
                 <label className="block text-xs font-medium text-slate-400">
@@ -287,6 +304,19 @@ export default function ClassificationRulesPage() {
                 />
               </div>
             ))}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-400">
+                Category<span className="text-red-400 ml-0.5">*</span>
+              </label>
+              <select
+                value={form.category}
+                onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-700 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="">Select category…</option>
+                {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)}
