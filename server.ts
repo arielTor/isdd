@@ -3096,6 +3096,36 @@ async function startServer() {
     const ip = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || '').split(',')[0].trim();
     let statusCode = 200;
     let conn: any;
+    const skipped: { id: string; reason: string }[] = [];
+
+    const upsertOne = async (t: any, c: any) => {
+      const values = [
+        t.id, t.wallet_id, t.company_id, t.bank_id, t.transaction_date, t.type,
+        typeof t.amount === 'number' ? Math.round(t.amount * 100) / 100 : t.amount,
+        t.currency,
+        t.other_party    || null,
+        t.reference      || null,
+        t.payment_scheme || null,
+        t.balance_after != null ? Math.round(t.balance_after * 100) / 100 : null,
+        t.source         || "ifx",
+        t.synced_at ? new Date(t.synced_at).toISOString().slice(0, 19).replace('T', ' ') : null,
+      ];
+      await c.execute(
+        `INSERT INTO wallet_transactions
+          (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
+           currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) AS new_row
+         ON DUPLICATE KEY UPDATE
+           amount         = new_row.amount,
+           balance_after  = new_row.balance_after,
+           reference      = new_row.reference,
+           other_party    = new_row.other_party,
+           payment_scheme = new_row.payment_scheme,
+           synced_at      = new_row.synced_at`,
+        values
+      );
+    };
+
     try {
       conn = await pool.getConnection();
       for (let i = 0; i < transactions.length; i += CHUNK_SIZE) {
@@ -3104,12 +3134,7 @@ async function startServer() {
         const values: any[] = [];
         for (const t of chunk) {
           values.push(
-            t.id,
-            t.wallet_id,
-            t.company_id,
-            t.bank_id,
-            t.transaction_date,
-            t.type,
+            t.id, t.wallet_id, t.company_id, t.bank_id, t.transaction_date, t.type,
             typeof t.amount === 'number' ? Math.round(t.amount * 100) / 100 : t.amount,
             t.currency,
             t.other_party    || null,
@@ -3120,22 +3145,35 @@ async function startServer() {
             t.synced_at ? new Date(t.synced_at).toISOString().slice(0, 19).replace('T', ' ') : null,
           );
         }
-        await conn.execute(
-          `INSERT INTO wallet_transactions
-            (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
-             currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
-           VALUES ${placeholders} AS new_row
-           ON DUPLICATE KEY UPDATE
-             amount         = new_row.amount,
-             balance_after  = new_row.balance_after,
-             reference      = new_row.reference,
-             other_party    = new_row.other_party,
-             payment_scheme = new_row.payment_scheme,
-             synced_at      = new_row.synced_at`,
-          values
-        );
+        try {
+          await conn.execute(
+            `INSERT INTO wallet_transactions
+              (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
+               currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
+             VALUES ${placeholders} AS new_row
+             ON DUPLICATE KEY UPDATE
+               amount         = new_row.amount,
+               balance_after  = new_row.balance_after,
+               reference      = new_row.reference,
+               other_party    = new_row.other_party,
+               payment_scheme = new_row.payment_scheme,
+               synced_at      = new_row.synced_at`,
+            values
+          );
+        } catch (chunkErr: any) {
+          // Chunk failed — fall back to row-by-row so one bad record doesn't block the rest
+          console.warn(`[sync-transactions] chunk ${i}-${i + chunk.length} failed (${chunkErr.message}), retrying row-by-row`);
+          for (const t of chunk) {
+            try {
+              await upsertOne(t, conn);
+            } catch (rowErr: any) {
+              console.error(`[sync-transactions] skipped ${t.id} (${t.wallet_id}): ${rowErr.message}`);
+              skipped.push({ id: t.id, reason: rowErr.message });
+            }
+          }
+        }
       }
-      console.log(`[${new Date().toISOString()}] [sync-transactions] upserted batch of ${transactions.length}`);
+      console.log(`[${new Date().toISOString()}] [sync-transactions] upserted batch of ${transactions.length}, skipped ${skipped.length}`);
 
       // ── Auto-classify: assign category from vendor_classification_rules ──
       let classified = 0, unclassified = 0, ambiguous = 0;
@@ -3162,7 +3200,7 @@ async function startServer() {
       }
       console.log(`[sync-transactions] classify: ${classified} ok, ${unclassified} not_found, ${ambiguous} ambiguous`);
 
-      const responseBody = { inserted: transactions.length, classified, unclassified, ambiguous };
+      const responseBody = { inserted: transactions.length - skipped.length, skipped: skipped.length, skipped_ids: skipped, classified, unclassified, ambiguous };
       res.json(responseBody);
       logApiCall({
         direction: 'inbound', source: 'zapier',
