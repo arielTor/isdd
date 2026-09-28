@@ -602,16 +602,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
         </button>
       </div>
 
-      {/* Mock mode banner */}
-      {isMock && (
-        <div className="flex items-center gap-3 px-5 py-3 bg-red-600 rounded-xl text-white text-sm font-semibold shadow-lg">
-          <span className="text-lg">⚠️</span>
-          <div>
-            <span className="font-bold">Demo mode — no database connected.</span>
-            <span className="font-normal ml-2">You are viewing sample data. Category and GEO changes will NOT be saved.</span>
-          </div>
-        </div>
-      )}
 
       {/* Summary cards */}
       {summary && (
