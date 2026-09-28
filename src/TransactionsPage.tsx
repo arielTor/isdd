@@ -398,14 +398,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             ((a.amount_usd ?? 0) - (b.amount_usd ?? 0)) * dir
           );
         }
-        const noFiltersActive = page === 1 && !search && !companyId && !sourceKey && currency === 'ALL' && txType === 'all';
-        if (json.transactions?.length === 0 && noFiltersActive) {
-          setIsMock(true);
-          setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
-        } else {
-          setIsMock(false);
-          setData(json);
-        }
+        setIsMock(false);
+        setData(json);
       } else {
         throw new Error('api error');
       }
@@ -485,11 +479,21 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       }
     }
 
+    const csvPayer = (tx: Transaction) =>
+      tx.type === 'credit'
+        ? (tx.other_party || ifxPartyFallback(tx) || '')
+        : tx.company_name;
+
+    const csvRecipient = (tx: Transaction) =>
+      tx.type === 'debit'
+        ? (tx.other_party || ifxPartyFallback(tx) || '')
+        : (tx.source === 'xbo' && tx.reference ? tx.reference : tx.company_name);
+
     const headers = ['Date', 'Payer', 'Recipient', 'Currency', 'Category', 'Total Amount', 'Amount USD', 'In/Out'];
     const csvRows = rows.map(tx => [
       tx.transaction_date,
-      tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name,
-      tx.type === 'debit'  ? (tx.other_party ?? '') : tx.company_name,
+      csvPayer(tx),
+      csvRecipient(tx),
       tx.currency,
       tx.category ?? '',
       tx.type === 'credit' ? tx.amount : -tx.amount,
