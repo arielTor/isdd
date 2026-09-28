@@ -3091,47 +3091,50 @@ async function startServer() {
       return res.status(400).json({ error: "transactions array is required and must be non-empty" });
     }
 
-    const placeholders = transactions.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(", ");
-    const values: any[] = [];
-    for (const t of transactions) {
-      values.push(
-        t.id,
-        t.wallet_id,
-        t.company_id,
-        t.bank_id,
-        t.transaction_date,
-        t.type,
-        typeof t.amount === 'number' ? Math.round(t.amount * 100) / 100 : t.amount,
-        t.currency,
-        t.other_party    || null,
-        t.reference      || null,
-        t.payment_scheme || null,
-        t.balance_after != null ? Math.round(t.balance_after * 100) / 100 : null,
-        t.source         || "ifx",
-        t.synced_at ? new Date(t.synced_at).toISOString().slice(0, 19).replace('T', ' ') : null,
-      );
-    }
-
+    const CHUNK_SIZE = 50;
     const startMs = Date.now();
     const ip = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || '').split(',')[0].trim();
     let statusCode = 200;
     let conn: any;
     try {
       conn = await pool.getConnection();
-      await conn.execute(
-        `INSERT INTO wallet_transactions
-          (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
-           currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
-         VALUES ${placeholders} AS new_row
-         ON DUPLICATE KEY UPDATE
-           amount         = new_row.amount,
-           balance_after  = new_row.balance_after,
-           reference      = new_row.reference,
-           other_party    = new_row.other_party,
-           payment_scheme = new_row.payment_scheme,
-           synced_at      = new_row.synced_at`,
-        values
-      );
+      for (let i = 0; i < transactions.length; i += CHUNK_SIZE) {
+        const chunk = transactions.slice(i, i + CHUNK_SIZE);
+        const placeholders = chunk.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(", ");
+        const values: any[] = [];
+        for (const t of chunk) {
+          values.push(
+            t.id,
+            t.wallet_id,
+            t.company_id,
+            t.bank_id,
+            t.transaction_date,
+            t.type,
+            typeof t.amount === 'number' ? Math.round(t.amount * 100) / 100 : t.amount,
+            t.currency,
+            t.other_party    || null,
+            t.reference      || null,
+            t.payment_scheme || null,
+            t.balance_after != null ? Math.round(t.balance_after * 100) / 100 : null,
+            t.source         || "ifx",
+            t.synced_at ? new Date(t.synced_at).toISOString().slice(0, 19).replace('T', ' ') : null,
+          );
+        }
+        await conn.execute(
+          `INSERT INTO wallet_transactions
+            (id, wallet_id, company_id, bank_id, transaction_date, type, amount,
+             currency, other_party, reference, payment_scheme, balance_after, source, synced_at)
+           VALUES ${placeholders} AS new_row
+           ON DUPLICATE KEY UPDATE
+             amount         = new_row.amount,
+             balance_after  = new_row.balance_after,
+             reference      = new_row.reference,
+             other_party    = new_row.other_party,
+             payment_scheme = new_row.payment_scheme,
+             synced_at      = new_row.synced_at`,
+          values
+        );
+      }
       console.log(`[${new Date().toISOString()}] [sync-transactions] upserted batch of ${transactions.length}`);
 
       // ── Auto-classify: assign category from vendor_classification_rules ──
