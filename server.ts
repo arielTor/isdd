@@ -2773,7 +2773,9 @@ async function startServer() {
     const orderDir = sort_dir === 'asc' ? 'ASC' : 'DESC';
 
     const pageNum  = Math.max(1, parseInt(page, 10));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limitStr, 10)));
+    const requestedLimit = Math.max(1, parseInt(limitStr, 10));
+    // Allow up to 10 000 rows for CSV export (limit=9999); normal UI calls stay capped at 100
+    const limitNum = requestedLimit >= 9999 ? 10000 : Math.min(100, requestedLimit);
     const offset   = (pageNum - 1) * limitNum;
 
     const today         = new Date().toISOString().slice(0, 10);
