@@ -696,10 +696,12 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                         ? (tx.other_party || ifxPartyFallback(tx) || <span className="text-slate-600">—</span>)
                         : <span className="font-medium">{tx.company_name}</span>}
                     </td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || ifxPartyFallback(tx) || '') : tx.company_name}>
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || ifxPartyFallback(tx) || '') : (tx.source === 'xbo' && tx.reference ? tx.reference : tx.company_name)}>
                       {tx.type === 'debit'
                         ? (tx.other_party || ifxPartyFallback(tx) || <span className="text-slate-600">—</span>)
-                        : <span className="font-medium">{tx.company_name}</span>}
+                        : (tx.source === 'xbo' && tx.reference
+                            ? tx.reference
+                            : <span className="font-medium">{tx.company_name}</span>)}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
