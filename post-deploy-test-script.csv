@@ -1,0 +1,96 @@
+Test #,Area,Feature,Precondition,Test Steps,Expected Result,Pass/Fail,Notes
+,,,,,,,,
+,— TRANSACTIONS SCREEN UI —,,,,,,,
+1,Transactions UI — Table Columns,Payer column shows correct party for credit (incoming) transactions,Transactions loaded on screen,"1. Find any credit (In) transaction in the table
+2. Look at the Payer column","Payer column shows the other_party name (the external sender). Company name (BluePine) appears in Recipient column.",,
+2,Transactions UI — Table Columns,Recipient column shows correct party for debit (outgoing) transactions,Transactions loaded on screen,"1. Find any debit (Out) transaction in the table
+2. Look at the Recipient column","Recipient column shows the other_party name (external receiver). Company name (BluePine) appears in Payer column.",,
+3,Transactions UI — Table Columns,Long party names are truncated with tooltip,A transaction with a long other_party name exists,"1. Find a transaction with a long Payer or Recipient name
+2. Hover over the truncated text","Full name appears in the browser tooltip (title attribute). Row does not break layout.",,
+4,Transactions UI — Table Columns,Category column header is highlighted,Any transactions loaded,"1. Look at the table headers","Category column header is indigo/purple to distinguish it from the grey headers of other columns.",,
+5,Transactions UI — Category Cell,Category cell shows placeholder when unset,Transaction with no category,"1. Find an unclassified transaction
+2. Look at the Category column","Shows a faint placeholder (e.g. ""Category"") not a blank or broken cell.",,
+6,Transactions UI — Category Cell,Category cell shows current value when set,Transaction with a category already set,"1. Find a classified transaction
+2. Look at the Category column","Displays the category value as a chip/badge. Color-coded if applicable.",,
+7,Transactions UI — Category Cell,Clicking category cell opens dropdown,Any transaction,"1. Click the Category cell on any row","A dropdown appears with the list of available categories. Closes on outside click.",,
+8,Transactions UI — Category Cell,Dropdown has a search/filter input when many options exist,Rules table has more than 6 categories,"1. Click any Category cell
+2. Look at the dropdown","A search input appears at the top of the dropdown. Typing filters the option list in real time.",,
+9,Transactions UI — Category Cell,Selecting a category closes the dropdown and updates the row,Any transaction,"1. Click Category cell
+2. Select any option from the dropdown","Dropdown closes. Row immediately shows the selected category without page reload.",,
+10,Transactions UI — Category Cell,Clear category option is available,Transaction with an existing category,"1. Click Category cell on a classified transaction
+2. Look for a clear option at the bottom","A ""✕ Clear category"" button appears. Clicking it removes the category and sets the cell back to placeholder.",,
+11,Transactions UI — In/Out Badge,Credit transactions show green In badge,Any credit transaction,"1. Find a credit (incoming) transaction","In/Out column shows a green badge with an arrow-down-left icon and ""In"" label.",,
+12,Transactions UI — In/Out Badge,Debit transactions show red Out badge,Any debit transaction,"1. Find a debit (outgoing) transaction","In/Out column shows a red badge with an arrow-up-right icon and ""Out"" label.",,
+13,Transactions UI — Amount,Credit amounts displayed in green,Any credit transaction,"1. Look at the Total Amount column for a credit row","Amount is formatted in green (e.g. +48,500 USD).",,
+14,Transactions UI — Amount,Debit amounts displayed in red,Any debit transaction,"1. Look at the Total Amount column for a debit row","Amount is formatted in red with parentheses or minus (e.g. (12,800 USD)).",,
+15,Transactions UI — Sorting,Sort by Date ascending and descending,Transactions loaded,"1. Click the Date column header once
+2. Click again to reverse","Transactions reorder. Sort icon updates (up/down arrow). Clicking a third time resets.",,
+16,Transactions UI — Sorting,Sort by Total Amount,Transactions loaded,"1. Click the Total Amount column header","Transactions sort by amount ascending, then descending on second click.",,
+17,Transactions UI — Summary Cards,Summary cards show correct totals,Transactions loaded with filters applied,"1. Apply date range and company filter
+2. Look at the 4 summary cards above the table","Cards show: Money In (green), Money Out (red), Net Change (green/red), Transaction Count — all matching the filtered results.",,
+18,Transactions UI — Filters,Company filter scopes the table,Multiple companies exist,"1. Select a specific company from the company dropdown
+2. Apply filter","Only transactions for that company appear. Summary cards update accordingly.",,
+19,Transactions UI — Filters,Search filters by party name or reference,Transactions with varied other_party names,"1. Type a vendor name (e.g. ""Amazon"") in the search box","Table shows only transactions where other_party or reference contains the search string.",,
+20,Transactions UI — Filters,Currency filter scopes results,Transactions in multiple currencies exist,"1. Select EUR from the currency dropdown","Only EUR transactions shown. USD/GBP rows disappear.",,
+21,Transactions UI — Filters,Type filter (In/Out) works,"","1. Select ""In"" from the type filter
+2. Then try ""Out""","Only credit or debit transactions shown respectively.",,
+22,Transactions UI — Export,Export CSV contains Payer and Recipient columns,Transactions loaded,"1. Apply any filter
+2. Click Export CSV button
+3. Open the downloaded file","CSV file includes columns: Date, Payer, Recipient, Currency, Category, Total Amount, In/Out — matching what is visible on screen.",,
+23,Transactions UI — Pagination,Pagination controls work,More than 20 transactions exist,"1. Look at the pagination bar below the table
+2. Click Next page","Table advances to the next page. Previous/next buttons update correctly. Page count shown.",,
+,,,,,,,,
+,— ACCOUNTING CATEGORIES PAGE —,,,,,,,
+24,Navigation,Accounting Categories page visible (Admin),Logged in as Admin,"1. Open sidebar Settings section
+2. Look for ""Accounting Categories"" menu item","Menu item appears with tag icon. Clicking it opens the rules table.",,
+25,Navigation,Accounting Categories page hidden (non-Admin),Logged in as non-Admin user,"1. Open sidebar Settings section","Accounting Categories menu item is NOT visible to non-Admin users.",,
+26,Classification Rules,Load existing rules,Rules exist in vendor_classification_rules table,"1. Navigate to Settings → Accounting Categories","Table shows all rules with columns: Payer, Recipient, Account/Wallet, Category.",,
+27,Classification Rules,Add new rule manually,Rules page is open,"1. Fill in Add New Rule form: Payer = ""Test Vendor"" / Recipient = ""BluePine Ltd"" / Category = ""TEST_Category""
+2. Click Save","New row appears in the table. Success toast shown. Row persists after page refresh.",,
+28,Classification Rules,Edit existing rule inline,At least one rule in the table,"1. Hover over a row — pencil icon appears
+2. Click pencil to enter edit mode
+3. Change Category field value
+4. Click Save","Row updates in place. New category value is visible. No page reload needed.",,
+29,Classification Rules,Delete a rule,At least one rule in the table,"1. Hover over a row
+2. Click the trash icon","Row is removed from table immediately. Does not reappear on refresh.",,
+30,Classification Rules,CSV bulk upload,Admin on Accounting Categories page,"1. Click Upload CSV
+2. Select a valid CSV file with columns: payer,recipient,account_wallet,category
+3. Submit","All rules from CSV are loaded into the table. Previous rules are replaced. Success message shown.",,
+31,Classification Rules,CSV upload with invalid format,Admin on Accounting Categories page,"1. Attempt upload of CSV missing required columns","Error message shown. Table is not cleared or corrupted.",,
+,,,,,,,,
+,— CATEGORY DROPDOWN — DYNAMIC OPTIONS —,,,,,,,
+32,Transactions — Category Dropdown,Dropdown shows live options from rules table,Rules exist in DB,"1. Open Transactions page
+2. Click the Category cell on any transaction","Dropdown options match the unique categories from vendor_classification_rules table (not a hardcoded static list).",,
+33,Transactions — Category Dropdown,Dropdown falls back to built-in list when rules table is empty,No rules in DB,"1. Open Transactions page
+2. Click any Category cell","Dropdown still shows the fallback category list. No blank or broken dropdown.",,
+34,Transactions — Manual Classify,PATCH endpoint accepts CSV-format categories (e.g. INC_Client Deposit),"","1. PATCH /api/transactions/:id/classify with { ""category"": ""INC_Client Deposit"" }","200 OK. Category set. No 400 error about invalid category.",,
+35,Transactions — Manual Classify,PATCH endpoint rejects invalid geo,"","1. PATCH /api/transactions/:id/classify with { ""geo"": ""INVALID"" }","400 error returned. Transaction not updated.",,
+36,Transactions — Manual Classify,Category written to DB — persists on refresh,Set a category via UI,"1. Select a category
+2. Refresh the full page
+3. Find the same transaction","Category value still shows — confirmed persisted to wallet_transactions table.",,
+,,,,,,,,
+,— AUTO-RULE CREATION —,,,,,,,
+37,Auto-Rule Creation,Setting a category auto-creates a rule if none exists,Transaction payer+recipient NOT in rules table,"1. Manually set a category on that transaction
+2. Navigate to Settings → Accounting Categories","A new rule appears with the transaction's payer + recipient + the chosen category.",,
+38,Auto-Rule Creation,Does NOT create duplicate rule when one already exists,Rule already exists for that payer+recipient,"1. Manually set a category on a transaction whose payer+recipient already has a rule
+2. Check vendor_classification_rules","No duplicate row created. Existing rule untouched.",,
+39,Auto-Rule Creation,Correct direction for credit transaction,Credit (In) transaction,"1. Manually classify a credit transaction
+2. Check auto-created rule","Rule payer = other_party (external sender), Rule recipient = company name.",,
+40,Auto-Rule Creation,Correct direction for debit transaction,Debit (Out) transaction,"1. Manually classify a debit transaction
+2. Check auto-created rule","Rule payer = company name, Rule recipient = other_party (external receiver).",,
+,,,,,,,,
+,— AUTO-CLASSIFICATION (SYNC) —,,,,,,,
+41,Auto-Classification,New synced transaction is auto-classified,A rule exists for the vendor,"1. Trigger sync
+2. Check the transaction","Category is set automatically from the matching rule.",,
+42,Auto-Classification,Auto-classifier does NOT overwrite manually set category,Transaction already has a manual category,"1. Trigger sync again","Category is unchanged — WHERE category IS NULL OR category = '' guard works.",,
+43,Auto-Classification,Unclassified transaction triggers Zapier email alert,No rule matches the transaction,"1. Trigger sync with a transaction that has no matching rule
+2. Check email inbox","Zapier email alert received with transaction details and AI-suggested category.",,
+,,,,,,,,
+,— NAME NORMALIZATION —,,,,,,,
+44,Name Normalization,"""Blue Pine Ltd"" matches rule saved as ""bluepine ltd""",Rule exists with payer = bluepine ltd,"1. Trigger classification for a transaction where other_party = ""Blue Pine Ltd""","Transaction classified correctly. Alias map + lowercasing resolves the variation.",,
+45,Name Normalization,"""BLUEPINE LTD"" matches rule saved as ""bluepine ltd""",Same rule,"1. Trigger classification for other_party = ""BLUEPINE LTD""","Classified correctly.",,
+,,,,,,,,
+,— GEO FIELD —,,,,,,,
+46,Geo Field,Set geo on a transaction,Any transaction,"1. Click the Geo cell
+2. Select GCC","Geo updated. Persists on refresh.",,
+47,Geo Field,Invalid geo rejected by API,"","1. PATCH /api/transactions/:id/classify with { ""geo"": ""EUROPE"" }","400 error. Transaction geo unchanged.",,

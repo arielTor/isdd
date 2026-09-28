@@ -2138,6 +2138,37 @@ async function startServer() {
     }
   })();
 
+  // ── api_call_logs table (API Monitor screen) ────────────────────────────────
+  (async () => {
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS api_call_logs (
+            id           BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            direction    VARCHAR(16)   NOT NULL DEFAULT 'inbound',
+            source       VARCHAR(64)   NOT NULL DEFAULT '',
+            endpoint     VARCHAR(255)  NOT NULL DEFAULT '',
+            method       VARCHAR(10)   NOT NULL DEFAULT '',
+            status_code  SMALLINT      NOT NULL DEFAULT 0,
+            request_body MEDIUMTEXT,
+            response_body MEDIUMTEXT,
+            duration_ms  INT           NOT NULL DEFAULT 0,
+            ip_address   VARCHAR(64)   NOT NULL DEFAULT '',
+            created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_created_at (created_at),
+            INDEX idx_source (source),
+            INDEX idx_direction (direction)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[ApiLogs] api_call_logs table ready");
+      } catch (e: any) { console.warn("[ApiLogs] table init:", e.message); }
+      finally { conn.release(); }
+    } catch (e: any) {
+      console.warn("[ApiLogs] DB not reachable on startup:", e.message);
+    }
+  })();
+
   // Alias map: any variation → canonical form stored in vendor_classification_rules.
   // Keys are lowercase; values must match exactly what was imported via CSV.
   const VENDOR_ALIASES: Record<string, string> = {

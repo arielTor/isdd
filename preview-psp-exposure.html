@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PSP Exposure Dashboard — Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+<div class="max-w-7xl mx-auto p-6 space-y-5">
+
+  <div class="text-center text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg py-2">
+    ↓ MOCKUP — visual redesign only, sample data. Real settlement/transaction tables are still empty (see logic-gap notes).
+  </div>
+
+  <!-- Header -->
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">PSP Exposure Dashboard</h1>
+      <p class="text-sm text-slate-500">Real-time overview of PSP balances, settlements and expected cash</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <input type="date" value="2026-06-22" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none" />
+      <select class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none"><option>All Companies</option></select>
+      <select class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none"><option>All Acquirers</option></select>
+      <select class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none"><option>All Currencies</option></select>
+      <button class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Sync All
+      </button>
+    </div>
+  </div>
+
+  <!-- Top 4 summary cards -->
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+
+    <!-- Total Exposure (dark) -->
+    <div class="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-2xl p-5 text-white flex flex-col">
+      <div class="flex items-center gap-1.5 text-indigo-200 text-[11px] font-bold uppercase tracking-wider">
+        Total Exposure
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      </div>
+      <div class="text-3xl font-bold mt-1">$10.30M</div>
+      <div class="text-indigo-200 text-xs mb-4">Balance + Settlement</div>
+      <div class="flex items-center gap-4 mt-auto">
+        <svg width="84" height="84" viewBox="0 0 84 84">
+          <g transform="rotate(-90 42 42)">
+            <circle cx="42" cy="42" r="32" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="10"/>
+            <circle cx="42" cy="42" r="32" fill="none" stroke="#a5b4fc" stroke-width="10" stroke-dasharray="162.8 201" />
+            <circle cx="42" cy="42" r="32" fill="none" stroke="#34d399" stroke-width="10" stroke-dasharray="38.2 201" stroke-dashoffset="-162.8" />
+          </g>
+          <text x="42" y="39" text-anchor="middle" font-size="9" fill="white" opacity="0.7">$10.30M</text>
+          <text x="42" y="50" text-anchor="middle" font-size="8" fill="white" opacity="0.7">100%</text>
+        </svg>
+        <div class="space-y-1.5 text-xs">
+          <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#a5b4fc]"></span>Balance <span class="font-mono font-bold ml-auto">$8.40M (81%)</span></div>
+          <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#34d399]"></span>Settlement <span class="font-mono font-bold ml-auto">$1.90M (19%)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Total Balance -->
+    <div class="bg-white rounded-2xl border border-slate-200 p-5">
+      <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Balance</div>
+      <div class="text-3xl font-bold text-slate-900 mt-1 mb-4">$8.40M</div>
+      <div class="space-y-2.5">
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Rolling Reserve
+            </span>
+          </div>
+          <div class="text-lg font-bold text-slate-900">$2.60M</div>
+          <div class="text-[10px] text-slate-400">31% of Total Balance</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              Pending Transactions
+            </span>
+          </div>
+          <div class="text-lg font-bold text-slate-900">$5.80M</div>
+          <div class="text-[10px] text-slate-400">69% of Total Balance</div>
+        </div>
+      </div>
+      <div class="text-[10px] text-slate-400 mt-3">Balance = Rolling Reserve + Pending Transactions</div>
+    </div>
+
+    <!-- Settlement -->
+    <div class="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col">
+      <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Settlement</div>
+      <div class="text-3xl font-bold text-slate-900 mt-1">$1.90M</div>
+      <div class="text-xs text-slate-400 mb-4">Ready to be paid by PSPs</div>
+      <div class="flex-1 flex items-center justify-center">
+        <div class="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+        </div>
+      </div>
+      <div class="h-1.5 bg-emerald-500 rounded-full -mx-5 -mb-5 mt-3"></div>
+    </div>
+
+    <!-- Expected Cash In -->
+    <div class="bg-white rounded-2xl border border-slate-200 p-5">
+      <div class="flex items-center justify-between">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Expected Cash In (7 days)</div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      </div>
+      <div class="text-3xl font-bold text-slate-900 mt-1 mb-1">$2.40M</div>
+      <div class="text-xs text-slate-400 mb-3">Next 7 days</div>
+      <div class="flex items-end justify-between gap-1.5 h-24">
+        <div class="flex flex-col items-center gap-1 flex-1"><span class="text-[9px] font-bold text-slate-500">$180K</span><div class="w-full bg-emerald-500 rounded" style="height:32%"></div><span class="text-[9px] text-slate-400">Jun 23</span></div>
+        <div class="flex flex-col items-center gap-1 flex-1"><span class="text-[9px] font-bold text-slate-500">$250K</span><div class="w-full bg-emerald-500 rounded" style="height:45%"></div><span class="text-[9px] text-slate-400">Jun 24</span></div>
+        <div class="flex flex-col items-center gap-1 flex-1"><span class="text-[9px] font-bold text-slate-500">$420K</span><div class="w-full bg-emerald-500 rounded" style="height:75%"></div><span class="text-[9px] text-slate-400">Jun 25</span></div>
+        <div class="flex flex-col items-center gap-1 flex-1"><span class="text-[9px] font-bold text-slate-500">$380K</span><div class="w-full bg-emerald-500 rounded" style="height:68%"></div><span class="text-[9px] text-slate-400">Jun 26</span></div>
+        <div class="flex flex-col items-center gap-1 flex-1"><span class="text-[9px] font-bold text-slate-500">$330K</span><div class="w-full bg-emerald-500 rounded" style="height:59%"></div><span class="text-[9px] text-slate-400">Jun 27</span></div>
+        <div class="flex flex-col items-center gap-1 flex-1"><span class="text-[9px] font-bold text-slate-500">$260K</span><div class="w-full bg-emerald-500 rounded" style="height:46%"></div><span class="text-[9px] text-slate-400">Jun 28</span></div>
+        <div class="flex flex-col items-center gap-1 flex-1"><span class="text-[9px] font-bold text-slate-500">$560K</span><div class="w-full bg-emerald-500 rounded" style="height:100%"></div><span class="text-[9px] text-slate-400">Jun 29</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three breakdown tables -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- By Acquirer -->
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">By Acquirer</div>
+      <table class="w-full text-xs">
+        <thead class="text-slate-400">
+          <tr>
+            <th class="text-left px-4 py-2 font-bold">Acquirer</th>
+            <th class="text-right px-2 py-2 font-bold">Pending</th>
+            <th class="text-right px-2 py-2 font-bold">Reserve</th>
+            <th class="text-right px-2 py-2 font-bold">Total</th>
+            <th class="text-right px-2 py-2 font-bold">Settl.</th>
+            <th class="text-right px-4 py-2 font-bold">Exposure</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-700">
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">Nuvei</td><td class="text-right px-2 py-2 font-mono">$2.90M</td><td class="text-right px-2 py-2 font-mono">$1.30M</td><td class="text-right px-2 py-2 font-mono">$4.20M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$900K</td><td class="text-right px-4 py-2 font-mono font-bold">$5.10M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">Checkout.com</td><td class="text-right px-2 py-2 font-mono">$2.00M</td><td class="text-right px-2 py-2 font-mono">$0.80M</td><td class="text-right px-2 py-2 font-mono">$2.80M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$850K</td><td class="text-right px-4 py-2 font-mono font-bold">$3.45M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">Rapyd</td><td class="text-right px-2 py-2 font-mono">$0.75M</td><td class="text-right px-2 py-2 font-mono">$0.35M</td><td class="text-right px-2 py-2 font-mono">$1.10M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$220K</td><td class="text-right px-4 py-2 font-mono font-bold">$1.32M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">IFX</td><td class="text-right px-2 py-2 font-mono">$0.50M</td><td class="text-right px-2 py-2 font-mono">$0.20M</td><td class="text-right px-2 py-2 font-mono">$0.70M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$90K</td><td class="text-right px-4 py-2 font-mono font-bold">$0.79M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">Others</td><td class="text-right px-2 py-2 font-mono">$0.45M</td><td class="text-right px-2 py-2 font-mono">$0.15M</td><td class="text-right px-2 py-2 font-mono">$0.60M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$40K</td><td class="text-right px-4 py-2 font-mono font-bold">$0.64M</td></tr>
+        </tbody>
+        <tfoot>
+          <tr class="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700">
+            <td class="px-4 py-2">Total</td><td class="text-right px-2 py-2 font-mono">$6.60M</td><td class="text-right px-2 py-2 font-mono">$2.80M</td><td class="text-right px-2 py-2 font-mono">$8.40M</td><td class="text-right px-2 py-2 font-mono">$1.90M</td><td class="text-right px-4 py-2 font-mono">$10.30M</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- By Company -->
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">By Company</div>
+      <table class="w-full text-xs">
+        <thead class="text-slate-400">
+          <tr>
+            <th class="text-left px-4 py-2 font-bold">Company</th>
+            <th class="text-right px-2 py-2 font-bold">Pending</th>
+            <th class="text-right px-2 py-2 font-bold">Reserve</th>
+            <th class="text-right px-2 py-2 font-bold">Total</th>
+            <th class="text-right px-2 py-2 font-bold">Settl.</th>
+            <th class="text-right px-4 py-2 font-bold">Exposure</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-700">
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">HEDG</td><td class="text-right px-2 py-2 font-mono">$3.50M</td><td class="text-right px-2 py-2 font-mono">$1.30M</td><td class="text-right px-2 py-2 font-mono">$4.80M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$1.00M</td><td class="text-right px-4 py-2 font-mono font-bold">$5.80M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">AXIA</td><td class="text-right px-2 py-2 font-mono">$2.00M</td><td class="text-right px-2 py-2 font-mono">$0.70M</td><td class="text-right px-2 py-2 font-mono">$2.70M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$600K</td><td class="text-right px-4 py-2 font-mono font-bold">$3.30M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">DG</td><td class="text-right px-2 py-2 font-mono">$0.80M</td><td class="text-right px-2 py-2 font-mono">$0.10M</td><td class="text-right px-2 py-2 font-mono">$0.90M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$300K</td><td class="text-right px-4 py-2 font-mono font-bold">$1.20M</td></tr>
+        </tbody>
+        <tfoot>
+          <tr class="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700">
+            <td class="px-4 py-2">Total</td><td class="text-right px-2 py-2 font-mono">$6.60M</td><td class="text-right px-2 py-2 font-mono">$2.80M</td><td class="text-right px-2 py-2 font-mono">$8.40M</td><td class="text-right px-2 py-2 font-mono">$1.90M</td><td class="text-right px-4 py-2 font-mono">$10.30M</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- By Currency -->
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">By Currency</div>
+      <table class="w-full text-xs">
+        <thead class="text-slate-400">
+          <tr>
+            <th class="text-left px-4 py-2 font-bold">Currency</th>
+            <th class="text-right px-2 py-2 font-bold">Pending</th>
+            <th class="text-right px-2 py-2 font-bold">Reserve</th>
+            <th class="text-right px-2 py-2 font-bold">Total</th>
+            <th class="text-right px-2 py-2 font-bold">Settl.</th>
+            <th class="text-right px-4 py-2 font-bold">Exposure</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-700">
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">USD</td><td class="text-right px-2 py-2 font-mono">$4.00M</td><td class="text-right px-2 py-2 font-mono">$1.10M</td><td class="text-right px-2 py-2 font-mono">$5.10M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$1.20M</td><td class="text-right px-4 py-2 font-mono font-bold">$6.30M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">EUR</td><td class="text-right px-2 py-2 font-mono">$1.40M</td><td class="text-right px-2 py-2 font-mono">$0.30M</td><td class="text-right px-2 py-2 font-mono">$1.70M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$400K</td><td class="text-right px-4 py-2 font-mono font-bold">$2.10M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">GBP</td><td class="text-right px-2 py-2 font-mono">$0.80M</td><td class="text-right px-2 py-2 font-mono">$0.20M</td><td class="text-right px-2 py-2 font-mono">$1.00M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$200K</td><td class="text-right px-4 py-2 font-mono font-bold">$1.20M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">ILS</td><td class="text-right px-2 py-2 font-mono">$0.30M</td><td class="text-right px-2 py-2 font-mono">$0.10M</td><td class="text-right px-2 py-2 font-mono">$0.40M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$70K</td><td class="text-right px-4 py-2 font-mono font-bold">$0.47M</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">Other</td><td class="text-right px-2 py-2 font-mono">$0.10M</td><td class="text-right px-2 py-2 font-mono">$0.05M</td><td class="text-right px-2 py-2 font-mono">$0.15M</td><td class="text-right px-2 py-2 font-mono text-emerald-600">$30K</td><td class="text-right px-4 py-2 font-mono font-bold">$0.18M</td></tr>
+        </tbody>
+        <tfoot>
+          <tr class="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700">
+            <td class="px-4 py-2">Total</td><td class="text-right px-2 py-2 font-mono">$6.60M</td><td class="text-right px-2 py-2 font-mono">$2.80M</td><td class="text-right px-2 py-2 font-mono">$8.40M</td><td class="text-right px-2 py-2 font-mono">$1.90M</td><td class="text-right px-4 py-2 font-mono">$10.30M</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- PSP Summary granular table -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100 flex-wrap gap-2">
+      <div class="flex items-center gap-3">
+        <span class="text-sm font-bold text-slate-700 uppercase tracking-wide">PSP Summary</span>
+        <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">All Companies</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="flex items-center gap-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+      </div>
+    </div>
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50/60 text-slate-400">
+        <tr>
+          <th class="text-left px-5 py-2.5 font-bold">Company</th>
+          <th class="text-left px-2 py-2.5 font-bold">Acquirer</th>
+          <th class="text-left px-2 py-2.5 font-bold">Currency</th>
+          <th class="text-right px-2 py-2.5 font-bold">Reserve</th>
+          <th class="text-right px-2 py-2.5 font-bold">Pending</th>
+          <th class="text-right px-2 py-2.5 font-bold">Total Balance</th>
+          <th class="text-right px-2 py-2.5 font-bold">Settlement</th>
+          <th class="text-right px-5 py-2.5 font-bold">Total Exposure</th>
+        </tr>
+      </thead>
+      <tbody class="text-slate-700">
+        <tr class="border-t border-slate-50 hover:bg-slate-50/50"><td class="px-5 py-2.5 font-medium">HEDG</td><td class="px-2 py-2.5">Nuvei</td><td class="px-2 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">USD</span></td><td class="text-right px-2 py-2.5 font-mono">$800,000</td><td class="text-right px-2 py-2.5 font-mono">$1,600,000</td><td class="text-right px-2 py-2.5 font-mono">$2,400,000</td><td class="text-right px-2 py-2.5 font-mono text-emerald-600">$420,000</td><td class="text-right px-5 py-2.5 font-mono font-bold">$2,820,000</td></tr>
+        <tr class="border-t border-slate-50 hover:bg-slate-50/50"><td class="px-5 py-2.5 font-medium">HEDG</td><td class="px-2 py-2.5">Nuvei</td><td class="px-2 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">EUR</span></td><td class="text-right px-2 py-2.5 font-mono">$300,000</td><td class="text-right px-2 py-2.5 font-mono">$500,000</td><td class="text-right px-2 py-2.5 font-mono">$800,000</td><td class="text-right px-2 py-2.5 font-mono text-emerald-600">$130,000</td><td class="text-right px-5 py-2.5 font-mono font-bold">$930,000</td></tr>
+        <tr class="border-t border-slate-50 hover:bg-slate-50/50"><td class="px-5 py-2.5 font-medium">AXIA</td><td class="px-2 py-2.5">Checkout.com</td><td class="px-2 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">USD</span></td><td class="text-right px-2 py-2.5 font-mono">$1,100,000</td><td class="text-right px-2 py-2.5 font-mono">$2,000,000</td><td class="text-right px-2 py-2.5 font-mono">$3,100,000</td><td class="text-right px-2 py-2.5 font-mono text-emerald-600">$720,000</td><td class="text-right px-5 py-2.5 font-mono font-bold">$3,820,000</td></tr>
+        <tr class="border-t border-slate-50 hover:bg-slate-50/50"><td class="px-5 py-2.5 font-medium">AXIA</td><td class="px-2 py-2.5">Rapyd</td><td class="px-2 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">EUR</span></td><td class="text-right px-2 py-2.5 font-mono">$200,000</td><td class="text-right px-2 py-2.5 font-mono">$300,000</td><td class="text-right px-2 py-2.5 font-mono">$500,000</td><td class="text-right px-2 py-2.5 font-mono text-emerald-600">$110,000</td><td class="text-right px-5 py-2.5 font-mono font-bold">$610,000</td></tr>
+        <tr class="border-t border-slate-50 hover:bg-slate-50/50"><td class="px-5 py-2.5 font-medium">DG</td><td class="px-2 py-2.5">IFX</td><td class="px-2 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700">GBP</span></td><td class="text-right px-2 py-2.5 font-mono">$150,000</td><td class="text-right px-2 py-2.5 font-mono">$300,000</td><td class="text-right px-2 py-2.5 font-mono">$450,000</td><td class="text-right px-2 py-2.5 font-mono text-emerald-600">$150,000</td><td class="text-right px-5 py-2.5 font-mono font-bold">$600,000</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="text-center text-[11px] text-slate-400 pb-6">
+    ↑ Preview only — sample data. See chat for logic-gap notes on Balance formula and empty settlement/transaction tables.
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PSP Account-Level — Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen p-8">
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <div class="text-center text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg py-2">
+    ↓ MOCKUP — Payment Providers tab, PSP data only (no banks mixed in). Every number on this page is your real DB data right now — only 1 company (SmartTool) and 1 PSP (Rapyd) have any data yet, so tables are thin, and Settlement/Expected Cash In are genuinely $0 (psp_settlements has 0 rows).
+  </div>
+
+  <!-- Header (matches existing app header style) -->
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Payment Providers</h1>
+      <p class="text-sm text-slate-500">Real-time overview of PSP balances, settlements and expected cash</p>
+    </div>
+    <button class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Sync All
+    </button>
+  </div>
+
+  <!-- Top 4 summary cards — real numbers -->
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+
+    <!-- Total Exposure -->
+    <div class="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-2xl p-5 text-white flex flex-col">
+      <div class="text-indigo-200 text-[11px] font-bold uppercase tracking-wider">Total Exposure</div>
+      <div class="text-3xl font-bold mt-1">$325,462</div>
+      <div class="text-indigo-200 text-xs mb-4">Balance + Settlement</div>
+      <div class="flex items-center gap-4 mt-auto">
+        <svg width="84" height="84" viewBox="0 0 84 84">
+          <g transform="rotate(-90 42 42)">
+            <circle cx="42" cy="42" r="32" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="10"/>
+            <circle cx="42" cy="42" r="32" fill="none" stroke="#a5b4fc" stroke-width="10" stroke-dasharray="201 201" />
+          </g>
+          <text x="42" y="39" text-anchor="middle" font-size="9" fill="white" opacity="0.7">$325K</text>
+          <text x="42" y="50" text-anchor="middle" font-size="8" fill="white" opacity="0.7">100%</text>
+        </svg>
+        <div class="space-y-1.5 text-xs">
+          <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#a5b4fc]"></span>Balance <span class="font-mono font-bold ml-auto">$325,462 (100%)</span></div>
+          <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#34d399]"></span>Settlement <span class="font-mono font-bold ml-auto">$0 (0%)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Total Balance -->
+    <div class="bg-white rounded-2xl border border-slate-200 p-5">
+      <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Balance</div>
+      <div class="text-3xl font-bold text-slate-900 mt-1 mb-4">$325,462</div>
+      <div class="space-y-2.5">
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Rolling Reserve</div>
+          <div class="text-lg font-bold text-slate-900">$150,000</div>
+          <div class="text-[10px] text-slate-400">46% of Total Balance</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Transactions</div>
+          <div class="text-lg font-bold text-slate-900">$175,462</div>
+          <div class="text-[10px] text-slate-400">54% of Total Balance</div>
+        </div>
+      </div>
+      <div class="text-[10px] text-slate-400 mt-3">Balance = Rolling Reserve + Transactions</div>
+    </div>
+
+    <!-- Settlement -->
+    <div class="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col">
+      <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Settlement</div>
+      <div class="text-3xl font-bold text-slate-300 mt-1">$0</div>
+      <div class="text-xs text-slate-400 mb-4">Ready to be paid by PSPs</div>
+      <div class="flex-1 flex items-center justify-center text-center">
+        <p class="text-xs text-slate-400">No settlements in <span class="font-mono">psp_settlements</span> yet</p>
+      </div>
+    </div>
+
+    <!-- Expected Cash In -->
+    <div class="bg-white rounded-2xl border border-slate-200 p-5">
+      <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Expected Cash In (7 days)</div>
+      <div class="text-3xl font-bold text-slate-300 mt-1 mb-1">$0</div>
+      <div class="text-xs text-slate-400 mb-3">Next 7 days</div>
+      <div class="flex items-center justify-center h-24 text-center">
+        <p class="text-xs text-slate-400">No upcoming settlements scheduled</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three breakdown tables — real data (1 row each, since only 1 PSP/company exists) -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">By Acquirer</div>
+      <table class="w-full text-xs">
+        <thead class="text-slate-400">
+          <tr><th class="text-left px-4 py-2 font-bold">Acquirer</th><th class="text-right px-2 py-2 font-bold">Transactions</th><th class="text-right px-2 py-2 font-bold">Reserve</th><th class="text-right px-2 py-2 font-bold">Total</th><th class="text-right px-2 py-2 font-bold">Settl.</th><th class="text-right px-4 py-2 font-bold">Exposure</th></tr>
+        </thead>
+        <tbody class="text-slate-700">
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">Rapyd Payments</td><td class="text-right px-2 py-2 font-mono">$175,462</td><td class="text-right px-2 py-2 font-mono">$150,000</td><td class="text-right px-2 py-2 font-mono">$325,462</td><td class="text-right px-2 py-2 font-mono text-slate-400">$0</td><td class="text-right px-4 py-2 font-mono font-bold">$325,462</td></tr>
+        </tbody>
+        <tfoot><tr class="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700"><td class="px-4 py-2">Total</td><td class="text-right px-2 py-2 font-mono">$175,462</td><td class="text-right px-2 py-2 font-mono">$150,000</td><td class="text-right px-2 py-2 font-mono">$325,462</td><td class="text-right px-2 py-2 font-mono">$0</td><td class="text-right px-4 py-2 font-mono">$325,462</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">By Company</div>
+      <table class="w-full text-xs">
+        <thead class="text-slate-400">
+          <tr><th class="text-left px-4 py-2 font-bold">Company</th><th class="text-right px-2 py-2 font-bold">Transactions</th><th class="text-right px-2 py-2 font-bold">Reserve</th><th class="text-right px-2 py-2 font-bold">Total</th><th class="text-right px-2 py-2 font-bold">Settl.</th><th class="text-right px-4 py-2 font-bold">Exposure</th></tr>
+        </thead>
+        <tbody class="text-slate-700">
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">SmartTool</td><td class="text-right px-2 py-2 font-mono">$175,462</td><td class="text-right px-2 py-2 font-mono">$150,000</td><td class="text-right px-2 py-2 font-mono">$325,462</td><td class="text-right px-2 py-2 font-mono text-slate-400">$0</td><td class="text-right px-4 py-2 font-mono font-bold">$325,462</td></tr>
+        </tbody>
+        <tfoot><tr class="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700"><td class="px-4 py-2">Total</td><td class="text-right px-2 py-2 font-mono">$175,462</td><td class="text-right px-2 py-2 font-mono">$150,000</td><td class="text-right px-2 py-2 font-mono">$325,462</td><td class="text-right px-2 py-2 font-mono">$0</td><td class="text-right px-4 py-2 font-mono">$325,462</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide">By Currency</div>
+      <table class="w-full text-xs">
+        <thead class="text-slate-400">
+          <tr><th class="text-left px-4 py-2 font-bold">Currency</th><th class="text-right px-2 py-2 font-bold">Transactions</th><th class="text-right px-2 py-2 font-bold">Reserve</th><th class="text-right px-2 py-2 font-bold">Total</th><th class="text-right px-2 py-2 font-bold">Settl.</th><th class="text-right px-4 py-2 font-bold">Exposure</th></tr>
+        </thead>
+        <tbody class="text-slate-700">
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">USD</td><td class="text-right px-2 py-2 font-mono">$175,471</td><td class="text-right px-2 py-2 font-mono">$150,000</td><td class="text-right px-2 py-2 font-mono">$325,471</td><td class="text-right px-2 py-2 font-mono text-slate-400">$0</td><td class="text-right px-4 py-2 font-mono font-bold">$325,471</td></tr>
+          <tr class="border-t border-slate-50"><td class="px-4 py-2 font-medium">EUR</td><td class="text-right px-2 py-2 font-mono text-red-600">-$8</td><td class="text-right px-2 py-2 font-mono">$0</td><td class="text-right px-2 py-2 font-mono text-red-600">-$8</td><td class="text-right px-2 py-2 font-mono text-slate-400">$0</td><td class="text-right px-4 py-2 font-mono font-bold text-red-600">-$8</td></tr>
+        </tbody>
+        <tfoot><tr class="border-t-2 border-indigo-100 bg-indigo-50 font-bold text-indigo-700"><td class="px-4 py-2">Total</td><td class="text-right px-2 py-2 font-mono">$175,462</td><td class="text-right px-2 py-2 font-mono">$150,000</td><td class="text-right px-2 py-2 font-mono">$325,462</td><td class="text-right px-2 py-2 font-mono">$0</td><td class="text-right px-4 py-2 font-mono">$325,462</td></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- PSP Summary granular table — real data -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-5 py-3 border-b border-slate-100">
+      <span class="text-sm font-bold text-slate-700 uppercase tracking-wide">PSP Summary</span>
+      <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider ml-2">All Companies</span>
+    </div>
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50/60 text-slate-400">
+        <tr><th class="text-left px-5 py-2.5 font-bold">Company</th><th class="text-left px-2 py-2.5 font-bold">Acquirer</th><th class="text-left px-2 py-2.5 font-bold">Currency</th><th class="text-right px-2 py-2.5 font-bold">Reserve</th><th class="text-right px-2 py-2.5 font-bold">Transactions</th><th class="text-right px-2 py-2.5 font-bold">Total Balance</th><th class="text-right px-2 py-2.5 font-bold">Settlement</th><th class="text-right px-5 py-2.5 font-bold">Total Exposure</th></tr>
+      </thead>
+      <tbody class="text-slate-700">
+        <tr class="border-t border-slate-50 hover:bg-slate-50/50"><td class="px-5 py-2.5 font-medium">SmartTool</td><td class="px-2 py-2.5">Rapyd Payments</td><td class="px-2 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">USD</span></td><td class="text-right px-2 py-2.5 font-mono">150,000.05</td><td class="text-right px-2 py-2.5 font-mono">175,470.83</td><td class="text-right px-2 py-2.5 font-mono">325,470.88</td><td class="text-right px-2 py-2.5 font-mono text-slate-400">0.00</td><td class="text-right px-5 py-2.5 font-mono font-bold">$325,471</td></tr>
+        <tr class="border-t border-slate-50 hover:bg-slate-50/50"><td class="px-5 py-2.5 font-medium">SmartTool</td><td class="px-2 py-2.5">Rapyd Payments</td><td class="px-2 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">EUR</span></td><td class="text-right px-2 py-2.5 font-mono">0.00</td><td class="text-right px-2 py-2.5 font-mono text-red-600">(7.26)</td><td class="text-right px-2 py-2.5 font-mono text-red-600">(7.26)</td><td class="text-right px-2 py-2.5 font-mono text-slate-400">0.00</td><td class="text-right px-5 py-2.5 font-mono font-bold text-red-600">-$8</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex items-center justify-center gap-2 text-slate-300">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    <span class="text-[10px] font-bold uppercase tracking-widest">Drill into a company to see account-level detail</span>
+  </div>
+
+  <!-- NEW: PSP card, account-level table -->
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+      <div class="flex items-center gap-3">
+        <div class="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
+        <h3 class="text-xl font-bold text-slate-800 tracking-tight">SmartTool</h3>
+        <span class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold uppercase tracking-wider">SaaS</span>
+      </div>
+      <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">1 Provider</span>
+    </div>
+
+    <!-- PSP provider row -->
+    <div class="px-6 py-3 bg-violet-50/60 border-b border-violet-100 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center text-white font-bold text-xs">R</div>
+        <span class="font-bold text-slate-900">Rapyd Payments</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+        <span class="text-[10px] text-slate-400 font-mono">2 accounts</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] text-violet-500 font-bold uppercase tracking-widest">Total Balance (USD)</span>
+        <span class="font-mono font-bold text-violet-800">$325,462</span>
+      </div>
+    </div>
+
+    <table class="w-full text-left border-collapse">
+      <thead class="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        <tr>
+          <th class="px-6 py-3 border-b border-slate-100">Account</th>
+          <th class="px-3 py-3 border-b border-slate-100 text-right">Balance</th>
+          <th class="px-3 py-3 border-b border-slate-100 text-right">Currency</th>
+          <th class="px-3 py-3 border-b border-slate-100 text-right">Transactions</th>
+          <th class="px-3 py-3 border-b border-slate-100 text-right">Rolling Reserves</th>
+          <th class="px-3 py-3 border-b border-slate-100 text-right">Settlement</th>
+          <th class="px-6 py-3 border-b border-slate-100 text-right">Valuation (USD)</th>
+        </tr>
+      </thead>
+      <tbody class="text-sm">
+        <tr class="hover:bg-slate-50/50">
+          <td class="px-6 py-3 border-b border-slate-100">
+            <div class="font-bold text-slate-900">Primary Account</div>
+            <div class="text-[10px] text-slate-400 font-mono">collect · ACT</div>
+          </td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono font-bold text-slate-900">325,470.88</td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">USD</span></td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono text-slate-600">175,470.83</td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono text-slate-600">150,000.05</td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono text-slate-400">0.00</td>
+          <td class="px-6 py-3 border-b border-slate-100 text-right font-mono font-bold text-slate-900">$325,471</td>
+        </tr>
+        <tr class="hover:bg-slate-50/50">
+          <td class="px-6 py-3 border-b border-slate-100">
+            <div class="font-bold text-slate-900">Primary Account</div>
+            <div class="text-[10px] text-slate-400 font-mono">collect · ACT</div>
+          </td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono font-bold text-red-600">(7.26)</td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">EUR</span></td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono text-red-600">(7.26)</td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono text-slate-400">0.00</td>
+          <td class="px-3 py-3 border-b border-slate-100 text-right font-mono text-slate-400">0.00</td>
+          <td class="px-6 py-3 border-b border-slate-100 text-right font-mono font-bold text-red-600">-$8</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr class="bg-indigo-50 border-t-2 border-indigo-100">
+          <td colspan="6" class="px-6 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total (Rapyd Payments)</td>
+          <td class="px-6 py-3 text-right font-mono font-bold text-sm text-indigo-700">$325,462</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="text-center text-[11px] text-slate-400 pb-6 space-y-1">
+    <p>↑ Preview only, but numbers are real. Balance = balance + received_balance + on_hold_balance + reserve_balance. Transactions = balance + received_balance + on_hold_balance. Rolling Reserves = reserve_balance. Settlement = Σ amount from psp_settlements — genuinely $0.00, since that table has 0 rows in the DB today.</p>
+  </div>
+</div>
+</body>
+</html>

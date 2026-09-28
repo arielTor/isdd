@@ -446,10 +446,44 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     });
   }, []);
 
-  const exportCsv = useCallback(() => {
-    const rows = isMock
-      ? buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions
-      : (data?.transactions ?? []);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  const exportCsv = useCallback(async () => {
+    let rows: Transaction[];
+
+    if (isMock) {
+      rows = buildMockResponse(MOCK_TRANSACTIONS, { currency, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions;
+    } else {
+      setExportLoading(true);
+      try {
+        const params = new URLSearchParams({ page: '1', limit: '9999', date_from: dateFrom, date_to: dateTo });
+        if (companyId) params.set('company_id', companyId);
+        const selectedOpt = sources.find(s => s.label === sourceKey);
+        if (selectedOpt) {
+          if (selectedOpt.bank_id) params.set('bank_id', selectedOpt.bank_id);
+          else                     params.set('source',  selectedOpt.source);
+        }
+        if (currency !== 'ALL') params.set('currency', currency);
+        if (txType !== 'all')   params.set('type', txType);
+        if (search)             params.set('search', search);
+        if (showMgFees)         params.set('show_mg_fees', '1');
+        if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
+
+        const res = await fetch(`/api/transactions?${params}`);
+        if (!res.ok) throw new Error('api error');
+        const json = await res.json();
+        rows = json.transactions ?? [];
+
+        if (sortBy === 'amount_usd') {
+          const dir = sortDir === 'asc' ? 1 : -1;
+          rows = [...rows].sort((a, b) => ((a.amount_usd ?? 0) - (b.amount_usd ?? 0)) * dir);
+        }
+      } catch {
+        rows = data?.transactions ?? [];
+      } finally {
+        setExportLoading(false);
+      }
+    }
 
     const headers = ['Date', 'Payer', 'Recipient', 'Currency', 'Category', 'Total Amount', 'Amount USD', 'In/Out'];
     const csvRows = rows.map(tx => [
@@ -476,7 +510,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [isMock, data, currency, txType, search, dateFrom, dateTo, sortBy, sortDir]);
+  }, [isMock, data, companyId, sourceKey, sources, currency, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   const resetPage = () => setPage(1);
   const inputCls  = "border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400";
@@ -610,11 +644,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             </label>
             <button
               onClick={exportCsv}
-              disabled={transactions.length === 0}
+              disabled={transactions.length === 0 || exportLoading}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download size={13} />
-              Export CSV
+              {exportLoading ? 'Exporting…' : 'Export CSV'}
             </button>
           </div>
         </div>
@@ -637,7 +671,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Payer</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Recipient</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Currency</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">Category</th>
                   <th
                     onClick={() => handleSort('amount')}
                     className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-300 select-none"
@@ -646,10 +679,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   </th>
                   <th
                     onClick={() => handleSort('amount_usd')}
-                    className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-300 select-none"
+                    className="px-4 py-2 text-left text-[10px] font-bold text-indigo-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-indigo-300 select-none"
                   >
                     <div className="flex items-center gap-1">Amount USD <SortIcon k="amount_usd" /></div>
                   </th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">Category</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">In/Out</th>
                 </tr>
               </thead>
@@ -672,20 +706,20 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                         {tx.currency}
                       </span>
                     </td>
+                    <td className="px-4 py-1.5 font-mono text-xs text-slate-500 whitespace-nowrap">
+                      {fmtAmount(tx.amount, tx.currency, tx.type)}
+                    </td>
+                    <td className={`px-4 py-1.5 font-mono font-semibold whitespace-nowrap text-xs ${
+                      tx.type === 'credit' ? 'text-emerald-400' : 'text-red-400'
+                    }`}>
+                      {fmtUsd(tx.amount_usd) ?? <span className="text-slate-600">—</span>}
+                    </td>
                     <td className="px-4 py-1">
                       <ClassifyCell
                         txId={tx.id} field="category" value={tx.category as any}
                         options={categoryOptions as any} placeholder="Category"
                         onUpdate={handleClassify} isMock={isMock}
                       />
-                    </td>
-                    <td className={`px-4 py-1.5 font-mono font-semibold whitespace-nowrap text-xs ${
-                      tx.type === 'credit' ? 'text-emerald-600' : 'text-red-600'
-                    }`}>
-                      {fmtAmount(tx.amount, tx.currency, tx.type)}
-                    </td>
-                    <td className="px-4 py-1.5 font-mono text-xs text-slate-400 whitespace-nowrap">
-                      {fmtUsd(tx.amount_usd) ?? <span className="text-slate-600">—</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
