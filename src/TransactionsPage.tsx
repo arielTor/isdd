@@ -69,6 +69,17 @@ const ifxPartyFallback = (tx: Transaction): string | null => {
   return first || null;
 };
 
+// Single source of truth for Payer/Recipient — used by both the table and CSV export
+const getDisplayPayer = (tx: Transaction): string =>
+  tx.type === 'credit'
+    ? (tx.other_party || ifxPartyFallback(tx) || '')
+    : tx.company_name;
+
+const getDisplayRecipient = (tx: Transaction): string =>
+  tx.type === 'debit'
+    ? (tx.other_party || ifxPartyFallback(tx) || '')
+    : (tx.source === 'xbo' && tx.reference ? tx.reference : tx.company_name);
+
 // ── Mock data (used when the API is unreachable / Stage has no DB) ────────────
 
 const d = (daysAgo: number) => {
@@ -479,21 +490,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       }
     }
 
-    const csvPayer = (tx: Transaction) =>
-      tx.type === 'credit'
-        ? (tx.other_party || ifxPartyFallback(tx) || '')
-        : tx.company_name;
-
-    const csvRecipient = (tx: Transaction) =>
-      tx.type === 'debit'
-        ? (tx.other_party || ifxPartyFallback(tx) || '')
-        : (tx.source === 'xbo' && tx.reference ? tx.reference : tx.company_name);
-
     const headers = ['Date', 'Payer', 'Recipient', 'Currency', 'Category', 'Total Amount', 'Amount USD', 'In/Out'];
     const csvRows = rows.map(tx => [
       tx.transaction_date,
-      csvPayer(tx),
-      csvRecipient(tx),
+      getDisplayPayer(tx),
+      getDisplayRecipient(tx),
       tx.currency,
       tx.category ?? '',
       tx.type === 'credit' ? tx.amount : -tx.amount,
@@ -695,17 +696,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-700/30 transition-colors">
                     <td className="px-4 py-1.5 text-slate-400 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'credit' ? (tx.other_party || ifxPartyFallback(tx) || '') : tx.company_name}>
-                      {tx.type === 'credit'
-                        ? (tx.other_party || ifxPartyFallback(tx) || <span className="text-slate-600">—</span>)
-                        : <span className="font-medium">{tx.company_name}</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayPayer(tx)}>
+                      {getDisplayPayer(tx) || <span className="text-slate-600">—</span>}
                     </td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={tx.type === 'debit' ? (tx.other_party || ifxPartyFallback(tx) || '') : (tx.source === 'xbo' && tx.reference ? tx.reference : tx.company_name)}>
-                      {tx.type === 'debit'
-                        ? (tx.other_party || ifxPartyFallback(tx) || <span className="text-slate-600">—</span>)
-                        : (tx.source === 'xbo' && tx.reference
-                            ? tx.reference
-                            : <span className="font-medium">{tx.company_name}</span>)}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayRecipient(tx)}>
+                      {getDisplayRecipient(tx) || <span className="text-slate-600">—</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
