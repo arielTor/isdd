@@ -2458,6 +2458,44 @@ async function startServer() {
     } finally { conn.release(); }
   });
 
+  // POST /api/settings/wallet-labels/upload — bulk upsert from CSV (Admin only)
+  app.post('/api/settings/wallet-labels/upload', corsMiddleware, requireAuth, requireAdmin,
+    multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } }).single('file'),
+    async (req: any, res) => {
+      try {
+        if (!req.file) return res.status(400).json({ error: 'Send a CSV file in "file" field' });
+        const text  = req.file.buffer.toString('utf-8');
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        const first = lines[0]?.toLowerCase() ?? '';
+        const dataLines = (first.includes('address') || first.includes('label')) ? lines.slice(1) : lines;
+
+        const rows: { address: string; label: string }[] = [];
+        for (const line of dataLines) {
+          const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          const address = cols[0] ?? '';
+          const label   = cols[1] ?? '';
+          if (!address || !label) continue;
+          rows.push({ address, label });
+        }
+        if (rows.length === 0) return res.status(400).json({ error: 'No valid rows found in CSV' });
+
+        const conn = await pool.getConnection();
+        try {
+          for (const { address, label } of rows) {
+            await conn.execute(
+              `INSERT INTO wallet_address_labels (address, label) VALUES (?, ?)
+               ON DUPLICATE KEY UPDATE label = VALUES(label)`,
+              [address, label]
+            );
+          }
+          res.json({ imported: rows.length });
+        } finally { conn.release(); }
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
   // DELETE /api/settings/wallet-labels/:address
   app.delete('/api/settings/wallet-labels/:address', corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
     const address = decodeURIComponent(req.params.address);
