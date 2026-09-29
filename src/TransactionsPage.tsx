@@ -62,23 +62,25 @@ interface ApiResponse {
   summary: { money_in: number; money_out: number; net_change: number; tx_count: number };
 }
 
-// For IFX transactions with no other_party, use the first word of reference as a fallback display name
-const ifxPartyFallback = (tx: Transaction): string | null => {
-  if (tx.source !== 'ifx' || !tx.reference) return null;
-  const first = tx.reference.trim().split(/\s+/)[0];
-  return first || null;
+// Single source of truth for Payer/Recipient — used by both the table and CSV export
+const getDisplayPayer = (tx: Transaction, labels: Record<string, string> = {}): string => {
+  const raw = tx.type === 'credit' ? (tx.other_party || '') : tx.company_name;
+  return labels[raw] ?? raw;
 };
 
-// Single source of truth for Payer/Recipient — used by both the table and CSV export
-const getDisplayPayer = (tx: Transaction): string =>
-  tx.type === 'credit'
-    ? (tx.other_party || ifxPartyFallback(tx) || '')
-    : tx.company_name;
-
-const getDisplayRecipient = (tx: Transaction): string =>
-  tx.type === 'debit'
-    ? (tx.other_party || ifxPartyFallback(tx) || '')
-    : (tx.source === 'xbo' && tx.reference ? tx.reference : tx.company_name);
+const getDisplayRecipient = (tx: Transaction, labels: Record<string, string> = {}): string => {
+  let raw: string;
+  if (tx.type === 'credit') {
+    raw = tx.source === 'xbo' && tx.reference ? tx.reference : tx.company_name;
+  } else if (tx.source === 'ifx' && tx.reference) {
+    // IFX debit: actual beneficiary is the first segment of reference
+    // (format: "Beneficiary Name - ref number - invoice number")
+    raw = tx.reference.split(' - ')[0].trim() || tx.other_party || '';
+  } else {
+    raw = tx.other_party || '';
+  }
+  return labels[raw] ?? raw;
+};
 
 // ── Mock data (used when the API is unreachable / Stage has no DB) ────────────
 
@@ -366,7 +368,19 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [isMock, setIsMock]           = useState(false);
   const [showMgFees, setShowMgFees]   = useState(false);
   const [categoryOptions, setCategoryOptions] = useState<string[]>([...CATEGORY_OPTIONS_FALLBACK]);
+  const [walletLabels, setWalletLabels] = useState<Record<string, string>>({});
   const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    fetch('/api/settings/wallet-labels', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { labels: [] })
+      .then(({ labels }: { labels: { address: string; label: string }[] }) => {
+        const map: Record<string, string> = {};
+        labels.forEach(l => { map[l.address] = l.label; });
+        setWalletLabels(map);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch('/api/settings/classification-rules')
@@ -493,8 +507,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     const headers = ['Date', 'Payer', 'Recipient', 'Currency', 'Category', 'Total Amount', 'Amount USD', 'In/Out'];
     const csvRows = rows.map(tx => [
       tx.transaction_date,
-      getDisplayPayer(tx),
-      getDisplayRecipient(tx),
+      getDisplayPayer(tx, walletLabels),
+      getDisplayRecipient(tx, walletLabels),
       tx.currency,
       tx.category ?? '',
       tx.type === 'credit' ? tx.amount : -tx.amount,
@@ -686,11 +700,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-700/30 transition-colors">
                     <td className="px-4 py-1.5 text-slate-400 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayPayer(tx)}>
-                      {getDisplayPayer(tx) || <span className="text-slate-600">—</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayPayer(tx, walletLabels)}>
+                      {getDisplayPayer(tx, walletLabels) || <span className="text-slate-600">—</span>}
                     </td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayRecipient(tx)}>
-                      {getDisplayRecipient(tx) || <span className="text-slate-600">—</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayRecipient(tx, walletLabels)}>
+                      {getDisplayRecipient(tx, walletLabels) || <span className="text-slate-600">—</span>}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
