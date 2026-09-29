@@ -185,7 +185,7 @@ export default function WalletLabelsPage() {
           />
           <input
             className={`${inputCls} flex-1 min-w-[140px]`}
-            placeholder="Friendly name"
+            placeholder="Label"
             value={newLabel}
             onChange={e => setNewLabel(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
