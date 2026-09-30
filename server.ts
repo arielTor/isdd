@@ -2875,6 +2875,7 @@ async function startServer() {
       date_from, date_to,
       type: txType,
       search,
+      category: categoryFilter = '',
       source = '',
       show_mg_fees = '',
       page = '1',
@@ -2908,6 +2909,7 @@ async function startServer() {
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
     if (search)                          { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ?)'); baseParams.push(`%${search}%`, `%${search}%`); }
+    if (categoryFilter)                  { conditions.push('wt.category = ?');                            baseParams.push(categoryFilter); }
     if (show_mg_fees !== '1')            { conditions.push("NOT (wt.source = 'moneygate' AND wt.reference = 'Fee')"); }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
