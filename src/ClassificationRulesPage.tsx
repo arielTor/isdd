@@ -193,14 +193,18 @@ export default function ClassificationRulesPage() {
     : rules;
 
   const cellInput = (field: keyof EditState, placeholder?: string) => field === 'category' ? (
-    <select
-      value={editForm.category}
-      onChange={e => setEditForm(prev => ({ ...prev, category: e.target.value }))}
-      className="w-full px-2 py-1 rounded bg-slate-900/80 border border-indigo-500/50 text-slate-200 text-sm focus:outline-none focus:border-indigo-400"
-    >
-      <option value="">Select…</option>
-      {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-    </select>
+    <>
+      <input
+        list="cat-list-edit"
+        value={editForm.category}
+        onChange={e => setEditForm(prev => ({ ...prev, category: e.target.value }))}
+        placeholder="Select or type…"
+        className="w-full px-2 py-1 rounded bg-slate-900/80 border border-indigo-500/50 text-slate-200 text-sm focus:outline-none focus:border-indigo-400"
+      />
+      <datalist id="cat-list-edit">
+        {CATEGORY_OPTIONS.map(c => <option key={c} value={c} />)}
+      </datalist>
+    </>
   ) : (
     <input
       type="text"
@@ -308,14 +312,16 @@ export default function ClassificationRulesPage() {
               <label className="block text-xs font-medium text-slate-400">
                 Category<span className="text-red-400 ml-0.5">*</span>
               </label>
-              <select
+              <input
+                list="cat-list-add"
                 value={form.category}
                 onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-700 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-              >
-                <option value="">Select category…</option>
-                {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+                placeholder="Select or type new category…"
+                className="w-full px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-700 text-slate-200 text-sm placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+              <datalist id="cat-list-add">
+                {CATEGORY_OPTIONS.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
           </div>
           <div className="flex justify-end gap-2">
