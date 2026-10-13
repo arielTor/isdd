@@ -3026,7 +3026,9 @@ async function startServer() {
           if (txRows.length) {
             const tx = txRows[0];
             const payer     = tx.type === 'credit' ? (tx.other_party  || '') : (tx.company_name || '');
-            const recipient = tx.type === 'debit'  ? (tx.other_party  || '') : (tx.company_name || '');
+            const recipient = tx.type === 'debit'
+              ? (tx.other_party  || '')
+              : (tx.source === 'xbo' && tx.reference ? tx.reference : (tx.company_name || ''));
             const np = normalizeName(payer);
             const nr = normalizeName(recipient);
 
@@ -3170,7 +3172,9 @@ async function startServer() {
     const results: any[] = [];
     for (const t of transactions) {
       const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || t.company_id || '');
-      const recipient = t.type === 'debit'  ? (t.other_party || '') : (t.company_name || t.company_id || '');
+      const recipient = t.type === 'debit'
+        ? (t.other_party || '')
+        : (t.source === 'xbo' && t.reference ? t.reference : (t.company_name || t.company_id || ''));
       const account   = t.reference || null;
       const { category, ambiguous: isAmbiguous } = await classifyTransaction(payer, recipient, account);
       if (!category) {
@@ -3296,7 +3300,9 @@ async function startServer() {
       let classified = 0, unclassified = 0, ambiguous = 0;
       for (const t of transactions) {
         const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || t.company_id || '');
-        const recipient = t.type === 'debit'  ? (t.other_party || '') : (t.company_name || t.company_id || '');
+        const recipient = t.type === 'debit'
+          ? (t.other_party || '')
+          : (t.source === 'xbo' && t.reference ? t.reference : (t.company_name || t.company_id || ''));
         const account   = t.reference || null;
         const { category, ambiguous: isAmbiguous } = await classifyTransaction(payer, recipient, account);
         if (category) {
