@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, Trash2, Tags, AlertTriangle, CheckCircle2, RefreshCcw, Plus, X, FileText, Pencil, Check, Search } from 'lucide-react';
+import { Upload, Download, Trash2, Tags, AlertTriangle, CheckCircle2, RefreshCcw, Plus, X, FileText, Pencil, Check, Search } from 'lucide-react';
 
 interface Rule {
   id: number;
@@ -59,6 +59,21 @@ export default function ClassificationRulesPage() {
   };
 
   useEffect(() => { fetchRules(); }, []);
+
+  const handleExport = () => {
+    const header = 'Payer,Recipient,Counterparty Account / Wallet,Category';
+    const rows = rules.map(r => [r.payer, r.recipient, r.account_wallet ?? '', r.category]
+      .map(v => `"${v.replace(/"/g, '""')}"`)
+      .join(',')
+    );
+    const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `classification_rules_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -249,6 +264,12 @@ export default function ClassificationRulesPage() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors">
             <Plus className="w-4 h-4" /> Add Rule
           </button>
+          {rules.length > 0 && (
+            <button onClick={handleExport}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors">
+              <Download className="w-4 h-4" /> Download CSV
+            </button>
+          )}
           <button onClick={() => fileRef.current?.click()} disabled={uploading}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-50">
             <Upload className="w-4 h-4" />
