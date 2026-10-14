@@ -150,7 +150,7 @@ const Sidebar = ({
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
     { id: 'classification', icon: Tags, label: 'Accounting Categories', roles: ['Admin'] },
     { id: 'wallet-labels', icon: WalletIcon, label: 'Wallet Labels', roles: ['Admin'] },
-    { id: 'wallet-accounts', icon: WalletIcon, label: 'Wallet Accounts', roles: ['Admin'] },
+    { id: 'wallet-accounts', icon: WalletIcon, label: 'Companies Account', roles: ['Admin'] },
     { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin', 'Manager', 'Viewer'] },
     { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
@@ -2862,7 +2862,7 @@ export default function App() {
     if (activePage === 'upload') return 'Manual Data Upload';
     if (activePage === 'classification') return 'Accounting Categories';
     if (activePage === 'wallet-labels') return 'Wallet Labels';
-    if (activePage === 'wallet-accounts') return 'Wallet Accounts';
+    if (activePage === 'wallet-accounts') return 'Companies Account';
     if (activePage === 'branding') return 'Appearance';
     if (activePage === 'notifications') return 'Notifications';
     if (activePage === 'diagnostics') return 'Diagnostics';

@@ -109,7 +109,7 @@ export default function WalletAccountsPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-100">Wallet Accounts</h2>
+          <h2 className="text-lg font-semibold text-slate-100">Companies Account</h2>
           <p className="text-sm text-slate-400 mt-1">
             Map internal wallet IDs to friendly account names. Labels appear as sub-text in the Transactions screen.
             {labels.length > 0 && <span className="ml-1 text-slate-500">{labels.length} label{labels.length !== 1 ? 's' : ''} loaded.</span>}
