@@ -2537,6 +2537,69 @@ async function startServer() {
   });
   // ── Wallet address labels ── end ──────────────────────────────────────────
 
+  // ── Wallet account labels (wallet_id → display label) ────────────────────
+  (async () => {
+    try {
+      const conn = await pool.getConnection();
+      try {
+        await conn.execute(`
+          CREATE TABLE IF NOT EXISTS wallet_id_labels (
+            wallet_id  VARCHAR(100) NOT NULL PRIMARY KEY,
+            label      VARCHAR(200) NOT NULL,
+            created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log("[WalletIdLabels] table ready");
+      } catch (e: any) { console.warn("[WalletIdLabels] table init:", e.message); }
+      finally { conn.release(); }
+    } catch (e: any) {
+      console.warn("[WalletIdLabels] DB not reachable on startup:", e.message);
+    }
+  })();
+
+  // GET /api/settings/wallet-id-labels
+  app.get('/api/settings/wallet-id-labels', corsMiddleware, requireAuth, async (_req, res) => {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.execute('SELECT wallet_id, label, created_at FROM wallet_id_labels ORDER BY wallet_id') as any;
+      res.json({ labels: rows });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+
+  // POST /api/settings/wallet-id-labels — upsert
+  app.post('/api/settings/wallet-id-labels', corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const wallet_id = (req.body?.wallet_id || '').trim();
+    const label     = (req.body?.label     || '').trim();
+    if (!wallet_id || !label) return res.status(400).json({ error: 'wallet_id and label are required' });
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute(
+        `INSERT INTO wallet_id_labels (wallet_id, label) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE label = VALUES(label)`,
+        [wallet_id, label]
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+
+  // DELETE /api/settings/wallet-id-labels/:wallet_id
+  app.delete('/api/settings/wallet-id-labels/:wallet_id', corsMiddleware, requireAuth, requireAdmin, async (req: any, res) => {
+    const wallet_id = decodeURIComponent(req.params.wallet_id);
+    const conn = await pool.getConnection();
+    try {
+      await conn.execute('DELETE FROM wallet_id_labels WHERE wallet_id = ?', [wallet_id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+  // ── Wallet account labels ── end ──────────────────────────────────────────
+
   // GET /api/roles - list roles with parsed company/bank access
   app.get("/api/roles", corsMiddleware, requireAuth, async (_req, res) => {
     const conn = await pool.getConnection();

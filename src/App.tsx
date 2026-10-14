@@ -51,6 +51,7 @@ import { downloadExcel } from './exportCsv';
 import UploadScreen from './UploadScreen';
 import ClassificationRulesPage from './ClassificationRulesPage';
 import WalletLabelsPage from './WalletLabelsPage';
+import WalletAccountsPage from './WalletAccountsPage';
 import LoginScreen from './LoginScreen';
 import PSPPage from './PSPPage';
 import TransactionsPage from './TransactionsPage';
@@ -133,7 +134,7 @@ const Sidebar = ({
   companyLogos: Record<string, string>,
 }) => {
   // Settings group starts collapsed; expand it if the user is already on a settings page.
-  const settingsIds = ['users', 'alerts', 'upload', 'classification', 'wallet-labels', 'branding', 'diagnostics'];
+  const settingsIds = ['users', 'alerts', 'upload', 'classification', 'wallet-labels', 'wallet-accounts', 'branding', 'diagnostics'];
   const [settingsOpen, setSettingsOpen] = useState(() => settingsIds.includes(activePage));
   // Nav grouped by purpose: workspace (daily views) vs settings (admin/config), each filtered by role
   const workspaceNav = [
@@ -149,6 +150,7 @@ const Sidebar = ({
     { id: 'upload', icon: Upload, label: 'Manual Data Upload', roles: ['Admin', 'Manager'] },
     { id: 'classification', icon: Tags, label: 'Accounting Categories', roles: ['Admin'] },
     { id: 'wallet-labels', icon: WalletIcon, label: 'Wallet Labels', roles: ['Admin'] },
+    { id: 'wallet-accounts', icon: WalletIcon, label: 'Wallet Accounts', roles: ['Admin'] },
     { id: 'branding', icon: ImageIcon, label: 'Appearance', roles: ['Admin', 'Manager', 'Viewer'] },
     { id: 'diagnostics', icon: Terminal, label: 'Diagnostics', roles: ['Admin'] },
   ].filter(item => !authUser || item.roles.includes(authUser.role));
@@ -2860,6 +2862,7 @@ export default function App() {
     if (activePage === 'upload') return 'Manual Data Upload';
     if (activePage === 'classification') return 'Accounting Categories';
     if (activePage === 'wallet-labels') return 'Wallet Labels';
+    if (activePage === 'wallet-accounts') return 'Wallet Accounts';
     if (activePage === 'branding') return 'Appearance';
     if (activePage === 'notifications') return 'Notifications';
     if (activePage === 'diagnostics') return 'Diagnostics';
@@ -3761,6 +3764,17 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
               >
                 <WalletLabelsPage />
+              </motion.div>
+            )}
+
+            {activePage === 'wallet-accounts' && authUser?.role === 'Admin' && (
+              <motion.div
+                key="wallet-accounts"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <WalletAccountsPage />
               </motion.div>
             )}
 

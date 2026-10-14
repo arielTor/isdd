@@ -372,7 +372,8 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [isMock, setIsMock]           = useState(false);
   const [showMgFees, setShowMgFees]   = useState(false);
   const [categoryOptions, setCategoryOptions] = useState<string[]>([...CATEGORY_OPTIONS_FALLBACK]);
-  const [walletLabels, setWalletLabels] = useState<Record<string, string>>({});
+  const [walletLabels, setWalletLabels]     = useState<Record<string, string>>({});
+  const [walletIdLabels, setWalletIdLabels] = useState<Record<string, string>>({});
   const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -382,6 +383,17 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
         const map: Record<string, string> = {};
         labels.forEach(l => { map[l.address] = l.label; });
         setWalletLabels(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/settings/wallet-id-labels', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { labels: [] })
+      .then(({ labels }: { labels: { wallet_id: string; label: string }[] }) => {
+        const map: Record<string, string> = {};
+        labels.forEach(l => { map[l.wallet_id] = l.label; });
+        setWalletIdLabels(map);
       })
       .catch(() => {});
   }, []);
@@ -752,11 +764,21 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-700/30 transition-colors">
                     <td className="px-4 py-1.5 text-slate-400 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayPayer(tx, walletLabels)}>
-                      {getDisplayPayer(tx, walletLabels) || <span className="text-slate-600">—</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] text-xs">
+                      <div className="truncate" title={getDisplayPayer(tx, walletLabels)}>
+                        {getDisplayPayer(tx, walletLabels) || <span className="text-slate-600">—</span>}
+                      </div>
+                      {tx.type === 'debit' && walletIdLabels[tx.wallet_id] && (
+                        <div className="text-[10px] text-slate-500 truncate">{walletIdLabels[tx.wallet_id]}</div>
+                      )}
                     </td>
-                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] truncate text-xs" title={getDisplayRecipient(tx, walletLabels)}>
-                      {getDisplayRecipient(tx, walletLabels) || <span className="text-slate-600">—</span>}
+                    <td className="px-4 py-1.5 text-slate-200 max-w-[160px] text-xs">
+                      <div className="truncate" title={getDisplayRecipient(tx, walletLabels)}>
+                        {getDisplayRecipient(tx, walletLabels) || <span className="text-slate-600">—</span>}
+                      </div>
+                      {tx.type === 'credit' && walletIdLabels[tx.wallet_id] && (
+                        <div className="text-[10px] text-slate-500 truncate">{walletIdLabels[tx.wallet_id]}</div>
+                      )}
                     </td>
                     <td className="px-4 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${curBadge(tx.currency)}`}>
