@@ -147,13 +147,13 @@ const MOCK_TRANSACTIONS: Transaction[] = [
 
 function buildMockResponse(
   rows: Transaction[],
-  { filterCategory, txType, search, dateFrom, dateTo, page, limit, sortBy, sortDir }:
-  { currency: string; filterCategory: string; txType: string; search: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
+  { filterCategories, txType, search, dateFrom, dateTo, page, limit, sortBy, sortDir }:
+  { currency: string; filterCategories: string[]; txType: string; search: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
 ): ApiResponse {
   // 1. Filter
   const filtered = rows.filter(tx => {
     if (currency && currency !== 'ALL' && tx.currency !== currency) return false;
-    if (filterCategory && tx.category !== filterCategory) return false;
+    if (filterCategories.length > 0 && !filterCategories.includes(tx.category ?? '')) return false;
     if (txType && txType !== 'all' && tx.type !== txType) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -356,7 +356,9 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [sourceKey, setSourceKey]     = useState('');
   const [sources, setSources]         = useState<{ label: string; source: string; bank_id: string | null }[]>([]);
   const [currency, setCurrency]       = useState('ALL');
-  const [filterCategory, setFilterCategory] = useState('');
+  const [filterCategories, setFilterCategories] = useState<string[]>([]);
+  const [catDropdownOpen, setCatDropdownOpen] = useState(false);
+  const catDropdownRef = useRef<HTMLDivElement>(null);
   const [txType, setTxType]           = useState<'all' | 'credit' | 'debit'>('all');
   const [search, setSearch]           = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -393,6 +395,16 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       .catch(() => {});
   }, []);
 
+  // Close category dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (catDropdownRef.current && !catDropdownRef.current.contains(e.target as Node))
+        setCatDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -408,9 +420,9 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
         if (selectedOpt.bank_id) params.set('bank_id', selectedOpt.bank_id);
         else                     params.set('source',  selectedOpt.source);
       }
-      if (currency !== 'ALL') params.set('currency', currency);
-      if (filterCategory)     params.set('category', filterCategory);
-      if (txType !== 'all')   params.set('type', txType);
+      if (currency !== 'ALL')         params.set('currency', currency);
+      if (filterCategories.length > 0) params.set('category', filterCategories.join(','));
+      if (txType !== 'all')           params.set('type', txType);
       if (search)             params.set('search', search);
       if (showMgFees)         params.set('show_mg_fees', '1');
       if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
@@ -431,11 +443,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       }
     } catch {
       setIsMock(true);
-      setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategory, txType, search, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
+      setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
     } finally {
       setLoading(false);
     }
-  }, [page, companyId, sourceKey, sources, currency, filterCategory, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
+  }, [page, companyId, sourceKey, sources, currency, filterCategories, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -483,11 +495,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           if (selectedOpt.bank_id) params.set('bank_id', selectedOpt.bank_id);
           else                     params.set('source',  selectedOpt.source);
         }
-        if (currency !== 'ALL') params.set('currency', currency);
-        if (filterCategory)     params.set('category', filterCategory);
-        if (txType !== 'all')   params.set('type', txType);
-        if (search)             params.set('search', search);
-        if (showMgFees)         params.set('show_mg_fees', '1');
+        if (currency !== 'ALL')          params.set('currency', currency);
+        if (filterCategories.length > 0) params.set('category', filterCategories.join(','));
+        if (txType !== 'all')            params.set('type', txType);
+        if (search)                      params.set('search', search);
+        if (showMgFees)                  params.set('show_mg_fees', '1');
         if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
 
         const res = await fetch(`/api/transactions?${params}`);
@@ -531,7 +543,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [isMock, data, companyId, sourceKey, sources, currency, filterCategory, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
+  }, [isMock, data, companyId, sourceKey, sources, currency, filterCategories, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   const resetPage = () => setPage(1);
   const inputCls  = "border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400";
@@ -572,12 +584,42 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           </select>
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 relative" ref={catDropdownRef}>
           <label className={labelCls}>Category</label>
-          <select value={filterCategory} onChange={e => { setFilterCategory(e.target.value); resetPage(); }} className={`${inputCls} min-w-[160px]`}>
-            <option value="">All Categories</option>
-            {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <button
+            type="button"
+            onClick={() => setCatDropdownOpen(o => !o)}
+            className={`${inputCls} min-w-[160px] text-left flex items-center justify-between gap-2`}
+          >
+            <span className="truncate">
+              {filterCategories.length === 0 ? 'All Categories' :
+               filterCategories.length === 1 ? filterCategories[0] :
+               `${filterCategories.length} selected`}
+            </span>
+            <span className="text-slate-400 text-xs">▾</span>
+          </button>
+          {catDropdownOpen && (
+            <div className="absolute top-full left-0 z-50 mt-1 w-64 max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm">
+                <input type="checkbox" checked={filterCategories.length === 0}
+                  onChange={() => { setFilterCategories([]); resetPage(); }} />
+                <span className="text-slate-500">All Categories</span>
+              </label>
+              <div className="border-t border-slate-100 my-1" />
+              {categoryOptions.map(c => (
+                <label key={c} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm">
+                  <input type="checkbox" checked={filterCategories.includes(c)}
+                    onChange={() => {
+                      setFilterCategories(prev =>
+                        prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
+                      );
+                      resetPage();
+                    }} />
+                  <span className="text-slate-700">{c}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-1">
