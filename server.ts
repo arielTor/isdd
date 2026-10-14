@@ -2343,7 +2343,7 @@ async function startServer() {
         [np, nr, category.trim().toLowerCase(), nw, nw]
       )) as any[];
       if ((existing as any[]).length > 0) {
-        res.status(409).json({ error: 'An identical rule (same payer, recipient and category) already exists.' });
+        res.status(409).json({ error: 'An identical rule (same payer, recipient, account/wallet and category) already exists.' });
         return;
       }
       await conn.execute(
