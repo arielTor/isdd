@@ -2335,14 +2335,15 @@ async function startServer() {
       const nr = normalizeName(recipient);
       const nw = account_wallet ? normalizeName(account_wallet) : null;
       const [existing] = (await conn.execute(
-        `SELECT id, category FROM vendor_classification_rules
+        `SELECT id FROM vendor_classification_rules
          WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
+           AND LOWER(TRIM(category)) = ?
            AND (account_wallet IS NULL AND ? IS NULL OR LOWER(TRIM(account_wallet)) = ?)
          LIMIT 1`,
-        [np, nr, nw, nw]
+        [np, nr, category.trim().toLowerCase(), nw, nw]
       )) as any[];
       if ((existing as any[]).length > 0) {
-        res.status(409).json({ error: `A rule for this payer + recipient already exists with category "${(existing as any[])[0].category}". Delete it first or edit it instead.` });
+        res.status(409).json({ error: 'An identical rule (same payer, recipient and category) already exists.' });
         return;
       }
       await conn.execute(
