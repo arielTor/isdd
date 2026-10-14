@@ -385,12 +385,10 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   }, []);
 
   useEffect(() => {
-    fetch('/api/settings/classification-rules')
+    fetch('/api/settings/categories', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then((rules: { category: string }[] | null) => {
-        if (!rules) return;
-        const unique = [...new Set(rules.map(r => r.category).filter(Boolean))].sort();
-        if (unique.length > 0) setCategoryOptions(unique);
+      .then((cats: string[] | null) => {
+        if (cats && cats.length > 0) setCategoryOptions(cats);
       })
       .catch(() => {});
   }, []);

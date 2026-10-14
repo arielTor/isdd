@@ -25,6 +25,7 @@ const CATEGORY_OPTIONS = [
 
 export default function ClassificationRulesPage() {
   const [rules, setRules] = useState<Rule[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(CATEGORY_OPTIONS);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -58,7 +59,13 @@ export default function ClassificationRulesPage() {
     }
   };
 
-  useEffect(() => { fetchRules(); }, []);
+  useEffect(() => {
+    fetchRules();
+    fetch('/api/settings/categories', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then((cats: string[] | null) => { if (cats && cats.length > 0) setCategoryOptions(cats); })
+      .catch(() => {});
+  }, []);
 
   const handleExport = () => {
     const header = 'Payer,Recipient,Counterparty Account / Wallet,Category';
@@ -217,7 +224,7 @@ export default function ClassificationRulesPage() {
         className="w-full px-2 py-1 rounded bg-slate-900/80 border border-indigo-500/50 text-slate-200 text-sm focus:outline-none focus:border-indigo-400"
       />
       <datalist id="cat-list-edit">
-        {CATEGORY_OPTIONS.map(c => <option key={c} value={c} />)}
+        {categoryOptions.map(c => <option key={c} value={c} />)}
       </datalist>
     </>
   ) : (
@@ -341,7 +348,7 @@ export default function ClassificationRulesPage() {
                 className="w-full px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-700 text-slate-200 text-sm placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
               />
               <datalist id="cat-list-add">
-                {CATEGORY_OPTIONS.map(c => <option key={c} value={c} />)}
+                {categoryOptions.map(c => <option key={c} value={c} />)}
               </datalist>
             </div>
           </div>

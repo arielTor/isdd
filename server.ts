@@ -2404,6 +2404,24 @@ async function startServer() {
 
   // GET /api/settings/classification-rules ── end ────────────────────────────
 
+  // GET /api/settings/categories — all distinct categories (rules + transactions)
+  app.get('/api/settings/categories', corsMiddleware, requireAuth, async (_req, res) => {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = (await conn.execute(
+        `SELECT DISTINCT category FROM (
+           SELECT category FROM vendor_classification_rules WHERE category IS NOT NULL AND category != ''
+           UNION
+           SELECT category FROM wallet_transactions WHERE category IS NOT NULL AND category != ''
+         ) AS combined
+         ORDER BY category`
+      )) as any[];
+      res.json((rows as any[]).map((r: any) => r.category));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally { conn.release(); }
+  });
+
   // ── Wallet address labels ─────────────────────────────────────────────────
   (async () => {
     try {
