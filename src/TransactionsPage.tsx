@@ -829,8 +829,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
 
         {loading && !data ? (
           <div className="p-12 text-center text-slate-400 text-sm">Loading transactions…</div>
-        ) : transactions.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm">No transactions found for the selected filters.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -870,6 +868,13 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
+                {transactions.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="p-12 text-center text-slate-500 text-sm">
+                      No transactions found for the selected filters.
+                    </td>
+                  </tr>
+                )}
                 {transactions.map(tx => (
                   <tr key={tx.id} className="hover:bg-slate-700/30 transition-colors">
                     <td className="px-4 py-1.5 text-slate-400 whitespace-nowrap text-xs">{fmtDate(tx.transaction_date)}</td>
