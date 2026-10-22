@@ -147,17 +147,29 @@ const MOCK_TRANSACTIONS: Transaction[] = [
 
 function buildMockResponse(
   rows: Transaction[],
-  { filterCategories, txType, search, dateFrom, dateTo, page, limit, sortBy, sortDir }:
-  { currency: string; filterCategories: string[]; txType: string; search: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
+  { filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit, sortBy, sortDir }:
+  { currency: string; filterCategories: string[]; txType: string; search: string; payerFilter?: string; recipientFilter?: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
 ): ApiResponse {
   // 1. Filter
   const filtered = rows.filter(tx => {
     if (currency && currency !== 'ALL' && tx.currency !== currency) return false;
-    if (filterCategories.length > 0 && !filterCategories.includes(tx.category ?? '')) return false;
+    if (filterCategories.length > 0 && filterCategories.length < rows.length && !filterCategories.includes(tx.category ?? '')) return false;
     if (txType && txType !== 'all' && tx.type !== txType) return false;
     if (search) {
       const q = search.toLowerCase();
-      if (!(tx.other_party?.toLowerCase().includes(q) || tx.reference?.toLowerCase().includes(q))) return false;
+      const payer = tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name;
+      const recipient = tx.type === 'debit' ? (tx.other_party ?? '') : tx.company_name;
+      if (!(payer.toLowerCase().includes(q) || recipient.toLowerCase().includes(q) || tx.reference?.toLowerCase().includes(q))) return false;
+    }
+    if (payerFilter) {
+      const q = payerFilter.toLowerCase();
+      const payer = tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name;
+      if (!payer.toLowerCase().includes(q)) return false;
+    }
+    if (recipientFilter) {
+      const q = recipientFilter.toLowerCase();
+      const recipient = tx.type === 'debit' ? (tx.other_party ?? '') : tx.company_name;
+      if (!recipient.toLowerCase().includes(q) && !(tx.reference ?? '').toLowerCase().includes(q)) return false;
     }
     if (dateFrom && tx.transaction_date < dateFrom) return false;
     if (dateTo   && tx.transaction_date > dateTo)   return false;
@@ -463,7 +475,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       }
     } catch {
       setIsMock(true);
-      setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
+      setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
     } finally {
       setLoading(false);
     }
@@ -516,7 +528,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     let rows: Transaction[];
 
     if (isMock) {
-      rows = buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions;
+      rows = buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions;
     } else {
       setExportLoading(true);
       try {
