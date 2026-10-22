@@ -210,8 +210,8 @@ const fmtAmount = (amount: number, currency: string, type: 'credit' | 'debit') =
 
 const fmtMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
 
-const fmtUsd = (n: number | null) =>
-  n == null ? null : `$${Math.round(Math.abs(n)).toLocaleString()}`;
+const fmtUsd = (n: number | null, type?: 'credit' | 'debit') =>
+  n == null ? null : `${type === 'credit' ? '+' : type === 'debit' ? '-' : ''}$${Math.round(Math.abs(n)).toLocaleString()}`;
 
 // ── ClassifyCell ──────────────────────────────────────────────────────────────
 
@@ -791,7 +791,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                     <td className={`px-4 py-1.5 font-mono font-semibold whitespace-nowrap text-xs ${
                       tx.type === 'credit' ? 'text-emerald-400' : 'text-red-400'
                     }`}>
-                      {fmtUsd(tx.amount_usd) ?? <span className="text-slate-600">—</span>}
+                      {fmtUsd(tx.amount_usd, tx.type) ?? <span className="text-slate-600">—</span>}
                     </td>
                     <td className="px-4 py-1">
                       <ClassifyCell
