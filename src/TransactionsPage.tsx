@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCcw, X, Download, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Search, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCcw, X, Download, ArrowUp, ArrowDown, ArrowUpDown, Filter } from 'lucide-react';
 import { Company } from './types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -148,12 +148,12 @@ const MOCK_TRANSACTIONS: Transaction[] = [
 function buildMockResponse(
   rows: Transaction[],
   { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit, sortBy, sortDir }:
-  { currency: string; filterCategories: string[]; txType: string; search: string; payerFilter?: string; recipientFilter?: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
+  { currency: string; filterCategories: string[] | null; txType: string; search: string; payerFilter?: string; recipientFilter?: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
 ): ApiResponse {
   // 1. Filter
   const filtered = rows.filter(tx => {
     if (currency && currency !== 'ALL' && tx.currency !== currency) return false;
-    if (filterCategories.length > 0 && filterCategories.length < rows.length && !filterCategories.includes(tx.category ?? '')) return false;
+    if (filterCategories !== null && filterCategories.length > 0 && !filterCategories.includes(tx.category ?? '')) return false;
     if (txType && txType !== 'all' && tx.type !== txType) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -224,6 +224,72 @@ const fmtMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
 
 const fmtUsd = (n: number | null, type?: 'credit' | 'debit') =>
   n == null ? null : `${type === 'credit' ? '+' : type === 'debit' ? '-' : ''}$${Math.round(Math.abs(n)).toLocaleString()}`;
+
+// ── ColumnFilterPopover ───────────────────────────────────────────────────────
+
+function ColumnFilterPopover({ value, onCommit, placeholder }: {
+  value: string; onCommit: (v: string) => void; placeholder: string;
+}) {
+  const [open, setOpen]   = useState(false);
+  const [input, setInput] = useState(value);
+  const ref               = useRef<HTMLDivElement>(null);
+  const timer             = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { setInput(value); }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleChange = (v: string) => {
+    setInput(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => onCommit(v), 400);
+  };
+
+  const clear = () => { setInput(''); onCommit(''); };
+  const isActive = value.length > 0;
+
+  return (
+    <div ref={ref} className="relative inline-flex">
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        className={`ml-1 p-0.5 rounded transition-colors ${
+          isActive
+            ? 'text-indigo-400 bg-indigo-500/20'
+            : 'text-slate-500 hover:text-slate-300 hover:bg-slate-600/50'
+        }`}
+        title={isActive ? `Filtering: "${value}"` : `Filter ${placeholder}`}
+      >
+        <Filter size={9} />
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1.5 bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-2.5 w-48">
+          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">{placeholder}</div>
+          <input
+            autoFocus
+            type="text"
+            value={input}
+            onChange={e => handleChange(e.target.value)}
+            onKeyDown={e => e.key === 'Escape' && setOpen(false)}
+            placeholder={`Search ${placeholder.toLowerCase()}…`}
+            className="w-full text-xs bg-slate-700 text-slate-200 border border-slate-600 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 placeholder:text-slate-500"
+          />
+          {input && (
+            <button onClick={clear} className="mt-1.5 text-[10px] text-slate-500 hover:text-red-400 transition-colors flex items-center gap-1">
+              <X size={9} /> Clear filter
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── ClassifyCell ──────────────────────────────────────────────────────────────
 
@@ -368,16 +434,14 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [sourceKey, setSourceKey]     = useState('');
   const [sources, setSources]         = useState<{ label: string; source: string; bank_id: string | null }[]>([]);
   const [currency, setCurrency]       = useState('ALL');
-  const [filterCategories, setFilterCategories] = useState<string[]>([]);
+  const [filterCategories, setFilterCategories] = useState<string[] | null>(null);
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
   const catDropdownRef = useRef<HTMLDivElement>(null);
   const [txType, setTxType]           = useState<'all' | 'credit' | 'debit'>('all');
   const [search, setSearch]                   = useState('');
   const [searchInput, setSearchInput]         = useState('');
   const [payerFilter, setPayerFilter]         = useState('');
-  const [payerFilterInput, setPayerFilterInput] = useState('');
   const [recipientFilter, setRecipientFilter] = useState('');
-  const [recipientFilterInput, setRecipientFilterInput] = useState('');
   const [dateFrom, setDateFrom]               = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
   const [dateTo, setDateTo]                   = useState(() => new Date().toISOString().slice(0, 10));
   const [page, setPage]               = useState(1);
@@ -390,9 +454,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [categoryOptions, setCategoryOptions] = useState<string[]>([...CATEGORY_OPTIONS_FALLBACK]);
   const [walletLabels, setWalletLabels]     = useState<Record<string, string>>({});
   const [walletIdLabels, setWalletIdLabels] = useState<Record<string, string>>({});
-  const searchTimer                    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const payerTimer                     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recipientTimer                 = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetch('/api/settings/wallet-labels', { credentials: 'include' })
@@ -451,7 +513,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
         else                     params.set('source',  selectedOpt.source);
       }
       if (currency !== 'ALL')         params.set('currency', currency);
-      if (filterCategories.length > 0 && filterCategories.length < categoryOptions.length) params.set('category', filterCategories.join(','));
+      if (filterCategories !== null && filterCategories.length > 0) params.set('category', filterCategories.join(','));
       if (txType !== 'all')           params.set('type', txType);
       if (search)             params.set('search', search);
       if (payerFilter)        params.set('payer_filter', payerFilter);
@@ -479,7 +541,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     } finally {
       setLoading(false);
     }
-  }, [page, companyId, sourceKey, sources, currency, filterCategories, categoryOptions, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
+  }, [page, companyId, sourceKey, sources, currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -497,17 +559,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     searchTimer.current = setTimeout(() => { setSearch(v); setPage(1); }, 400);
   };
 
-  const handlePayerFilterInput = (v: string) => {
-    setPayerFilterInput(v);
-    if (payerTimer.current) clearTimeout(payerTimer.current);
-    payerTimer.current = setTimeout(() => { setPayerFilter(v); setPage(1); }, 400);
-  };
-
-  const handleRecipientFilterInput = (v: string) => {
-    setRecipientFilterInput(v);
-    if (recipientTimer.current) clearTimeout(recipientTimer.current);
-    recipientTimer.current = setTimeout(() => { setRecipientFilter(v); setPage(1); }, 400);
-  };
 
   const handleSort = (key: SortKey) => {
     if (sortBy === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -540,7 +591,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           else                     params.set('source',  selectedOpt.source);
         }
         if (currency !== 'ALL')          params.set('currency', currency);
-        if (filterCategories.length > 0 && filterCategories.length < categoryOptions.length) params.set('category', filterCategories.join(','));
+        if (filterCategories !== null && filterCategories.length > 0) params.set('category', filterCategories.join(','));
         if (txType !== 'all')            params.set('type', txType);
         if (search)                      params.set('search', search);
         if (payerFilter)                 params.set('payer_filter', payerFilter);
@@ -589,7 +640,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [isMock, data, companyId, sourceKey, sources, currency, filterCategories, categoryOptions, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
+  }, [isMock, data, companyId, sourceKey, sources, currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   const resetPage = () => setPage(1);
   const inputCls  = "border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400";
@@ -638,7 +689,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             className={`${inputCls} min-w-[160px] text-left flex items-center justify-between gap-2`}
           >
             <span className="truncate">
-              {filterCategories.length === 0 ? 'All Categories' :
+              {filterCategories === null || filterCategories.length === 0 ? 'All Categories' :
                filterCategories.length === 1 ? filterCategories[0] :
                `${filterCategories.length} selected`}
             </span>
@@ -648,9 +699,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
             <div className="absolute top-full left-0 z-50 mt-1 w-64 max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1">
               <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm font-medium">
                 <input type="checkbox"
-                  checked={filterCategories.length === 0 || filterCategories.length === categoryOptions.length}
+                  checked={filterCategories === null}
                   onChange={() => {
-                    setFilterCategories(filterCategories.length > 0 ? [] : []);
+                    // null → [] (uncheck all so user can pick specific ones)
+                    // anything else → null (reset to all)
+                    setFilterCategories(filterCategories === null ? [] : null);
                     resetPage();
                   }} />
                 <span className="text-slate-600">All Categories</span>
@@ -659,16 +712,19 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
               {categoryOptions.map(c => (
                 <label key={c} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm">
                   <input type="checkbox"
-                    checked={filterCategories.length === 0 || filterCategories.includes(c)}
+                    checked={filterCategories === null || filterCategories.includes(c)}
                     onChange={() => {
-                      if (filterCategories.length === 0) {
-                        // All are currently shown — switch to "all except this one"
+                      if (filterCategories === null) {
+                        // All shown — uncheck one → switch to "all except this one"
                         setFilterCategories(categoryOptions.filter(x => x !== c));
+                      } else if (filterCategories.includes(c)) {
+                        const next = filterCategories.filter(x => x !== c);
+                        // If all unchecked → reset to all
+                        setFilterCategories(next.length === 0 ? null : next);
                       } else {
-                        const next = filterCategories.includes(c)
-                          ? filterCategories.filter(x => x !== c)
-                          : [...filterCategories, c];
-                        setFilterCategories(next.length === categoryOptions.length ? [] : next);
+                        const next = [...filterCategories, c];
+                        // If all checked again → reset to null (clean all state)
+                        setFilterCategories(next.length >= categoryOptions.length ? null : next);
                       }
                       resetPage();
                     }} />
@@ -786,8 +842,16 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   >
                     <div className="flex items-center gap-1">Date <SortIcon k="date" /></div>
                   </th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Payer</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Recipient</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                    <div className="flex items-center">Payer
+                      <ColumnFilterPopover value={payerFilter} onCommit={v => { setPayerFilter(v); setPage(1); }} placeholder="Payer" />
+                    </div>
+                  </th>
+                  <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                    <div className="flex items-center">Recipient
+                      <ColumnFilterPopover value={recipientFilter} onCommit={v => { setRecipientFilter(v); setPage(1); }} placeholder="Recipient" />
+                    </div>
+                  </th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Currency</th>
                   <th
                     onClick={() => handleSort('amount')}
@@ -803,26 +867,6 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   </th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">Category</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">In/Out</th>
-                </tr>
-                <tr className="bg-slate-800/30 border-b border-slate-700">
-                  <th className="px-4 py-1" />
-                  <th className="px-4 py-1">
-                    <input
-                      type="text" value={payerFilterInput}
-                      onChange={e => handlePayerFilterInput(e.target.value)}
-                      placeholder="Filter payer…"
-                      className="w-full text-[10px] bg-slate-700/60 text-slate-300 border border-slate-600/60 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 placeholder:text-slate-600"
-                    />
-                  </th>
-                  <th className="px-4 py-1">
-                    <input
-                      type="text" value={recipientFilterInput}
-                      onChange={e => handleRecipientFilterInput(e.target.value)}
-                      placeholder="Filter recipient…"
-                      className="w-full text-[10px] bg-slate-700/60 text-slate-300 border border-slate-600/60 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 placeholder:text-slate-600"
-                    />
-                  </th>
-                  <th colSpan={5} className="px-4 py-1" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
