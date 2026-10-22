@@ -147,7 +147,7 @@ const MOCK_TRANSACTIONS: Transaction[] = [
 
 function buildMockResponse(
   rows: Transaction[],
-  { filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit, sortBy, sortDir }:
+  { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit, sortBy, sortDir }:
   { currency: string; filterCategories: string[]; txType: string; search: string; payerFilter?: string; recipientFilter?: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
 ): ApiResponse {
   // 1. Filter
