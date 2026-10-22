@@ -360,10 +360,14 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
   const catDropdownRef = useRef<HTMLDivElement>(null);
   const [txType, setTxType]           = useState<'all' | 'credit' | 'debit'>('all');
-  const [search, setSearch]           = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [dateFrom, setDateFrom]       = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
-  const [dateTo, setDateTo]           = useState(() => new Date().toISOString().slice(0, 10));
+  const [search, setSearch]                   = useState('');
+  const [searchInput, setSearchInput]         = useState('');
+  const [payerFilter, setPayerFilter]         = useState('');
+  const [payerFilterInput, setPayerFilterInput] = useState('');
+  const [recipientFilter, setRecipientFilter] = useState('');
+  const [recipientFilterInput, setRecipientFilterInput] = useState('');
+  const [dateFrom, setDateFrom]               = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [dateTo, setDateTo]                   = useState(() => new Date().toISOString().slice(0, 10));
   const [page, setPage]               = useState(1);
   const [sortBy, setSortBy]           = useState<SortKey>('date');
   const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc');
@@ -374,7 +378,9 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [categoryOptions, setCategoryOptions] = useState<string[]>([...CATEGORY_OPTIONS_FALLBACK]);
   const [walletLabels, setWalletLabels]     = useState<Record<string, string>>({});
   const [walletIdLabels, setWalletIdLabels] = useState<Record<string, string>>({});
-  const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTimer                    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const payerTimer                     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recipientTimer                 = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetch('/api/settings/wallet-labels', { credentials: 'include' })
@@ -433,9 +439,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
         else                     params.set('source',  selectedOpt.source);
       }
       if (currency !== 'ALL')         params.set('currency', currency);
-      if (filterCategories.length > 0) params.set('category', filterCategories.join(','));
+      if (filterCategories.length > 0 && filterCategories.length < categoryOptions.length) params.set('category', filterCategories.join(','));
       if (txType !== 'all')           params.set('type', txType);
       if (search)             params.set('search', search);
+      if (payerFilter)        params.set('payer_filter', payerFilter);
+      if (recipientFilter)    params.set('recipient_filter', recipientFilter);
       if (showMgFees)         params.set('show_mg_fees', '1');
       if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
 
@@ -459,7 +467,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     } finally {
       setLoading(false);
     }
-  }, [page, companyId, sourceKey, sources, currency, filterCategories, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
+  }, [page, companyId, sourceKey, sources, currency, filterCategories, categoryOptions, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -475,6 +483,18 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     setSearchInput(v);
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => { setSearch(v); setPage(1); }, 400);
+  };
+
+  const handlePayerFilterInput = (v: string) => {
+    setPayerFilterInput(v);
+    if (payerTimer.current) clearTimeout(payerTimer.current);
+    payerTimer.current = setTimeout(() => { setPayerFilter(v); setPage(1); }, 400);
+  };
+
+  const handleRecipientFilterInput = (v: string) => {
+    setRecipientFilterInput(v);
+    if (recipientTimer.current) clearTimeout(recipientTimer.current);
+    recipientTimer.current = setTimeout(() => { setRecipientFilter(v); setPage(1); }, 400);
   };
 
   const handleSort = (key: SortKey) => {
@@ -496,7 +516,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     let rows: Transaction[];
 
     if (isMock) {
-      rows = buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategory, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions;
+      rows = buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions;
     } else {
       setExportLoading(true);
       try {
@@ -508,9 +528,11 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           else                     params.set('source',  selectedOpt.source);
         }
         if (currency !== 'ALL')          params.set('currency', currency);
-        if (filterCategories.length > 0) params.set('category', filterCategories.join(','));
+        if (filterCategories.length > 0 && filterCategories.length < categoryOptions.length) params.set('category', filterCategories.join(','));
         if (txType !== 'all')            params.set('type', txType);
         if (search)                      params.set('search', search);
+        if (payerFilter)                 params.set('payer_filter', payerFilter);
+        if (recipientFilter)             params.set('recipient_filter', recipientFilter);
         if (showMgFees)                  params.set('show_mg_fees', '1');
         if (sortBy !== 'amount_usd') { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
 
@@ -555,7 +577,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [isMock, data, companyId, sourceKey, sources, currency, filterCategories, txType, search, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
+  }, [isMock, data, companyId, sourceKey, sources, currency, filterCategories, categoryOptions, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, sortBy, sortDir, showMgFees]);
 
   const resetPage = () => setPage(1);
   const inputCls  = "border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400";
@@ -612,19 +634,30 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           </button>
           {catDropdownOpen && (
             <div className="absolute top-full left-0 z-50 mt-1 w-64 max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1">
-              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm">
-                <input type="checkbox" checked={filterCategories.length === 0}
-                  onChange={() => { setFilterCategories([]); resetPage(); }} />
-                <span className="text-slate-500">All Categories</span>
+              <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm font-medium">
+                <input type="checkbox"
+                  checked={filterCategories.length === 0 || filterCategories.length === categoryOptions.length}
+                  onChange={() => {
+                    setFilterCategories(filterCategories.length > 0 ? [] : []);
+                    resetPage();
+                  }} />
+                <span className="text-slate-600">All Categories</span>
               </label>
               <div className="border-t border-slate-100 my-1" />
               {categoryOptions.map(c => (
                 <label key={c} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm">
-                  <input type="checkbox" checked={filterCategories.includes(c)}
+                  <input type="checkbox"
+                    checked={filterCategories.length === 0 || filterCategories.includes(c)}
                     onChange={() => {
-                      setFilterCategories(prev =>
-                        prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
-                      );
+                      if (filterCategories.length === 0) {
+                        // All are currently shown — switch to "all except this one"
+                        setFilterCategories(categoryOptions.filter(x => x !== c));
+                      } else {
+                        const next = filterCategories.includes(c)
+                          ? filterCategories.filter(x => x !== c)
+                          : [...filterCategories, c];
+                        setFilterCategories(next.length === categoryOptions.length ? [] : next);
+                      }
                       resetPage();
                     }} />
                   <span className="text-slate-700">{c}</span>
@@ -734,7 +767,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-800/50 border-b border-slate-700">
+                <tr className="bg-slate-800/50 border-b border-slate-700/50">
                   <th
                     onClick={() => handleSort('date')}
                     className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-slate-300 select-none"
@@ -758,6 +791,26 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                   </th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-indigo-400 whitespace-nowrap">Category</th>
                   <th className="px-4 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">In/Out</th>
+                </tr>
+                <tr className="bg-slate-800/30 border-b border-slate-700">
+                  <th className="px-4 py-1" />
+                  <th className="px-4 py-1">
+                    <input
+                      type="text" value={payerFilterInput}
+                      onChange={e => handlePayerFilterInput(e.target.value)}
+                      placeholder="Filter payer…"
+                      className="w-full text-[10px] bg-slate-700/60 text-slate-300 border border-slate-600/60 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 placeholder:text-slate-600"
+                    />
+                  </th>
+                  <th className="px-4 py-1">
+                    <input
+                      type="text" value={recipientFilterInput}
+                      onChange={e => handleRecipientFilterInput(e.target.value)}
+                      placeholder="Filter recipient…"
+                      className="w-full text-[10px] bg-slate-700/60 text-slate-300 border border-slate-600/60 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 placeholder:text-slate-600"
+                    />
+                  </th>
+                  <th colSpan={5} className="px-4 py-1" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">

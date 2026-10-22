@@ -2966,6 +2966,8 @@ async function startServer() {
       date_from, date_to,
       type: txType,
       search,
+      payer_filter = '',
+      recipient_filter = '',
       category: categoryFilterRaw = '',
       source = '',
       show_mg_fees = '',
@@ -2999,7 +3001,9 @@ async function startServer() {
     if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
-    if (search)                          { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ?)'); baseParams.push(`%${search}%`, `%${search}%`); }
+    if (search)           { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ? OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?) OR wt.other_party IN (SELECT address FROM wallet_address_labels WHERE label LIKE ?))'); baseParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`); }
+    if (payer_filter)     { conditions.push('(wt.other_party LIKE ? OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))'); baseParams.push(`%${payer_filter}%`, `%${payer_filter}%`); }
+    if (recipient_filter) { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ? OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))'); baseParams.push(`%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`); }
     const categoryFilter = (Array.isArray(categoryFilterRaw) ? categoryFilterRaw : String(categoryFilterRaw || '').split(',').filter(Boolean));
     if (categoryFilter.length === 1) { conditions.push('wt.category = ?'); baseParams.push(categoryFilter[0]); }
     else if (categoryFilter.length > 1) { conditions.push(`wt.category IN (${categoryFilter.map(() => '?').join(',')})`); baseParams.push(...categoryFilter); }
@@ -3110,7 +3114,7 @@ async function startServer() {
       if (categoryVal) {
         try {
           const [txRows] = (await conn.execute(
-            `SELECT wt.type, wt.other_party, wt.reference, wt.company_id, c.name AS company_name
+            `SELECT wt.type, wt.other_party, wt.reference, wt.source, wt.company_id, c.name AS company_name
              FROM wallet_transactions wt
              LEFT JOIN companies c ON c.id = wt.company_id
              WHERE wt.id = ?`,
