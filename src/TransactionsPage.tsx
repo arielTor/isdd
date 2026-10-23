@@ -453,6 +453,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
   const [data, setData]               = useState<ApiResponse | null>(null);
   const [loading, setLoading]         = useState(false);
   const [isMock, setIsMock]           = useState(false);
+  const [apiError, setApiError]       = useState<string | null>(null);
   const [showMgFees, setShowMgFees]   = useState(false);
   const [categoryOptions, setCategoryOptions] = useState<string[]>([...CATEGORY_OPTIONS_FALLBACK]);
   const [walletLabels, setWalletLabels]     = useState<Record<string, string>>({});
@@ -534,12 +535,16 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           );
         }
         setIsMock(false);
+        setApiError(null);
         setData(json);
       } else {
-        throw new Error('api error');
+        let detail = `HTTP ${res.status}`;
+        try { const j = await res.json(); if (j?.detail) detail = j.detail; } catch { /* non-JSON body */ }
+        throw new Error(detail);
       }
-    } catch {
+    } catch (e) {
       setIsMock(true);
+      setApiError(e instanceof Error ? e.message : String(e));
       setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit: 20, sortBy, sortDir, labels: walletLabels }));
     } finally {
       setLoading(false);
@@ -792,6 +797,14 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           <SummaryCard label="Money Out"   value={fmtMoney(summary.money_out)}   sub={`${dateFrom} → ${dateTo}`} color="text-red-600" />
           <SummaryCard label="Net Change"  value={(summary.net_change >= 0 ? '+' : '') + fmtMoney(summary.net_change)} color={summary.net_change >= 0 ? 'text-emerald-600' : 'text-red-600'} />
           <SummaryCard label="Transactions" value={summary.tx_count.toLocaleString()} sub="matching filters" />
+        </div>
+      )}
+
+      {/* API error banner — surfaces the real server error instead of silently showing demo data */}
+      {isMock && apiError && (
+        <div className="mb-3 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+          <span className="font-semibold">Live data unavailable — showing demo data.</span>{' '}
+          <span className="text-red-400/90">Server error: {apiError}</span>
         </div>
       )}
 

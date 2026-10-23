@@ -3011,16 +3011,18 @@ async function startServer() {
       // IFX debit arm only fires when source IS literally 'ifx' AND reference exists.
       // Every other debit (NULL source, non-IFX source, or IFX without reference)
       // falls to the else-arm and searches other_party — matching the JS else-branch.
+      // LOWER(col) LIKE lowercased-term makes search case-insensitive regardless
+      // of the column/connection collation (some are case-sensitive _bin/_cs).
       conditions.push(`(
-        (wt.type = 'credit' AND wt.other_party LIKE ?)
-        OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
-        OR (wt.type = 'credit' AND COALESCE(wt.source,'ifx') = 'xbo' AND wt.reference LIKE ?)
+        (wt.type = 'credit' AND LOWER(wt.other_party) LIKE ?)
+        OR wt.company_id IN (SELECT id FROM companies WHERE LOWER(name) LIKE ?)
+        OR (wt.type = 'credit' AND COALESCE(wt.source,'ifx') = 'xbo' AND LOWER(wt.reference) LIKE ?)
         OR (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
-            AND SUBSTRING_INDEX(wt.reference, ' - ', 1) LIKE ?)
+            AND LOWER(SUBSTRING_INDEX(wt.reference, ' - ', 1)) LIKE ?)
         OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
-            AND wt.other_party LIKE ?)
+            AND LOWER(wt.other_party) LIKE ?)
         OR EXISTS (
-          SELECT 1 FROM wallet_address_labels wal WHERE wal.label LIKE ?
+          SELECT 1 FROM wallet_address_labels wal WHERE LOWER(wal.label) LIKE ?
           AND (
             (wt.type = 'credit' AND wal.address = wt.other_party)
             OR (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
@@ -3030,18 +3032,18 @@ async function startServer() {
           )
         )
       )`);
-      const s = `%${search}%`;
+      const s = `%${search.toLowerCase()}%`;
       baseParams.push(s, s, s, s, s, s);
     }
     if (payer_filter) {
       // Payer: credit → other_party (+wallet label), debit → company_name
       conditions.push(`(
-        (wt.type = 'credit' AND wt.other_party LIKE ?)
-        OR (wt.type = 'debit' AND wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))
+        (wt.type = 'credit' AND LOWER(wt.other_party) LIKE ?)
+        OR (wt.type = 'debit' AND wt.company_id IN (SELECT id FROM companies WHERE LOWER(name) LIKE ?))
         OR EXISTS (SELECT 1 FROM wallet_address_labels wal
-                   WHERE wal.label LIKE ? AND wt.type = 'credit' AND wal.address = wt.other_party)
+                   WHERE LOWER(wal.label) LIKE ? AND wt.type = 'credit' AND wal.address = wt.other_party)
       )`);
-      const p = `%${payer_filter}%`;
+      const p = `%${payer_filter.toLowerCase()}%`;
       baseParams.push(p, p, p);
     }
     if (recipient_filter) {
@@ -3049,15 +3051,15 @@ async function startServer() {
       //            debit IFX (with reference)→ref[0], debit everything else→other_party.
       // Same NULL-source fix as the search block above.
       conditions.push(`(
-        (wt.type = 'credit' AND COALESCE(wt.source,'ifx') = 'xbo' AND wt.reference LIKE ?)
+        (wt.type = 'credit' AND COALESCE(wt.source,'ifx') = 'xbo' AND LOWER(wt.reference) LIKE ?)
         OR (wt.type = 'credit' AND COALESCE(wt.source,'ifx') != 'xbo'
-            AND wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))
+            AND wt.company_id IN (SELECT id FROM companies WHERE LOWER(name) LIKE ?))
         OR (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
-            AND SUBSTRING_INDEX(wt.reference, ' - ', 1) LIKE ?)
+            AND LOWER(SUBSTRING_INDEX(wt.reference, ' - ', 1)) LIKE ?)
         OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
-            AND wt.other_party LIKE ?)
+            AND LOWER(wt.other_party) LIKE ?)
         OR EXISTS (
-          SELECT 1 FROM wallet_address_labels wal WHERE wal.label LIKE ?
+          SELECT 1 FROM wallet_address_labels wal WHERE LOWER(wal.label) LIKE ?
           AND (
             (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
              AND wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
@@ -3066,7 +3068,7 @@ async function startServer() {
           )
         )
       )`);
-      const r = `%${recipient_filter}%`;
+      const r = `%${recipient_filter.toLowerCase()}%`;
       baseParams.push(r, r, r, r, r);
     }
     const categoryFilter = (Array.isArray(categoryFilterRaw) ? categoryFilterRaw : String(categoryFilterRaw || '').split(',').filter(Boolean));
