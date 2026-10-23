@@ -14,7 +14,7 @@ const CATEGORY_OPTIONS_FALLBACK = [
   'Management - C','Management - I','MRKT Services','MRKT Services Tools','MRKT Spend',
   'MRKT Tools','Return','SAL IT','SAL Management','SAL MKT','Settlement','TECH Platforms',
   'TECH Tools','TK IB','Uruguay Team','VOIP','Wire Settlement','Salary Israel',
-  "G&A (Israel)",'Management - T','TAX',
+  "G&A (Israel)",'Management - T','TAX','__blank__',
 ] as const;
 
 const GEO_COLORS: Record<Geo, string> = {
@@ -153,7 +153,11 @@ function buildMockResponse(
   // 1. Filter
   const filtered = rows.filter(tx => {
     if (currency && currency !== 'ALL' && tx.currency !== currency) return false;
-    if (filterCategories !== null && filterCategories.length > 0 && !filterCategories.includes(tx.category ?? '')) return false;
+    if (filterCategories !== null && filterCategories.length > 0) {
+      const cat = tx.category ?? '';
+      const matches = filterCategories.includes(cat) || (filterCategories.includes('__blank__') && cat === '');
+      if (!matches) return false;
+    }
     if (txType && txType !== 'all' && tx.type !== txType) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -482,7 +486,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     fetch('/api/settings/categories', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
       .then((cats: string[] | null) => {
-        if (cats && cats.length > 0) setCategoryOptions(cats);
+        if (cats && cats.length > 0) setCategoryOptions([...cats, '__blank__']);
       })
       .catch(() => {});
   }, []);
@@ -690,7 +694,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
           >
             <span className="truncate">
               {filterCategories === null || filterCategories.length === 0 ? 'All Categories' :
-               filterCategories.length === 1 ? filterCategories[0] :
+               filterCategories.length === 1 ? (filterCategories[0] === '__blank__' ? '(No category)' : filterCategories[0]) :
                `${filterCategories.length} selected`}
             </span>
             <span className="text-slate-400 text-xs">▾</span>
@@ -728,7 +732,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
                       }
                       resetPage();
                     }} />
-                  <span className="text-slate-700">{c}</span>
+                  <span className="text-slate-700">{c === '__blank__' ? '(No category)' : c}</span>
                 </label>
               ))}
             </div>

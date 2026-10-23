@@ -3036,8 +3036,15 @@ async function startServer() {
       baseParams.push(`%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`);
     }
     const categoryFilter = (Array.isArray(categoryFilterRaw) ? categoryFilterRaw : String(categoryFilterRaw || '').split(',').filter(Boolean));
-    if (categoryFilter.length === 1) { conditions.push('wt.category = ?'); baseParams.push(categoryFilter[0]); }
-    else if (categoryFilter.length > 1) { conditions.push(`wt.category IN (${categoryFilter.map(() => '?').join(',')})`); baseParams.push(...categoryFilter); }
+    if (categoryFilter.length > 0) {
+      const hasBlank  = categoryFilter.includes('__blank__');
+      const realCats  = categoryFilter.filter(c => c !== '__blank__');
+      const parts: string[] = [];
+      if (hasBlank)          parts.push("(wt.category IS NULL OR wt.category = '')");
+      if (realCats.length === 1) { parts.push('wt.category = ?'); baseParams.push(realCats[0]); }
+      else if (realCats.length > 1) { parts.push(`wt.category IN (${realCats.map(() => '?').join(',')})`); baseParams.push(...realCats); }
+      if (parts.length > 0) conditions.push(`(${parts.join(' OR ')})`);
+    }
     if (show_mg_fees !== '1')            { conditions.push("NOT (wt.source = 'moneygate' AND wt.reference = 'Fee')"); }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
