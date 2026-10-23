@@ -2,7 +2,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   --color-brand-primary: #1e293b;
@@ -15,8 +15,10 @@
 }
 
 @layer base {
+  html { direction: ltr; }
   body {
-    @apply bg-surface-bg text-slate-800 font-sans antialiased;
+    @apply bg-surface-bg text-slate-800 font-sans antialiased text-left;
+    direction: ltr;
   }
 }
 
@@ -29,3 +31,119 @@
   background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px),
     linear-gradient(to bottom, #f1f5f9 1px, transparent 1px);
 }
+
+/* ── Portal themes (Appearance → theme) ──────────────────────────────────────
+   Applied via html[data-theme]. The app is built with light utility classes
+   (bg-white, bg-slate-50, text-slate-*, …); these scoped rules retint the
+   common surfaces so the whole portal - not just the sidebar - follows the
+   chosen theme. "gray" is a mid-tone between the default light and full dark. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  /* Chatwoot dark design (Radix slate dark scale) - neutral near-black, not navy. */
+  --p-bg: #111113;        /* slate-1  page background */
+  --p-card: #18191b;      /* slate-2  primary surfaces (default white) */
+  --p-sub: #212225;       /* slate-3  secondary surfaces (default slate-50) */
+  --p-border: #363a3f;    /* slate-6  borders */
+  --p-text: #edeef0;      /* slate-12 strong text */
+  --p-text-dim: #b0b4ba;  /* slate-11 secondary text */
+}
+html[data-theme="gray"] {
+  color-scheme: dark;
+  --p-bg: #2f3845;
+  --p-card: #3c4655;
+  --p-sub: #353f4d;
+  --p-border: #4b5666;
+  --p-text: #f1f5f9;
+  --p-text-dim: #cbd5e1;
+}
+
+html[data-theme="dark"] body,
+html[data-theme="gray"] body { background: var(--p-bg); color: var(--p-text); }
+
+/* Primary surfaces */
+html[data-theme="dark"] .bg-white, html[data-theme="gray"] .bg-white,
+html[data-theme="dark"] [class*="bg-white/"], html[data-theme="gray"] [class*="bg-white/"] { background-color: var(--p-card) !important; }
+
+/* Page-level surfaces */
+html[data-theme="dark"] .bg-surface-bg, html[data-theme="gray"] .bg-surface-bg,
+html[data-theme="dark"] .bg-slate-50, html[data-theme="gray"] .bg-slate-50 { background-color: var(--p-bg) !important; }
+
+/* Secondary surfaces (headers, hovers, subtle fills) */
+html[data-theme="dark"] .bg-slate-100, html[data-theme="gray"] .bg-slate-100,
+html[data-theme="dark"] .bg-slate-200, html[data-theme="gray"] .bg-slate-200,
+html[data-theme="dark"] [class*="bg-slate-50/"], html[data-theme="gray"] [class*="bg-slate-50/"],
+html[data-theme="dark"] [class*="bg-slate-100/"], html[data-theme="gray"] [class*="bg-slate-100/"],
+html[data-theme="dark"] [class*="bg-slate-200/"], html[data-theme="gray"] [class*="bg-slate-200/"] { background-color: var(--p-sub) !important; }
+
+/* Mid-tone borders used on toggles/checkboxes */
+html[data-theme="dark"] .border-slate-300, html[data-theme="gray"] .border-slate-300 { border-color: var(--p-border) !important; }
+
+/* Hover states - hover:bg-* are separate classes, so retint them too
+   (e.g. the Add-widget menu rows, edit buttons) instead of flashing light. */
+html[data-theme="dark"] [class*="hover:bg-slate-50"]:hover, html[data-theme="gray"] [class*="hover:bg-slate-50"]:hover,
+html[data-theme="dark"] [class*="hover:bg-slate-100"]:hover, html[data-theme="gray"] [class*="hover:bg-slate-100"]:hover,
+html[data-theme="dark"] [class*="hover:bg-slate-200"]:hover, html[data-theme="gray"] [class*="hover:bg-slate-200"]:hover { background-color: var(--p-sub) !important; }
+html[data-theme="dark"] [class*="hover:bg-indigo-50"]:hover, html[data-theme="gray"] [class*="hover:bg-indigo-50"]:hover { background-color: rgba(99,102,241,0.18) !important; }
+html[data-theme="dark"] [class*="hover:bg-red-50"]:hover, html[data-theme="gray"] [class*="hover:bg-red-50"]:hover { background-color: rgba(239,68,68,0.16) !important; }
+
+/* Text */
+html[data-theme="dark"] .text-slate-900, html[data-theme="gray"] .text-slate-900,
+html[data-theme="dark"] .text-slate-800, html[data-theme="gray"] .text-slate-800,
+html[data-theme="dark"] .text-slate-700, html[data-theme="gray"] .text-slate-700 { color: var(--p-text) !important; }
+html[data-theme="dark"] .text-slate-600, html[data-theme="gray"] .text-slate-600,
+html[data-theme="dark"] .text-slate-500, html[data-theme="gray"] .text-slate-500 { color: var(--p-text-dim) !important; }
+
+/* Borders */
+html[data-theme="dark"] .border-slate-50, html[data-theme="gray"] .border-slate-50,
+html[data-theme="dark"] .border-slate-100, html[data-theme="gray"] .border-slate-100,
+html[data-theme="dark"] .border-slate-200, html[data-theme="gray"] .border-slate-200 { border-color: var(--p-border) !important; }
+
+/* SVG figures whose fill is hardcoded to the light-mode ink colour */
+html[data-theme="dark"] [fill="#1e293b"], html[data-theme="gray"] [fill="#1e293b"] { fill: var(--p-text) !important; }
+
+/* Form fields */
+html[data-theme="dark"] input[type="text"], html[data-theme="dark"] input[type="date"], html[data-theme="dark"] input[type="password"], html[data-theme="dark"] input[type="email"], html[data-theme="dark"] select,
+html[data-theme="gray"] input[type="text"], html[data-theme="gray"] input[type="date"], html[data-theme="gray"] input[type="password"], html[data-theme="gray"] input[type="email"], html[data-theme="gray"] select {
+  background-color: var(--p-sub) !important; color: var(--p-text) !important; border-color: var(--p-border) !important;
+}
+
+/* ── Accent surfaces, chips & text ───────────────────────────────────────────
+   Coloured tints (bg-*-50 / bg-*-100) are light by default; retint them to dark
+   translucent fills and lighten their coloured text so totals rows, alert rows
+   and currency badges keep contrast on the dark and gray themes. */
+html[data-theme="dark"] .bg-indigo-50, html[data-theme="gray"] .bg-indigo-50,
+html[data-theme="dark"] [class*="bg-indigo-50/"], html[data-theme="gray"] [class*="bg-indigo-50/"],
+html[data-theme="dark"] .bg-indigo-100, html[data-theme="gray"] .bg-indigo-100 { background-color: rgba(99,102,241,0.20) !important; }
+html[data-theme="dark"] .bg-amber-50, html[data-theme="gray"] .bg-amber-50,
+html[data-theme="dark"] .bg-amber-100, html[data-theme="gray"] .bg-amber-100 { background-color: rgba(245,158,11,0.18) !important; }
+html[data-theme="dark"] .bg-red-50, html[data-theme="gray"] .bg-red-50,
+html[data-theme="dark"] [class*="bg-red-50/"], html[data-theme="gray"] [class*="bg-red-50/"],
+html[data-theme="dark"] .bg-red-100, html[data-theme="gray"] .bg-red-100 { background-color: rgba(239,68,68,0.18) !important; }
+html[data-theme="dark"] .bg-emerald-50, html[data-theme="gray"] .bg-emerald-50,
+html[data-theme="dark"] .bg-emerald-100, html[data-theme="gray"] .bg-emerald-100 { background-color: rgba(16,185,129,0.18) !important; }
+html[data-theme="dark"] .bg-blue-50, html[data-theme="gray"] .bg-blue-50,
+html[data-theme="dark"] .bg-blue-100, html[data-theme="gray"] .bg-blue-100 { background-color: rgba(59,130,246,0.20) !important; }
+html[data-theme="dark"] .bg-orange-100, html[data-theme="gray"] .bg-orange-100 { background-color: rgba(249,115,22,0.20) !important; }
+html[data-theme="dark"] .bg-sky-100, html[data-theme="gray"] .bg-sky-100 { background-color: rgba(56,189,248,0.20) !important; }
+
+/* Coloured text → brighter shades that read on the dark tints above */
+html[data-theme="dark"] .text-indigo-500, html[data-theme="gray"] .text-indigo-500,
+html[data-theme="dark"] .text-indigo-600, html[data-theme="gray"] .text-indigo-600,
+html[data-theme="dark"] .text-indigo-700, html[data-theme="gray"] .text-indigo-700,
+html[data-theme="dark"] .text-indigo-800, html[data-theme="gray"] .text-indigo-800,
+html[data-theme="dark"] .text-indigo-900, html[data-theme="gray"] .text-indigo-900 { color: #c7d2fe !important; }
+html[data-theme="dark"] .text-amber-700, html[data-theme="gray"] .text-amber-700,
+html[data-theme="dark"] .text-amber-800, html[data-theme="gray"] .text-amber-800 { color: #fcd34d !important; }
+html[data-theme="dark"] .text-red-600, html[data-theme="gray"] .text-red-600,
+html[data-theme="dark"] .text-red-700, html[data-theme="gray"] .text-red-700 { color: #f87171 !important; }
+html[data-theme="dark"] .text-emerald-600, html[data-theme="gray"] .text-emerald-600,
+html[data-theme="dark"] .text-emerald-700, html[data-theme="gray"] .text-emerald-700 { color: #34d399 !important; }
+html[data-theme="dark"] .text-blue-700, html[data-theme="gray"] .text-blue-700,
+html[data-theme="dark"] .text-blue-800, html[data-theme="gray"] .text-blue-800 { color: #93c5fd !important; }
+html[data-theme="dark"] .text-orange-700, html[data-theme="gray"] .text-orange-700 { color: #fdba74 !important; }
+
+/* Accent borders → faint, themed */
+html[data-theme="dark"] .border-indigo-100, html[data-theme="gray"] .border-indigo-100,
+html[data-theme="dark"] .border-indigo-200, html[data-theme="gray"] .border-indigo-200 { border-color: rgba(99,102,241,0.35) !important; }
+html[data-theme="dark"] .border-amber-200, html[data-theme="gray"] .border-amber-200 { border-color: rgba(245,158,11,0.35) !important; }
+html[data-theme="dark"] .border-red-100, html[data-theme="gray"] .border-red-100 { border-color: rgba(239,68,68,0.35) !important; }

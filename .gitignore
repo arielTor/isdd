@@ -3,3 +3,12 @@ node_modules
 .env.local
 *.log
 debug_payload_log.json
+
+# Runtime data — never commit
+latest_liquidity_data.json
+metadata.json
+
+# Claude Code internal files — not relevant to the project
+CLAUDE.md
+AGENTS.md
+.claude/

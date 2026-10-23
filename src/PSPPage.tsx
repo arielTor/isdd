@@ -1,0 +1,554 @@
+import { useState } from 'react';
+import { CreditCard, Info, RefreshCcw, Globe, Download, ChevronDown } from 'lucide-react';
+import { Company } from './types';
+import { downloadExcel } from './exportCsv';
+import PSPSection, {
+  fmtUsd,
+  walletBalance,
+  walletTransactions,
+  walletRollingReserve,
+  walletTotalUsd,
+  walletRate,
+  buildCurrencyRateMap,
+  settlementUsd,
+  pendingSettlementSum,
+} from './PSPSection';
+
+type Row = {
+  companyName: string;
+  providerName: string;
+  currency: string;
+  transactionsUsd: number;
+  reserveUsd: number;
+  balanceUsd: number;
+  settlementUsd: number;
+};
+
+function buildRows(companies: Company[]): Row[] {
+  const rates = buildCurrencyRateMap(companies);
+  const rows: Row[] = [];
+
+  companies.forEach(company => {
+    const settlements = company.psp_settlements || [];
+    (company.psp_providers || []).forEach(provider => {
+      provider.ewallets.forEach(ew => {
+        ew.wallets.forEach(w => {
+          const rate = walletRate(w);
+          const settlementNative = pendingSettlementSum(settlements, ew.id, w.currency);
+          rows.push({
+            companyName: company.name,
+            providerName: provider.name,
+            currency: w.currency,
+            transactionsUsd: walletTransactions(w) * rate,
+            reserveUsd: walletRollingReserve(w) * rate,
+            balanceUsd: walletBalance(w) * rate,
+            settlementUsd: settlementUsd(settlementNative, w.currency, rates),
+          });
+        });
+      });
+    });
+  });
+
+  return rows;
+}
+
+function next7DaysCashIn(companies: Company[]) {
+  const rates = buildCurrencyRateMap(companies);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + i);
+    return { date: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), amountUsd: 0 };
+  });
+  companies.forEach(c => (c.psp_settlements || []).forEach(s => {
+    if (s.status !== 'PENDING' || !s.paymentDate) return;
+    const day = days.find(d => d.date === s.paymentDate);
+    if (day) day.amountUsd += settlementUsd(s.amount, s.currency, rates);
+  }));
+  return days;
+}
+
+function groupBy(rows: Row[], key: 'companyName' | 'providerName' | 'currency') {
+  const map: Record<string, { transactionsUsd: number; reserveUsd: number; balanceUsd: number; settlementUsd: number }> = {};
+  rows.forEach(r => {
+    const k = r[key];
+    if (!map[k]) map[k] = { transactionsUsd: 0, reserveUsd: 0, balanceUsd: 0, settlementUsd: 0 };
+    map[k].transactionsUsd += r.transactionsUsd;
+    map[k].reserveUsd += r.reserveUsd;
+    map[k].balanceUsd += r.balanceUsd;
+    map[k].settlementUsd += r.settlementUsd;
+  });
+  return map;
+}
+
+const BreakdownTable = ({ title, data }: { title: string; data: Record<string, { transactionsUsd: number; reserveUsd: number; balanceUsd: number; settlementUsd: number }> }) => {
+  const entries = Object.entries(data);
+  const totals = entries.reduce((acc, [, v]) => ({
+    transactionsUsd: acc.transactionsUsd + v.transactionsUsd,
+    reserveUsd: acc.reserveUsd + v.reserveUsd,
+    balanceUsd: acc.balanceUsd + v.balanceUsd,
+    settlementUsd: acc.settlementUsd + v.settlementUsd,
+  }), { transactionsUsd: 0, reserveUsd: 0, balanceUsd: 0, settlementUsd: 0 });
+
+  // CSS-grid layout (not a <table>) so header, rows and the pinned Total share one
+  // column template; with the card as a flex column and the rows area flex-1, the
+  // Total sits at the very bottom - so all three cards' Totals line up on one row.
+  const cols = 'grid grid-cols-[1.3fr_1fr_1fr_1fr_0.8fr_1fr] gap-2 px-4';
+  const numCls = (n: number, extra = '') => `text-right font-mono ${n < 0 ? 'text-red-600' : extra}`;
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-w-[280px] flex flex-col">
+      <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide shrink-0">{title}</div>
+      <div className={`${cols} py-2 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100 shrink-0`}>
+        <span>{title.replace('By ', '')}</span>
+        <span className="text-right">Transactions</span>
+        <span className="text-right">Reserve</span>
+        <span className="text-right">Total</span>
+        <span className="text-right">Settl.</span>
+        <span className="text-right">Exposure</span>
+      </div>
+      {/* Rows scroll past ~10; the Total below stays pinned at the bottom. */}
+      <div className="flex-1 min-h-0 overflow-auto max-h-[360px] text-xs text-slate-700">
+        {entries.map(([name, v]) => (
+          <div key={name} className={`${cols} py-2 border-b border-slate-50`}>
+            <span className="font-medium truncate">{name}</span>
+            <span className={numCls(v.transactionsUsd)}>{fmtUsd(v.transactionsUsd)}</span>
+            <span className="text-right font-mono">{fmtUsd(v.reserveUsd)}</span>
+            <span className={numCls(v.balanceUsd)}>{fmtUsd(v.balanceUsd)}</span>
+            <span className={`text-right font-mono ${v.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(v.settlementUsd)}</span>
+            <span className={numCls(v.balanceUsd + v.settlementUsd, 'font-bold')}>{fmtUsd(v.balanceUsd + v.settlementUsd)}</span>
+          </div>
+        ))}
+      </div>
+      <div className={`${cols} py-2.5 text-xs font-bold text-indigo-700 border-t-2 border-indigo-300 shrink-0`}>
+        <span>Total</span>
+        <span className="text-right font-mono">{fmtUsd(totals.transactionsUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.reserveUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.balanceUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.settlementUsd)}</span>
+        <span className="text-right font-mono">{fmtUsd(totals.balanceUsd + totals.settlementUsd)}</span>
+      </div>
+    </div>
+  );
+};
+
+// Merged per-account detail across companies (the "View All" view): one table with a
+// Company column, fixed height + sticky header + pinned Total.
+const PSPDetailTable = ({ companies }: { companies: Company[] }) => {
+  const badge = (c: string) =>
+    c === 'USD' || c === 'USDT' ? 'bg-emerald-100 text-emerald-700' :
+    c === 'BTC' || c === 'ETH' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
+  const fmt2 = (n: number) => { const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return n < 0 ? `(${s})` : s; };
+  const rows: any[] = [];
+  let grandUsd = 0;
+  companies.forEach(company => {
+    const settlements = company.psp_settlements || [];
+    let firstOfCompany = true;
+    (company.psp_providers || []).forEach(provider => {
+      provider.ewallets.forEach(ew => {
+        ew.wallets.forEach(w => {
+          const balance = walletBalance(w);
+          const transactions = walletTransactions(w);
+          const reserve = walletRollingReserve(w);
+          const settlement = pendingSettlementSum(settlements, ew.id, w.currency);
+          const valuationUsd = walletTotalUsd(w);
+          grandUsd += valuationUsd;
+          const meta = [ew.category, ew.status].filter(Boolean).join(' · ');
+          rows.push(
+            <tr key={`${company.id}-${ew.id}-${w.id}`} className="hover:bg-slate-50/50 border-b border-slate-50">
+              <td className="px-5 py-3 font-bold text-slate-800 whitespace-nowrap">{firstOfCompany ? company.name : ''}</td>
+              <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{provider.name}</td>
+              <td className="px-3 py-3"><div className="font-semibold text-slate-800">{ew.reference_id || ew.id}</div>{meta && <div className="text-[10px] text-slate-400 font-mono">{meta}</div>}</td>
+              <td className={`px-3 py-3 text-right font-mono font-bold ${balance < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmt2(balance)}</td>
+              <td className="px-3 py-3 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge(w.currency)}`}>{w.currency}</span></td>
+              <td className={`px-3 py-3 text-right font-mono ${transactions < 0 ? 'text-red-600' : 'text-slate-600'}`}>{fmt2(transactions)}</td>
+              <td className="px-3 py-3 text-right font-mono text-slate-600">{fmt2(reserve)}</td>
+              <td className={`px-3 py-3 text-right font-mono ${settlement === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmt2(settlement)}</td>
+              <td className={`px-5 py-3 text-right font-mono font-bold ${valuationUsd < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsd(valuationUsd)}</td>
+            </tr>
+          );
+          firstOfCompany = false;
+        });
+      });
+    });
+  });
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="overflow-auto h-[560px]">
+        <table className="w-full text-left border-collapse text-sm min-w-[860px]">
+          <thead className="bg-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest sticky top-0 z-10">
+            <tr>
+              <th className="px-5 py-3 border-b border-slate-100">Company</th>
+              <th className="px-3 py-3 border-b border-slate-100">Acquirer</th>
+              <th className="px-3 py-3 border-b border-slate-100">Account</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Balance</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-center">Currency</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Transactions</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Rolling Reserves</th>
+              <th className="px-3 py-3 border-b border-slate-100 text-right">Settlement</th>
+              <th className="px-5 py-3 border-b border-slate-100 text-right">Valuation (USD)</th>
+            </tr>
+          </thead>
+          <tbody>{rows.length ? rows : (<tr><td colSpan={9} className="px-5 py-10 text-center text-slate-400 text-sm">No PSP accounts</td></tr>)}</tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-between px-5 py-3 border-t-2 border-indigo-100 bg-indigo-50">
+        <span className="font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</span>
+        <span className={`font-mono font-bold text-sm ${grandUsd < 0 ? 'text-red-600' : 'text-slate-800'}`}>{fmtUsd(grandUsd)}</span>
+      </div>
+    </div>
+  );
+};
+
+const PSPPage = ({
+  companies, onSync, isSyncing,
+  historyDate = '', isHistoricalMode = false, lastSynced = '', onDateChange, todayStr = '',
+}: {
+  companies: Company[];
+  onSync?: () => void;
+  isSyncing?: boolean;
+  historyDate?: string;
+  isHistoricalMode?: boolean;
+  lastSynced?: string;
+  onDateChange?: (date: string) => void;
+  todayStr?: string;
+}) => {
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  // Export-to-Excel section picker.
+  const EXPORT_SHEETS = ['PSP Summary', 'By Acquirer', 'By Company', 'By Currency'];
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSel, setExportSel] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(EXPORT_SHEETS.map(s => [s, true]))
+  );
+  const companiesWithPsp = companies.filter(c => (c.psp_providers || []).length > 0);
+
+  if (companiesWithPsp.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+          <CreditCard size={24} className="text-slate-300" />
+        </div>
+        <h4 className="text-slate-900 font-bold text-lg">No Payment Providers Connected</h4>
+        <p className="text-slate-500 text-sm max-w-sm mx-auto mt-2">
+          Once a company has a PSP integration (e.g. Rapyd) synced into the database, it will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  // "View All" (null) aggregates every company; otherwise scope to the selected one.
+  const activeValid = !!activeCompanyId && companiesWithPsp.some(c => c.id === activeCompanyId);
+  const scoped = activeValid ? companiesWithPsp.filter(c => c.id === activeCompanyId) : companiesWithPsp;
+  const rows = buildRows(scoped);
+  const totalBalanceUsd = rows.reduce((s, r) => s + r.balanceUsd, 0);
+  const totalSettlementUsd = rows.reduce((s, r) => s + r.settlementUsd, 0);
+  const totalReserveUsd = rows.reduce((s, r) => s + r.reserveUsd, 0);
+  const totalTransactionsUsd = rows.reduce((s, r) => s + r.transactionsUsd, 0);
+  const totalExposureUsd = totalBalanceUsd + totalSettlementUsd;
+
+  const balancePct = totalExposureUsd !== 0 ? Math.round((totalBalanceUsd / totalExposureUsd) * 100) : 100;
+  const settlementPct = 100 - balancePct;
+  const reservePct = totalBalanceUsd !== 0 ? Math.round((totalReserveUsd / totalBalanceUsd) * 100) : 0;
+  const transactionsPct = 100 - reservePct;
+
+  const byAcquirer = groupBy(rows, 'providerName');
+  const byCompany = groupBy(rows, 'companyName');
+  const byCurrency = groupBy(rows, 'currency');
+
+  const cashIn = next7DaysCashIn(scoped);
+  const cashInTotal = cashIn.reduce((s, d) => s + d.amountUsd, 0);
+  const maxCashIn = Math.max(...cashIn.map(d => d.amountUsd), 1);
+
+  const exportCsv = () => {
+    const summary = rows.map(r => [
+      r.companyName, r.providerName, r.currency,
+      Math.round(r.transactionsUsd), Math.round(r.reserveUsd), Math.round(r.balanceUsd),
+      Math.round(r.settlementUsd), Math.round(r.balanceUsd + r.settlementUsd),
+    ]);
+    const breakdownRows = (m: Record<string, { transactionsUsd: number; reserveUsd: number; balanceUsd: number; settlementUsd: number }>) =>
+      Object.entries(m).map(([k, v]) => [
+        k, Math.round(v.transactionsUsd), Math.round(v.reserveUsd), Math.round(v.balanceUsd),
+        Math.round(v.settlementUsd), Math.round(v.balanceUsd + v.settlementUsd),
+      ]);
+    const bh = ['Transactions (USD)', 'Reserve (USD)', 'Balance (USD)', 'Settlement (USD)', 'Exposure (USD)'];
+    const name = activeValid ? `psp-${(companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'company')}` : 'psp-all-companies';
+    const allSheets = [
+      { name: 'PSP Summary', headers: ['Company', 'Acquirer', 'Currency', ...bh], rows: summary },
+      { name: 'By Acquirer', headers: ['Acquirer', ...bh], rows: breakdownRows(byAcquirer) },
+      { name: 'By Company', headers: ['Company', ...bh], rows: breakdownRows(byCompany) },
+      { name: 'By Currency', headers: ['Currency', ...bh], rows: breakdownRows(byCurrency) },
+    ];
+    const selected = allSheets.filter(s => exportSel[s.name]);
+    if (!selected.length) return;
+    downloadExcel(`${name}.xls`, selected);
+    setExportOpen(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Payment Providers</h1>
+          <p className="text-sm text-slate-500">Real-time overview of PSP balances, settlements and expected cash</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen(v => !v)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Download size={14} /> Export Excel <ChevronDown size={13} className="text-slate-400" />
+            </button>
+            {exportOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
+                <div className="absolute right-0 top-11 z-40 w-64 bg-white rounded-xl border border-slate-200 shadow-xl p-2">
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sections to export</span>
+                    <button
+                      onClick={() => { const all = EXPORT_SHEETS.every(s => exportSel[s]); setExportSel(Object.fromEntries(EXPORT_SHEETS.map(s => [s, !all]))); }}
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      {EXPORT_SHEETS.every(s => exportSel[s]) ? 'Clear all' : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {EXPORT_SHEETS.map(s => (
+                      <label key={s} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={!!exportSel[s]}
+                          onChange={() => setExportSel(prev => ({ ...prev, [s]: !prev[s] }))}
+                          className="accent-indigo-600 w-4 h-4"
+                        />
+                        {s}
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    onClick={exportCsv}
+                    disabled={!EXPORT_SHEETS.some(s => exportSel[s])}
+                    className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Download size={14} /> Export
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          {onSync && (
+            <button
+              onClick={onSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${isSyncing ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+            >
+              {isSyncing ? <RefreshCcw size={14} className="animate-spin" /> : <Globe size={14} />}
+              {isSyncing ? 'Syncing…' : 'Sync All'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Date + last sync (matches the Bank Balance page) */}
+      {onDateChange && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</span>
+            <input
+              type="date"
+              max={todayStr}
+              value={historyDate || todayStr}
+              onChange={e => { const val = e.target.value; onDateChange(val === todayStr ? '' : val); }}
+              className="text-xs font-mono border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white text-slate-700 cursor-pointer"
+            />
+          </div>
+          {isHistoricalMode ? (
+            <button onClick={() => onDateChange('')} className="text-xs font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2">← Back to Live</button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last Global Sync</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-mono font-bold text-slate-700">{lastSynced}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Company selector - dropdown on mobile (when >1), tabs on desktop; always shown */}
+      {companiesWithPsp.length > 1 && (
+        <select
+          value={activeValid ? (activeCompanyId as string) : ''}
+          onChange={e => setActiveCompanyId(e.target.value || null)}
+          className="md:hidden w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">View All</option>
+          {companiesWithPsp.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      )}
+      {companiesWithPsp.length >= 1 && (
+        <div className={`${companiesWithPsp.length > 1 ? 'hidden md:flex' : 'flex'} items-stretch gap-1 overflow-x-auto border-b border-slate-200`}>
+          <button
+            onClick={() => setActiveCompanyId(null)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${!activeValid ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          >
+            View All
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${!activeValid ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>ALL</span>
+          </button>
+          {companiesWithPsp.map(c => {
+            const on = activeCompanyId === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setActiveCompanyId(c.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              >
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Top 4 summary cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-2xl p-5 text-white flex flex-col">
+          <div className="text-indigo-200 text-[11px] font-bold uppercase tracking-wider">Total Exposure</div>
+          <div className="text-3xl font-bold mt-1">{fmtUsd(totalExposureUsd)}</div>
+          <div className="text-indigo-200 text-xs mb-4">Balance + Settlement</div>
+          <div className="flex items-center gap-4 mt-auto">
+            <svg width="84" height="84" viewBox="0 0 84 84">
+              <g transform="rotate(-90 42 42)">
+                <circle cx="42" cy="42" r="32" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="10" />
+                <circle cx="42" cy="42" r="32" fill="none" stroke="#a5b4fc" strokeWidth="10" strokeDasharray={`${(balancePct / 100) * 201} 201`} />
+                <circle cx="42" cy="42" r="32" fill="none" stroke="#34d399" strokeWidth="10" strokeDasharray={`${(settlementPct / 100) * 201} 201`} strokeDashoffset={`${-(balancePct / 100) * 201}`} />
+              </g>
+            </svg>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#a5b4fc]" />Balance <span className="font-mono font-bold ml-auto">{fmtUsd(totalBalanceUsd)} ({balancePct}%)</span></div>
+              <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#34d399]" />Settlement <span className="font-mono font-bold ml-auto">{fmtUsd(totalSettlementUsd)} ({settlementPct}%)</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Balance</div>
+          <div className="text-3xl font-bold text-slate-900 mt-1 mb-4">{fmtUsd(totalBalanceUsd)}</div>
+          <div className="space-y-2.5">
+            <div className="bg-slate-50 rounded-xl p-3">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Rolling Reserve</div>
+              <div className="text-lg font-bold text-slate-900">{fmtUsd(totalReserveUsd)}</div>
+              <div className="text-[10px] text-slate-400">{reservePct}% of Total Balance</div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Transactions</div>
+              <div className="text-lg font-bold text-slate-900">{fmtUsd(totalTransactionsUsd)}</div>
+              <div className="text-[10px] text-slate-400">{transactionsPct}% of Total Balance</div>
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-3">Balance = Rolling Reserve + Transactions</div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Settlement</div>
+          <div className={`text-3xl font-bold mt-1 ${totalSettlementUsd === 0 ? 'text-slate-300' : 'text-slate-900'}`}>{fmtUsd(totalSettlementUsd)}</div>
+          <div className="text-xs text-slate-400 mb-4">Ready to be paid by PSPs</div>
+          <div className="flex-1 flex items-center justify-center text-center">
+            {totalSettlementUsd === 0 ? (
+              <p className="text-xs text-slate-400">No pending settlements in <span className="font-mono">psp_settlements</span> yet</p>
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" /></svg>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Expected Cash In (7 days)</div>
+          <div className={`text-3xl font-bold mt-1 mb-1 ${cashInTotal === 0 ? 'text-slate-300' : 'text-slate-900'}`}>{fmtUsd(cashInTotal)}</div>
+          <div className="text-xs text-slate-400 mb-3">Next 7 days</div>
+          {cashInTotal === 0 ? (
+            <div className="flex items-center justify-center h-24 text-center">
+              <p className="text-xs text-slate-400">No upcoming settlements scheduled</p>
+            </div>
+          ) : (
+            <div className="flex items-end justify-between gap-1.5 h-24">
+              {cashIn.map(d => (
+                <div key={d.date} className="flex flex-col items-center gap-1 flex-1">
+                  <span className="text-[9px] font-bold text-slate-500">{fmtUsd(d.amountUsd)}</span>
+                  <div className="w-full bg-emerald-500 rounded" style={{ height: `${Math.max((d.amountUsd / maxCashIn) * 100, 2)}%` }} />
+                  <span className="text-[9px] text-slate-400">{d.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Three breakdown tables */}
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+        <BreakdownTable title="By Acquirer" data={byAcquirer} />
+        <BreakdownTable title="By Company" data={byCompany} />
+        <BreakdownTable title="By Currency" data={byCurrency} />
+      </div>
+
+      {/* PSP Summary granular table */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-100">
+          <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">PSP Summary</span>
+          <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider ml-2">{activeValid ? (companiesWithPsp.find(c => c.id === activeCompanyId)?.name || 'Company') : 'All Companies'}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs min-w-[720px]">
+            <thead className="bg-slate-50/60 text-slate-400">
+              <tr>
+                <th className="text-left px-5 py-2.5 font-bold">Company</th>
+                <th className="text-left px-2 py-2.5 font-bold">Acquirer</th>
+                <th className="text-left px-2 py-2.5 font-bold">Currency</th>
+                <th className="text-right px-2 py-2.5 font-bold">Reserve</th>
+                <th className="text-right px-2 py-2.5 font-bold">Transactions</th>
+                <th className="text-right px-2 py-2.5 font-bold">Total Balance</th>
+                <th className="text-right px-2 py-2.5 font-bold">Settlement</th>
+                <th className="text-right px-5 py-2.5 font-bold">Total Exposure</th>
+              </tr>
+            </thead>
+            <tbody className="text-slate-700">
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t border-slate-50 hover:bg-slate-50/50">
+                  <td className="px-5 py-2.5 font-medium whitespace-nowrap">{r.companyName}</td>
+                  <td className="px-2 py-2.5 whitespace-nowrap">{r.providerName}</td>
+                  <td className="px-2 py-2.5"><span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">{r.currency}</span></td>
+                  <td className="text-right px-2 py-2.5 font-mono">{fmtUsd(r.reserveUsd)}</td>
+                  <td className={`text-right px-2 py-2.5 font-mono ${r.transactionsUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(r.transactionsUsd)}</td>
+                  <td className={`text-right px-2 py-2.5 font-mono ${r.balanceUsd < 0 ? 'text-red-600' : ''}`}>{fmtUsd(r.balanceUsd)}</td>
+                  <td className={`text-right px-2 py-2.5 font-mono ${r.settlementUsd === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{fmtUsd(r.settlementUsd)}</td>
+                  <td className={`text-right px-5 py-2.5 font-mono font-bold ${(r.balanceUsd + r.settlementUsd) < 0 ? 'text-red-600' : ''}`}>{fmtUsd(r.balanceUsd + r.settlementUsd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Single page-level reminder */}
+      <div className="flex items-center gap-2.5 bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-3">
+        <Info size={16} className="text-indigo-600 shrink-0" />
+        <p className="text-sm text-indigo-700">
+          Funds shown on this page are held by your payment providers and have <strong>not yet settled</strong> into your bank accounts.
+          They are tracked separately from the Dashboard's settled totals.
+        </p>
+      </div>
+
+      {/* Per-company account-level detail - every company under View All, one when a tab is picked */}
+      <div className="space-y-6">
+        {scoped.length > 1
+          ? <PSPDetailTable companies={scoped} />
+          : scoped.map(company => (
+              <PSPSection key={company.id} company={company} showName={!activeValid} />
+            ))}
+      </div>
+    </div>
+  );
+};
+
+export default PSPPage;

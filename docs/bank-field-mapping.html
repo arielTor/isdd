@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bank Integration — Field Mapping</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 32px 24px; line-height: 1.5; }
+  h1 { font-size: 1.5rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px; }
+  .subtitle { color: #64748b; font-size: 0.85rem; margin-bottom: 36px; }
+  h2 { font-size: 1rem; font-weight: 700; color: #f8fafc; margin-bottom: 4px; }
+  .bank-section { margin-bottom: 44px; }
+  .bank-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+  .badge-xbo      { background: #1e3a5f; color: #60a5fa; border: 1px solid #2563eb44; }
+  .badge-ifx      { background: #1e3a2f; color: #4ade80; border: 1px solid #16a34a44; }
+  .badge-moneygate{ background: #3a1e3a; color: #c084fc; border: 1px solid #9333ea44; }
+  .badge-finsite  { background: #3a2a1e; color: #fb923c; border: 1px solid #ea580c44; }
+  .sub-label { color: #94a3b8; font-size: 0.78rem; font-style: italic; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  thead th { background: #1e293b; color: #94a3b8; font-weight: 600; text-align: left; padding: 8px 12px; border-bottom: 1px solid #334155; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.06em; white-space: nowrap; }
+  tbody tr:nth-child(even) { background: #111827; }
+  tbody tr:hover { background: #1e293b; }
+  td { padding: 7px 12px; border-bottom: 1px solid #1e293b; vertical-align: top; }
+  td.db-field { color: #818cf8; font-family: 'SF Mono', 'Fira Code', monospace; white-space: nowrap; }
+  td.raw-field { color: #34d399; font-family: 'SF Mono', 'Fira Code', monospace; }
+  td.logic { color: #cbd5e1; }
+  td.note { color: #64748b; font-size: 0.75rem; font-style: italic; }
+  td.null-val { color: #475569; }
+  .section-divider { border: none; border-top: 1px solid #1e293b; margin: 40px 0; }
+  .endpoint { display: inline-block; background: #0f2a1e; color: #4ade80; font-family: monospace; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; border: 1px solid #16a34a33; margin-bottom: 10px; }
+  .endpoint-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .legend { display: flex; gap: 20px; margin-bottom: 28px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #64748b; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot-db { background: #818cf8; }
+  .dot-raw { background: #34d399; }
+  .dot-logic { background: #cbd5e1; }
+  .dot-note { background: #475569; }
+</style>
+</head>
+<body>
+
+<h1>Bank Integration — Field Mapping</h1>
+<p class="subtitle">How raw API data from each bank maps to the <code style="color:#818cf8">wallet_transactions</code> table · Generated 2026-09-28</p>
+
+<div class="legend">
+  <div class="legend-item"><span class="dot dot-db"></span> DB column</div>
+  <div class="legend-item"><span class="dot dot-raw"></span> Raw API field</div>
+  <div class="legend-item"><span class="dot dot-logic"></span> Mapping logic</div>
+  <div class="legend-item"><span class="dot dot-note"></span> Notes</div>
+</div>
+
+<!-- ─── XBO ─────────────────────────────────────────────── -->
+<div class="bank-section">
+  <div class="bank-header">
+    <h2>XBO</h2>
+    <span class="badge badge-xbo">Crypto Exchange</span>
+    <span class="sub-label">Sent via Zapier Code step → /api/internal/sync-transactions</span>
+  </div>
+  <div class="endpoint-row">
+    <span class="endpoint">GET api.xbo.com/v1/transactions</span>
+    <span class="endpoint">GET api.xbo.com/v1/fiat/transactions</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>DB Column</th>
+        <th>Endpoint</th>
+        <th>Raw API Field</th>
+        <th>Mapping Logic</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="db-field">id</td>
+        <td>Both</td>
+        <td class="raw-field">tx.id / ftx.id</td>
+        <td class="logic">Direct</td>
+        <td class="note">Used as upsert key — re-sent transactions update mutable fields</td>
+      </tr>
+      <tr>
+        <td class="db-field">wallet_id</td>
+        <td>Both</td>
+        <td class="raw-field">tx.currency</td>
+        <td class="logic">Looked up from wallet_map config per account + currency (e.g. USDT → wallet_bp_xbo_btc_usdt)</td>
+        <td class="note">Falls back to account_prefix + '_' + currency.toLowerCase() if not in map</td>
+      </tr>
+      <tr>
+        <td class="db-field">company_id</td>
+        <td>Both</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per account in Zap config (e.g. inputData.bp_company_id)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">bank_id</td>
+        <td>Both</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per account in Zap config (e.g. inputData.bp_bank_id)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">transaction_date</td>
+        <td>Both</td>
+        <td class="raw-field">tx.createdOn</td>
+        <td class="logic">createdOn.split('T')[0] → YYYY-MM-DD</td>
+        <td class="note">Falls back to queryDateFrom if createdOn is missing</td>
+      </tr>
+      <tr>
+        <td class="db-field">type</td>
+        <td>Crypto</td>
+        <td class="raw-field">tx.type</td>
+        <td class="logic">Receive → 'credit' · Send → 'debit'</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">type</td>
+        <td>Fiat</td>
+        <td class="raw-field">ftx.type</td>
+        <td class="logic">Deposit → 'credit' · Withdrawal → 'debit'</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">amount</td>
+        <td>Both</td>
+        <td class="raw-field">tx.executedAmount · tx.totalAmount</td>
+        <td class="logic">executedAmount || totalAmount || 0</td>
+        <td class="note">Rounded to 2 decimal places by server</td>
+      </tr>
+      <tr>
+        <td class="db-field">currency</td>
+        <td>Both</td>
+        <td class="raw-field">tx.currency</td>
+        <td class="logic">Direct (e.g. USDT, BTC, EUR, USD)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">other_party</td>
+        <td>Crypto</td>
+        <td class="raw-field">tx.sourceAddress · tx.destinationAddress</td>
+        <td class="logic">Receive → sourceAddress (sender's wallet) · Send → destinationAddress (recipient's wallet)</td>
+        <td class="note">sourceAddress may be absent on some Receive payloads → stored as empty string (not our own wallet)</td>
+      </tr>
+      <tr>
+        <td class="db-field">other_party</td>
+        <td>Fiat</td>
+        <td class="raw-field">ftx.bankName · ftx.acquirerBank</td>
+        <td class="logic">bankName || acquirerBank || ''</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">reference</td>
+        <td>Crypto</td>
+        <td class="raw-field">tx.traceId · tx.referenceId</td>
+        <td class="logic">traceId || referenceId || ''</td>
+        <td class="note">XBO sends empty string for most crypto transactions — no sender name available</td>
+      </tr>
+      <tr>
+        <td class="db-field">reference</td>
+        <td>Fiat</td>
+        <td class="raw-field">ftx.referenceId</td>
+        <td class="logic">referenceId || ''</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">payment_scheme</td>
+        <td>Crypto</td>
+        <td class="raw-field">tx.networkCode</td>
+        <td class="logic">Direct (e.g. ERC20, TRC20, BEP20)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">payment_scheme</td>
+        <td>Fiat</td>
+        <td class="raw-field">ftx.paymentMethod</td>
+        <td class="logic">Direct (e.g. SWIFT, SEPA)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">balance_after</td>
+        <td>Both</td>
+        <td class="null-val">—</td>
+        <td class="null-val">Always null</td>
+        <td class="note">XBO API does not return running balance; synced separately via sync-balances</td>
+      </tr>
+      <tr>
+        <td class="db-field">source</td>
+        <td>Both</td>
+        <td class="null-val">—</td>
+        <td class="logic">Hardcoded: 'xbo'</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">synced_at</td>
+        <td>Both</td>
+        <td class="null-val">—</td>
+        <td class="logic">new Date().toISOString() at time of Zap execution</td>
+        <td class="note"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<hr class="section-divider" />
+
+<!-- ─── IFX ─────────────────────────────────────────────── -->
+<div class="bank-section">
+  <div class="bank-header">
+    <h2>IFX (ibanq)</h2>
+    <span class="badge badge-ifx">EMI / FX Bank</span>
+    <span class="sub-label">Sent via Zapier Code step → /api/internal/sync-transactions</span>
+  </div>
+  <div class="endpoint-row">
+    <span class="endpoint">ibanq API (polled hourly by Zapier)</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>DB Column</th>
+        <th>Raw API Field</th>
+        <th>Mapping Logic</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="db-field">id</td>
+        <td class="raw-field">transaction.id</td>
+        <td class="logic">Direct (IFX transaction ID)</td>
+        <td class="note">Upsert key</td>
+      </tr>
+      <tr>
+        <td class="db-field">wallet_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Mapped per account/currency in Zap config</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">company_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per account in Zap config</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">bank_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per account in Zap config</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">transaction_date</td>
+        <td class="raw-field">transaction.bookingDate / valueDate</td>
+        <td class="logic">Date portion only → YYYY-MM-DD</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">type</td>
+        <td class="raw-field">transaction.creditDebitIndicator / direction</td>
+        <td class="logic">CREDIT → 'credit' · DEBIT → 'debit'</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">amount</td>
+        <td class="raw-field">transaction.amount</td>
+        <td class="logic">Direct (absolute value — sign derived from type)</td>
+        <td class="note">Rounded to 2dp by server</td>
+      </tr>
+      <tr>
+        <td class="db-field">currency</td>
+        <td class="raw-field">transaction.currency</td>
+        <td class="logic">Direct (e.g. USD, EUR, GBP, ILS)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">other_party</td>
+        <td class="raw-field">transaction.counterpartyName / creditorName / debtorName</td>
+        <td class="logic">Counterparty name from IFX</td>
+        <td class="note">When empty, frontend uses ifxPartyFallback() — first word of reference field as display label (not stored in DB)</td>
+      </tr>
+      <tr>
+        <td class="db-field">reference</td>
+        <td class="raw-field">transaction.remittanceInformation / reference</td>
+        <td class="logic">Direct</td>
+        <td class="note">Used as fallback display name when other_party is blank</td>
+      </tr>
+      <tr>
+        <td class="db-field">payment_scheme</td>
+        <td class="raw-field">transaction.paymentMethod / scheme</td>
+        <td class="logic">Direct (SWIFT, SEPA, FASTER_PAYMENTS, LOCAL_TRANSFER, WIRE)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">balance_after</td>
+        <td class="raw-field">transaction.balanceAfterTransaction</td>
+        <td class="logic">Direct</td>
+        <td class="note">IFX provides running balance — available in DB</td>
+      </tr>
+      <tr>
+        <td class="db-field">source</td>
+        <td class="null-val">—</td>
+        <td class="logic">Hardcoded: 'ifx' (server default when not specified)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">synced_at</td>
+        <td class="null-val">—</td>
+        <td class="logic">Timestamp at Zap execution time</td>
+        <td class="note"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<hr class="section-divider" />
+
+<!-- ─── MoneyGate ──────────────────────────────────────── -->
+<div class="bank-section">
+  <div class="bank-header">
+    <h2>MoneyGate</h2>
+    <span class="badge badge-moneygate">Payment Processor</span>
+    <span class="sub-label">Sent via Zapier Code step → /api/internal/sync-transactions</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>DB Column</th>
+        <th>Raw API Field</th>
+        <th>Mapping Logic</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="db-field">id</td>
+        <td class="raw-field">transaction.id</td>
+        <td class="logic">Direct</td>
+        <td class="note">Upsert key</td>
+      </tr>
+      <tr>
+        <td class="db-field">wallet_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Mapped per account in Zap config</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">company_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per account</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">bank_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per account</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">transaction_date</td>
+        <td class="raw-field">transaction.date / createdAt</td>
+        <td class="logic">Date portion → YYYY-MM-DD</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">type</td>
+        <td class="raw-field">transaction.type / direction</td>
+        <td class="logic">→ 'credit' or 'debit'</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">amount</td>
+        <td class="raw-field">transaction.amount</td>
+        <td class="logic">Direct</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">currency</td>
+        <td class="raw-field">transaction.currency</td>
+        <td class="logic">Direct</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">other_party</td>
+        <td class="raw-field">transaction.counterparty / merchantName</td>
+        <td class="logic">Counterparty name</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">reference</td>
+        <td class="raw-field">transaction.reference</td>
+        <td class="logic">Direct · Fee transactions have reference = 'Fee'</td>
+        <td class="note">Fee rows are hidden in the UI by default (MG Fees toggle). reference='Fee' is the filter key.</td>
+      </tr>
+      <tr>
+        <td class="db-field">payment_scheme</td>
+        <td class="raw-field">transaction.paymentMethod</td>
+        <td class="logic">Direct</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">balance_after</td>
+        <td class="raw-field">transaction.balanceAfter</td>
+        <td class="logic">Direct if available</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">source</td>
+        <td class="null-val">—</td>
+        <td class="logic">Hardcoded: 'moneygate'</td>
+        <td class="note">Used to filter Fee rows: source='moneygate' AND reference='Fee'</td>
+      </tr>
+      <tr>
+        <td class="db-field">synced_at</td>
+        <td class="null-val">—</td>
+        <td class="logic">Timestamp at Zap execution time</td>
+        <td class="note"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<hr class="section-divider" />
+
+<!-- ─── Finsite ────────────────────────────────────────── -->
+<div class="bank-section">
+  <div class="bank-header">
+    <h2>Finsite</h2>
+    <span class="badge badge-finsite">Israeli Banks (Leumi, Discount)</span>
+    <span class="sub-label">Sent via Zapier Code step → /api/internal/sync-transactions</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>DB Column</th>
+        <th>Raw API Field</th>
+        <th>Mapping Logic</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="db-field">id</td>
+        <td class="raw-field">transaction.id</td>
+        <td class="logic">Direct</td>
+        <td class="note">Upsert key</td>
+      </tr>
+      <tr>
+        <td class="db-field">wallet_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Mapped per bank account in Zap config</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">company_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per account</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">bank_id</td>
+        <td class="raw-field">—</td>
+        <td class="logic">Hardcoded per bank (Leumi, Discount each have their own bank_id)</td>
+        <td class="note">Finsite aggregates multiple Israeli banks — each maps to a separate bank_id in our system</td>
+      </tr>
+      <tr>
+        <td class="db-field">transaction_date</td>
+        <td class="raw-field">transaction.date / valueDate</td>
+        <td class="logic">Date portion → YYYY-MM-DD</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">type</td>
+        <td class="raw-field">transaction.type / direction</td>
+        <td class="logic">→ 'credit' or 'debit'</td>
+        <td class="note">ILS transactions common — amounts often large due to ILS denomination</td>
+      </tr>
+      <tr>
+        <td class="db-field">amount</td>
+        <td class="raw-field">transaction.amount</td>
+        <td class="logic">Direct (ILS for Israeli banks)</td>
+        <td class="note">USD equivalent computed at display time via exchange rate</td>
+      </tr>
+      <tr>
+        <td class="db-field">currency</td>
+        <td class="raw-field">transaction.currency</td>
+        <td class="logic">Direct (typically ILS, USD)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">other_party</td>
+        <td class="raw-field">transaction.description / counterpartyName</td>
+        <td class="logic">Counterparty / transaction description</td>
+        <td class="note">Israeli bank descriptions often in Hebrew</td>
+      </tr>
+      <tr>
+        <td class="db-field">reference</td>
+        <td class="raw-field">transaction.reference / externalId</td>
+        <td class="logic">Direct</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">payment_scheme</td>
+        <td class="raw-field">transaction.paymentType / method</td>
+        <td class="logic">Direct (LOCAL_TRANSFER, WIRE, etc.)</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">balance_after</td>
+        <td class="raw-field">transaction.balanceAfter</td>
+        <td class="logic">Direct if available</td>
+        <td class="note"></td>
+      </tr>
+      <tr>
+        <td class="db-field">source</td>
+        <td class="null-val">—</td>
+        <td class="logic">Hardcoded: 'finsite'</td>
+        <td class="note">Used to group Israeli bank transactions in the source filter</td>
+      </tr>
+      <tr>
+        <td class="db-field">synced_at</td>
+        <td class="null-val">—</td>
+        <td class="logic">Timestamp at Zap execution time</td>
+        <td class="note"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<hr class="section-divider" />
+
+<!-- ─── DB Table Schema ────────────────────────────────── -->
+<div class="bank-section">
+  <div class="bank-header">
+    <h2>DB Table: wallet_transactions</h2>
+    <span class="badge" style="background:#1e293b;color:#94a3b8;border:1px solid #33415544">MySQL</span>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="db-field">id</td><td>VARCHAR</td><td class="note">Primary key · source transaction ID · upsert key</td></tr>
+      <tr><td class="db-field">wallet_id</td><td>VARCHAR</td><td class="note">References wallets table (e.g. wallet_bp_xbo_btc_usdt)</td></tr>
+      <tr><td class="db-field">company_id</td><td>VARCHAR</td><td class="note">References companies table</td></tr>
+      <tr><td class="db-field">bank_id</td><td>VARCHAR</td><td class="note">References banks table</td></tr>
+      <tr><td class="db-field">transaction_date</td><td>DATE</td><td class="note">YYYY-MM-DD — the bank's value/booking date</td></tr>
+      <tr><td class="db-field">type</td><td>ENUM</td><td class="note">'credit' (money in) or 'debit' (money out)</td></tr>
+      <tr><td class="db-field">amount</td><td>DECIMAL</td><td class="note">Always positive · sign implied by type</td></tr>
+      <tr><td class="db-field">currency</td><td>VARCHAR</td><td class="note">ISO 4217 (USD, EUR, ILS) or crypto ticker (USDT, BTC, ETH)</td></tr>
+      <tr><td class="db-field">other_party</td><td>VARCHAR</td><td class="note">Counterparty: payer (credit) or recipient (debit)</td></tr>
+      <tr><td class="db-field">reference</td><td>VARCHAR</td><td class="note">Bank reference / remittance info</td></tr>
+      <tr><td class="db-field">payment_scheme</td><td>VARCHAR</td><td class="note">SWIFT · SEPA · FASTER_PAYMENTS · ERC20 · LOCAL_TRANSFER · etc.</td></tr>
+      <tr><td class="db-field">balance_after</td><td>DECIMAL</td><td class="note">Running balance after transaction — null for XBO crypto</td></tr>
+      <tr><td class="db-field">source</td><td>VARCHAR</td><td class="note">'xbo' · 'ifx' · 'moneygate' · 'finsite'</td></tr>
+      <tr><td class="db-field">synced_at</td><td>DATETIME</td><td class="note">When Zapier pushed this record to our API</td></tr>
+      <tr><td class="db-field">geo</td><td>VARCHAR</td><td class="note">Manual field — set by user in Transactions screen</td></tr>
+      <tr><td class="db-field">category</td><td>VARCHAR</td><td class="note">Auto-set from vendor_classification_rules on sync · overridable manually</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

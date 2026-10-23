@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PSP Page — Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .tab-btn.active { color:#4f46e5; border-bottom-color:#4f46e5; }
+  .tab-btn:not(.active) { color:#94a3b8; border-bottom-color:transparent; }
+  .seg-btn.active { background:white; color:#1e293b; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .seg-btn:not(.active) { background:transparent; color:#94a3b8; }
+  .panel { display:none; }
+  .panel.active { display:block; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+<div class="flex h-screen w-full overflow-hidden">
+
+  <!-- ══ Sidebar — showing the new nav item ══ -->
+  <div class="w-64 h-full bg-[#0f172a] text-white flex flex-col shrink-0">
+    <div class="p-6 flex items-center gap-3 border-b border-slate-700/50">
+      <div class="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">L</div>
+      <span class="text-xl font-bold tracking-tight">Liquidity</span>
+    </div>
+    <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">Companies</div>
+      <button class="w-full flex items-center justify-between p-3 rounded-lg text-slate-300 hover:bg-slate-700/50">
+        <span class="text-sm font-medium">View All Companies</span>
+        <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-400">ALL</span>
+      </button>
+      <button class="w-full flex items-center justify-between p-3 rounded-lg text-slate-300 hover:bg-slate-700/50">
+        <span class="text-sm font-medium">SmartTool</span>
+        <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-400">0</span>
+      </button>
+
+      <div class="pt-6">
+        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">System</div>
+        <button id="nav-dashboard" onclick="showPage('dashboard')" class="w-full flex items-center gap-3 p-3 rounded-lg bg-indigo-600 shadow-lg shadow-indigo-900/20 transition-colors">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span id="nav-dashboard-label" class="text-sm font-medium text-white">Dashboard</span>
+        </button>
+        <!-- NEW nav item -->
+        <button id="nav-psp" onclick="showPage('psp')" class="w-full flex items-center justify-between gap-3 p-3 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors">
+          <div class="flex items-center gap-3">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            <span id="nav-psp-label" class="text-sm font-medium">Payment Providers</span>
+          </div>
+          <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-bold uppercase">New</span>
+        </button>
+        <button class="w-full flex items-center gap-3 p-3 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="text-sm font-medium">User Management</span>
+        </button>
+        <button class="w-full flex items-center gap-3 p-3 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="text-sm font-medium">Alert Center</span>
+        </button>
+        <button class="w-full flex items-center gap-3 p-3 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="text-sm font-medium">Manual Data Upload</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ══ Main content ══ -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 px-8 h-16 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <h1 id="header-title" class="text-lg font-semibold text-slate-900">Liquidity Overview</h1>
+        <span class="text-slate-300">|</span>
+        <span class="text-sm text-slate-500">Active View: <span class="font-medium text-slate-900 uppercase tracking-wider text-[11px]">Secure Connection</span></span>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="relative">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" placeholder="Search…" class="w-48 h-8 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none" />
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-8 space-y-6 w-full">
+
+      <!-- ══════════════════════════════════════════════════════════════════
+           PAGE: Dashboard — banks/crypto only, no PSP mixed in (reverted)
+           ══════════════════════════════════════════════════════════════════ -->
+      <div id="page-dashboard" class="space-y-6">
+
+        <div class="text-center text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg py-2">
+          ↓ MOCKUP — Dashboard reverted to banks/crypto only. No PSP totals here anymore.
+        </div>
+
+        <!-- Asset Breakdown card — Crypto/Fiat only -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+            <div class="flex flex-col items-center lg:items-start gap-4 p-6 lg:w-[38%]">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 bg-indigo-600 shadow-indigo-600/20">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                </div>
+                <div>
+                  <h3 class="text-base font-bold text-slate-900 leading-tight">Asset Breakdown</h3>
+                  <p class="text-[11px] text-slate-400 font-medium">Aggregated across all accounts</p>
+                </div>
+              </div>
+              <svg width="200" height="200" viewBox="0 0 200 200" class="mx-auto">
+                <g transform="rotate(-90 100 100)">
+                  <circle cx="100" cy="100" r="76" fill="none" stroke="#e2e8f0" stroke-width="18"/>
+                  <circle cx="100" cy="100" r="76" fill="none" stroke="#6366f1" stroke-width="18" stroke-dasharray="298 478"/>
+                  <circle cx="100" cy="100" r="76" fill="none" stroke="#93c5fd" stroke-width="18" stroke-dasharray="180 478" stroke-dashoffset="-298"/>
+                </g>
+                <text x="100" y="86" text-anchor="middle" font-size="8" font-weight="700" fill="#94a3b8" letter-spacing="0.8">TOTAL PORTFOLIO</text>
+                <text x="100" y="106" text-anchor="middle" font-size="16" font-weight="800" fill="#1e293b">$325,583</text>
+              </svg>
+              <div class="flex flex-col gap-2 w-full">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0"></div>
+                    <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Crypto</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-sm font-bold font-mono text-slate-800">$197,696</span>
+                    <span class="text-[10px] text-indigo-400 font-bold ml-1.5">62%</span>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="w-2.5 h-2.5 rounded-full bg-sky-300 shrink-0"></div>
+                    <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Fiat</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-sm font-bold font-mono text-slate-800">$127,887</span>
+                    <span class="text-[10px] text-sky-400 font-bold ml-1.5">38%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-col gap-3 p-6 flex-1">
+              <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+                    </div>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fiat (USD)</p>
+                  </div>
+                  <p class="text-xl font-bold font-mono leading-none text-slate-900">$127,887</p>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-4 flex flex-col gap-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2"><path d="M11.767 19.089c4.924.868 6.14-6.025 1.216-6.894m-1.216 6.894L5.86 18.047m5.908 1.042-.347 1.97m1.563-8.864c4.924.869 6.14-6.025 1.215-6.893m-1.215 6.893-3.94-.694m5.155-6.2L8.29 5.4m5.908 1.042.348-1.97M7.48 20.364l3.126-17.727"/></svg>
+                    </div>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Crypto (USD)</p>
+                  </div>
+                  <p class="text-xl font-bold font-mono leading-none text-slate-900">$197,696</p>
+                </div>
+              </div>
+              <div class="relative bg-[#1a1a2e] rounded-xl p-4 overflow-hidden flex-1 min-h-[90px]">
+                <p class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-1">Total Portfolio (USD)</p>
+                <p class="text-3xl font-bold font-mono text-white leading-none">$325,583</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Portfolio Summary — mini tables, bank/crypto only -->
+        <div class="flex gap-4 flex-wrap">
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
+            <div class="bg-slate-50/80 px-4 py-3 border-b border-slate-100"><p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">By Bank</p></div>
+            <table class="w-full text-xs">
+              <tbody>
+                <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">IFX (C2B, B2B)</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$48,779</td></tr>
+                <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">XBO Crypto (C2B, B2B)</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$83,381</td></tr>
+              </tbody>
+              <tfoot><tr class="bg-indigo-50 border-t border-indigo-100"><td class="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td><td class="px-4 py-2.5 text-right font-mono font-bold text-sm text-slate-800">$325,583</td></tr></tfoot>
+            </table>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
+            <div class="bg-slate-50/80 px-4 py-3 border-b border-slate-100"><p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">By Company</p></div>
+            <table class="w-full text-xs">
+              <tbody>
+                <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">BluePine</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$132,160</td></tr>
+              </tbody>
+              <tfoot><tr class="bg-indigo-50 border-t border-indigo-100"><td class="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td><td class="px-4 py-2.5 text-right font-mono font-bold text-sm text-slate-800">$325,583</td></tr></tfoot>
+            </table>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
+            <div class="bg-slate-50/80 px-4 py-3 border-b border-slate-100"><p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">By Currency</p></div>
+            <table class="w-full text-xs">
+              <tbody>
+                <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">EUR</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$37,930</td></tr>
+              </tbody>
+              <tfoot><tr class="bg-indigo-50 border-t border-indigo-100"><td class="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td><td class="px-4 py-2.5 text-right font-mono font-bold text-sm text-slate-800">$325,583</td></tr></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- Main flat table — bank/crypto only, no Status column -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+            <h3 class="text-sm font-bold text-slate-700 uppercase tracking-widest">Portfolio Summary</h3>
+            <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider">All Companies</span>
+          </div>
+          <table class="w-full text-left border-collapse text-xs min-w-[640px]">
+            <thead class="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <tr>
+                <th class="px-5 py-3 border-b border-slate-100">Company</th>
+                <th class="px-5 py-3 border-b border-slate-100">Bank</th>
+                <th class="px-5 py-3 border-b border-slate-100">Currency</th>
+                <th class="px-5 py-3 border-b border-slate-100 text-right">Balance</th>
+                <th class="px-5 py-3 border-b border-slate-100 text-right">FX Rate</th>
+                <th class="px-5 py-3 border-b border-slate-100 text-right">USD Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-slate-50 hover:bg-slate-50/50">
+                <td class="px-5 py-3 font-medium text-slate-700">BluePine</td>
+                <td class="px-5 py-3 text-slate-600">IFX (C2B, B2B)</td>
+                <td class="px-5 py-3"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">EUR</span></td>
+                <td class="px-5 py-3 text-right font-mono text-slate-700">€32,832</td>
+                <td class="px-5 py-3 text-right font-mono text-slate-500">1.1553</td>
+                <td class="px-5 py-3 text-right font-mono font-bold text-slate-800">$37,930</td>
+              </tr>
+              <tr class="border-b border-slate-50 hover:bg-slate-50/50">
+                <td class="px-5 py-3 font-medium text-slate-700">BluePine</td>
+                <td class="px-5 py-3 text-slate-600">XBO Crypto (C2B, B2B)</td>
+                <td class="px-5 py-3"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">USDT</span></td>
+                <td class="px-5 py-3 text-right font-mono text-slate-700">83,381</td>
+                <td class="px-5 py-3 text-right font-mono text-slate-500">1.000</td>
+                <td class="px-5 py-3 text-right font-mono font-bold text-slate-800">$83,381</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="bg-indigo-50 border-t-2 border-indigo-100">
+                <td colspan="5" class="px-5 py-3 font-bold text-indigo-700 uppercase text-[11px] tracking-widest">Total</td>
+                <td class="px-5 py-3 text-right font-mono font-bold text-sm text-slate-800">$325,583</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <!-- Per-company card — Banks & Crypto Ledgers only, no PSP card below it -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
+            <div class="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
+            <h3 class="text-xl font-bold text-slate-800 tracking-tight">BluePine</h3>
+            <span class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold uppercase tracking-wider">Fintech</span>
+          </div>
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <tr>
+                <th class="px-6 py-3 border-b border-slate-100">Bank</th>
+                <th class="px-6 py-3 border-b border-slate-100 text-right">Balance (LCY)</th>
+                <th class="px-6 py-3 border-b border-slate-100 text-right">Currency</th>
+                <th class="px-6 py-3 border-b border-slate-100 text-right">Valuation (USD/T)</th>
+              </tr>
+            </thead>
+            <tbody class="text-sm">
+              <tr class="hover:bg-slate-50/50">
+                <td class="px-6 py-3 border-b border-slate-100"><span class="font-bold text-slate-900">IFX (C2B, B2B)</span></td>
+                <td class="px-6 py-3 border-b border-slate-100 text-right font-mono">€32,832</td>
+                <td class="px-6 py-3 border-b border-slate-100 text-right"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">EUR</span></td>
+                <td class="px-6 py-3 border-b border-slate-100 text-right font-mono font-bold">$37,930</td>
+              </tr>
+              <tr class="hover:bg-slate-50/50">
+                <td class="px-6 py-3"><span class="font-bold text-slate-900">XBO Crypto (C2B, B2B)</span></td>
+                <td class="px-6 py-3 text-right font-mono">83,381</td>
+                <td class="px-6 py-3 text-right"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">USDT</span></td>
+                <td class="px-6 py-3 text-right font-mono font-bold">$83,381</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-center text-[11px] text-slate-400">No PSP card here anymore — moved entirely to the Payment Providers page.</p>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════════════
+           PAGE: Payment Providers — PSP only, fully separate
+           ══════════════════════════════════════════════════════════════════ -->
+      <div id="page-psp" class="space-y-6 hidden">
+
+      <div class="text-center text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg py-2">
+        ↓ MOCKUP — dedicated page, fully separate from Dashboard totals. Sample data only.
+      </div>
+
+      <!-- Single page-level reminder — not repeated on every widget -->
+      <div class="flex items-center gap-2.5 bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-3">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" class="shrink-0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <p class="text-sm text-indigo-700">Funds shown on this page are held by your payment providers and have <strong>not yet settled</strong> into your bank accounts. They are tracked separately from the Dashboard's settled totals.</p>
+      </div>
+
+      <!-- Summary mini tables — PSP-only, normal palette (no amber needed, page is self-contained) -->
+      <div class="flex gap-4 flex-wrap">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
+          <div class="bg-slate-50/80 px-4 py-3 border-b border-slate-100"><p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">By PSP</p></div>
+          <table class="w-full text-xs">
+            <tbody>
+              <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">Rapyd Payments</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$369,500</td></tr>
+            </tbody>
+            <tfoot><tr class="bg-indigo-50 border-t border-indigo-100"><td class="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td><td class="px-4 py-2.5 text-right font-mono font-bold text-sm text-slate-800">$369,500</td></tr></tfoot>
+          </table>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
+          <div class="bg-slate-50/80 px-4 py-3 border-b border-slate-100"><p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">By Company</p></div>
+          <table class="w-full text-xs">
+            <tbody>
+              <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">SmartTool</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$369,500</td></tr>
+            </tbody>
+            <tfoot><tr class="bg-indigo-50 border-t border-indigo-100"><td class="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td><td class="px-4 py-2.5 text-right font-mono font-bold text-sm text-slate-800">$369,500</td></tr></tfoot>
+          </table>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 min-w-[180px]">
+          <div class="bg-slate-50/80 px-4 py-3 border-b border-slate-100"><p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">By Currency</p></div>
+          <table class="w-full text-xs">
+            <tbody>
+              <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">EUR</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$421,180</td></tr>
+              <tr class="border-b border-slate-50"><td class="px-4 py-2.5 text-slate-600 font-medium">USD</td><td class="px-4 py-2.5 text-right font-mono font-bold text-slate-800">$4,611</td></tr>
+            </tbody>
+            <tfoot><tr class="bg-indigo-50 border-t border-indigo-100"><td class="px-4 py-2.5 font-bold text-indigo-700 uppercase text-[10px] tracking-widest">Total</td><td class="px-4 py-2.5 text-right font-mono font-bold text-sm text-slate-800">$369,500</td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Per-company PSP card -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="bg-slate-50/80 px-6 py-4 border-b border-slate-200 flex items-center gap-3">
+          <div class="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
+          <h3 class="text-xl font-bold text-slate-800 tracking-tight">SmartTool</h3>
+          <span class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold uppercase tracking-wider">SaaS</span>
+          <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider ml-auto">1 Provider</span>
+        </div>
+
+        <div class="divide-y divide-slate-100">
+          <!-- Provider row -->
+          <div>
+            <div class="w-full flex items-center justify-between px-6 py-4">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-violet-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-violet-600/20">R</div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold text-slate-900">Rapyd Payments</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">1 eWallet · Primary Account · collect</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-4">
+                <span class="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase tracking-wider">Active</span>
+                <span class="font-mono font-bold text-slate-900">$369,500</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" class="rotate-180"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+            </div>
+
+            <div class="px-6 pb-6 space-y-4">
+
+              <!-- Balance cards — Available / Reserved / Received / Pending, matching Rapyd's own UI -->
+              <div class="space-y-3">
+                <div class="border border-slate-200 rounded-xl p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                      <span class="text-base">🇪🇺</span>
+                      <span class="font-mono font-bold text-lg text-slate-900">364,889.03 EUR</span>
+                    </div>
+                    <span class="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase">EUR</span>
+                  </div>
+                  <div class="grid grid-cols-4 gap-4 pt-3 border-t border-slate-100">
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Available</div>
+                      <div class="font-mono text-sm font-bold text-slate-800">174,608.37 EUR</div>
+                    </div>
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Reserved</div>
+                      <div class="font-mono text-sm font-bold text-slate-800">85,535.77 EUR</div>
+                    </div>
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Received</div>
+                      <div class="font-mono text-sm font-bold text-slate-800">104,744.89 EUR</div>
+                    </div>
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Pending</div>
+                      <div class="font-mono text-sm font-bold text-slate-400">0.00 EUR</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border border-slate-200 rounded-xl p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                      <span class="text-base">🇺🇸</span>
+                      <span class="font-mono font-bold text-lg text-slate-900">4,610.61 USD</span>
+                    </div>
+                    <span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold uppercase">USD</span>
+                  </div>
+                  <div class="grid grid-cols-4 gap-4 pt-3 border-t border-slate-100">
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Available</div>
+                      <div class="font-mono text-sm font-bold text-slate-800">3,610.61 USD</div>
+                    </div>
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Reserved</div>
+                      <div class="font-mono text-sm font-bold text-slate-400">0.00 USD</div>
+                    </div>
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Received</div>
+                      <div class="font-mono text-sm font-bold text-slate-800">1,000.00 USD</div>
+                    </div>
+                    <div>
+                      <div class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Pending</div>
+                      <div class="font-mono text-sm font-bold text-slate-400">0.00 USD</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Settlements panel -->
+              <div class="border border-slate-200 rounded-xl overflow-hidden">
+                <div class="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100 flex-wrap gap-3">
+                  <div class="flex items-center gap-5">
+                    <button onclick="setTab(this,'st')" data-tab="next" class="tab-btn active text-sm font-bold pb-1 border-b-2">Next payments</button>
+                    <button onclick="setTab(this,'st')" data-tab="history" class="tab-btn text-sm font-bold pb-1 border-b-2">History</button>
+                  </div>
+                  <div class="flex items-center gap-1 bg-slate-100 rounded-full p-1">
+                    <button onclick="setGroup(this,'st')" data-group="date" class="seg-btn text-xs font-bold px-3 py-1 rounded-full">Date</button>
+                    <button onclick="setGroup(this,'st')" data-group="account" class="seg-btn active text-xs font-bold px-3 py-1 rounded-full">Account</button>
+                  </div>
+                </div>
+
+                <div class="p-5 space-y-4 hidden" id="st-next-date">
+                  <div>
+                    <div class="flex items-center gap-2 text-slate-500 mb-2">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <span class="text-xs font-bold">Scheduled for Jun 15, 2026</span>
+                    </div>
+                    <div class="border border-slate-100 rounded-lg divide-y divide-slate-100">
+                      <div class="grid grid-cols-3 gap-4 px-4 py-2.5">
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank</div><div class="text-sm text-slate-700">IFX UK LTD</div></div>
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank account</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div class="text-right"><div class="text-[9px] font-bold text-slate-400 uppercase">Settlement amount</div><div class="text-sm font-mono font-bold text-slate-900">179,106.74 EUR</div></div>
+                      </div>
+                      <div class="grid grid-cols-3 gap-4 px-4 py-2.5">
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank account</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div class="text-right"><div class="text-[9px] font-bold text-slate-400 uppercase">Settlement amount</div><div class="text-sm font-mono font-bold text-slate-900">0.23 USD</div></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-2 text-slate-500 mb-2">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <span class="text-xs font-bold">Scheduled for Jun 17, 2026</span>
+                    </div>
+                    <div class="border border-slate-100 rounded-lg divide-y divide-slate-100">
+                      <div class="grid grid-cols-3 gap-4 px-4 py-2.5">
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank account</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div class="text-right"><div class="text-[9px] font-bold text-slate-400 uppercase">Settlement amount</div><div class="text-sm font-mono font-bold text-slate-900">972.63 USD</div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="p-5 space-y-4" id="st-next-account">
+                  <div>
+                    <div class="flex items-center gap-2 text-slate-500 mb-2">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+                      <span class="text-xs font-bold">IFX UK LTD</span>
+                    </div>
+                    <div class="border border-slate-100 rounded-lg divide-y divide-slate-100">
+                      <div class="grid grid-cols-3 gap-4 px-4 py-2.5">
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Scheduled</div><div class="text-sm text-slate-700">Jun 15, 2026</div></div>
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank account</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div class="text-right"><div class="text-[9px] font-bold text-slate-400 uppercase">Settlement amount</div><div class="text-sm font-mono font-bold text-slate-900">179,106.74 EUR</div></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-2 text-slate-500 mb-2">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+                      <span class="text-xs font-bold">N/A</span>
+                    </div>
+                    <div class="border border-slate-100 rounded-lg divide-y divide-slate-100">
+                      <div class="grid grid-cols-3 gap-4 px-4 py-2.5">
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Scheduled</div><div class="text-sm text-slate-700">Jun 15, 2026</div></div>
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank account</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div class="text-right"><div class="text-[9px] font-bold text-slate-400 uppercase">Settlement amount</div><div class="text-sm font-mono font-bold text-slate-900">0.23 USD</div></div>
+                      </div>
+                      <div class="grid grid-cols-3 gap-4 px-4 py-2.5">
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Scheduled</div><div class="text-sm text-slate-700">Jun 17, 2026</div></div>
+                        <div><div class="text-[9px] font-bold text-slate-400 uppercase">Bank account</div><div class="text-sm text-slate-400">N/A</div></div>
+                        <div class="text-right"><div class="text-[9px] font-bold text-slate-400 uppercase">Settlement amount</div><div class="text-sm font-mono font-bold text-slate-900">972.63 USD</div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="p-5 hidden" id="st-history-date">
+                  <p class="text-sm text-slate-400 text-center py-6">No settlement history yet.</p>
+                </div>
+                <div class="p-5 hidden" id="st-history-account">
+                  <p class="text-sm text-slate-400 text-center py-6">No settlement history yet.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-center text-[11px] text-slate-400 pb-8">
+        ↑ Preview only — sample data. Dashboard totals (Asset Breakdown, Portfolio Summary) go back to banks/crypto only — no PSP mixed in.
+      </div>
+      </div>
+      <!-- end #page-psp -->
+    </main>
+  </div>
+</div>
+
+<script>
+  function showPage(page) {
+    document.getElementById('page-dashboard').classList.toggle('hidden', page !== 'dashboard');
+    document.getElementById('page-psp').classList.toggle('hidden', page !== 'psp');
+
+    const navDash = document.getElementById('nav-dashboard');
+    const navPsp = document.getElementById('nav-psp');
+    navDash.classList.toggle('bg-indigo-600', page === 'dashboard');
+    navDash.classList.toggle('shadow-lg', page === 'dashboard');
+    navDash.classList.toggle('text-slate-400', page !== 'dashboard');
+    document.getElementById('nav-dashboard-label').classList.toggle('text-white', page === 'dashboard');
+
+    navPsp.classList.toggle('bg-indigo-600', page === 'psp');
+    navPsp.classList.toggle('shadow-lg', page === 'psp');
+    navPsp.classList.toggle('text-slate-400', page !== 'psp');
+    document.getElementById('nav-psp-label').classList.toggle('text-white', page === 'psp');
+
+    document.getElementById('header-title').textContent = page === 'dashboard' ? 'Liquidity Overview' : 'Payment Providers';
+  }
+  function setTab(btn, group) {
+    const wrap = btn.closest('main') || document;
+    wrap.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    const activeGroup = wrap.querySelector('.seg-btn.active').dataset.group;
+    showPanel(group, tab, activeGroup);
+  }
+  function setGroup(btn, group) {
+    const wrap = btn.closest('main') || document;
+    wrap.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const groupBy = btn.dataset.group;
+    const activeTab = wrap.querySelector('.tab-btn.active').dataset.tab;
+    showPanel(group, activeTab, groupBy);
+  }
+  function showPanel(provider, tab, groupBy) {
+    document.querySelectorAll('[id^="' + provider + '-"]').forEach(p => p.classList.add('hidden'));
+    const target = document.getElementById(provider + '-' + tab + '-' + groupBy);
+    if (target) target.classList.remove('hidden');
+  }
+</script>
+</body>
+</html>
