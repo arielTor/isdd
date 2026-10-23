@@ -2,6 +2,8 @@ node_modules
 .env
 .env.local
 *.log
+# stray root-level build artifacts
+/index-*.js
 debug_payload_log.json
 
 # Runtime data — never commit
