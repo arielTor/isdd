@@ -3002,38 +3002,63 @@ async function startServer() {
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
     if (search) {
-      // Covers: raw other_party, raw reference, company name, wallet label on other_party,
-      // wallet label on first reference segment (IFX debit pattern: "Name - REF - ...")
+      // Mirror getDisplayPayer / getDisplayRecipient display logic so only visually-shown
+      // names are searched (avoids false matches from hidden fields like other_party on IFX debits).
+      //
+      // Displayed payer:
+      //   credit  → other_party  (+ wallet label)
+      //   debit   → company_name
+      //
+      // Displayed recipient:
+      //   credit XBO     → reference
+      //   credit non-XBO → company_name  (already covered by company_name arm)
+      //   debit IFX      → SUBSTRING_INDEX(reference, ' - ', 1)  (+ wallet label)
+      //   debit non-IFX  → other_party   (+ wallet label)
       conditions.push(`(
-        wt.other_party LIKE ? OR wt.reference LIKE ?
+        (wt.type = 'credit' AND wt.other_party LIKE ?)
         OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
+        OR (wt.type = 'credit' AND wt.source = 'xbo' AND wt.reference LIKE ?)
+        OR (wt.type = 'debit' AND wt.source = 'ifx' AND SUBSTRING_INDEX(wt.reference, ' - ', 1) LIKE ?)
+        OR (wt.type = 'debit' AND wt.source != 'ifx' AND wt.other_party LIKE ?)
         OR EXISTS (
-          SELECT 1 FROM wallet_address_labels wal
-          WHERE wal.label LIKE ?
-            AND (wal.address = wt.other_party OR wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+          SELECT 1 FROM wallet_address_labels wal WHERE wal.label LIKE ?
+          AND (
+            (wt.type = 'credit' AND wal.address = wt.other_party)
+            OR (wt.type = 'debit' AND wt.source = 'ifx' AND wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+            OR (wt.type = 'debit' AND wt.source != 'ifx' AND wal.address = wt.other_party)
+          )
         )
       )`);
-      baseParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      const s = `%${search}%`;
+      baseParams.push(s, s, s, s, s, s);
     }
     if (payer_filter) {
+      // Payer: credit → other_party, debit → company_name
       conditions.push(`(
-        wt.other_party LIKE ?
-        OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
-        OR wt.other_party IN (SELECT address FROM wallet_address_labels WHERE label LIKE ?)
+        (wt.type = 'credit' AND wt.other_party LIKE ?)
+        OR (wt.type = 'debit' AND wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))
+        OR EXISTS (SELECT 1 FROM wallet_address_labels wal WHERE wal.label LIKE ? AND wt.type = 'credit' AND wal.address = wt.other_party)
       )`);
-      baseParams.push(`%${payer_filter}%`, `%${payer_filter}%`, `%${payer_filter}%`);
+      const p = `%${payer_filter}%`;
+      baseParams.push(p, p, p);
     }
     if (recipient_filter) {
+      // Recipient: credit XBO→reference, credit non-XBO→company_name, debit IFX→ref[0], debit non-IFX→other_party
       conditions.push(`(
-        wt.other_party LIKE ? OR wt.reference LIKE ?
-        OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
+        (wt.type = 'credit' AND wt.source = 'xbo' AND wt.reference LIKE ?)
+        OR (wt.type = 'credit' AND wt.source != 'xbo' AND wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))
+        OR (wt.type = 'debit' AND wt.source = 'ifx' AND SUBSTRING_INDEX(wt.reference, ' - ', 1) LIKE ?)
+        OR (wt.type = 'debit' AND wt.source != 'ifx' AND wt.other_party LIKE ?)
         OR EXISTS (
-          SELECT 1 FROM wallet_address_labels wal
-          WHERE wal.label LIKE ?
-            AND (wal.address = wt.other_party OR wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+          SELECT 1 FROM wallet_address_labels wal WHERE wal.label LIKE ?
+          AND (
+            (wt.type = 'debit' AND wt.source = 'ifx' AND wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+            OR (wt.type = 'debit' AND wt.source != 'ifx' AND wal.address = wt.other_party)
+          )
         )
       )`);
-      baseParams.push(`%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`);
+      const r = `%${recipient_filter}%`;
+      baseParams.push(r, r, r, r, r);
     }
     const categoryFilter = (Array.isArray(categoryFilterRaw) ? categoryFilterRaw : String(categoryFilterRaw || '').split(',').filter(Boolean));
     if (categoryFilter.length > 0) {

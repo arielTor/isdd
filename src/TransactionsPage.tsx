@@ -161,19 +161,17 @@ function buildMockResponse(
     if (txType && txType !== 'all' && tx.type !== txType) return false;
     if (search) {
       const q = search.toLowerCase();
-      const payer = tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name;
-      const recipient = tx.type === 'debit' ? (tx.other_party ?? '') : tx.company_name;
-      if (!(payer.toLowerCase().includes(q) || recipient.toLowerCase().includes(q) || tx.reference?.toLowerCase().includes(q))) return false;
+      const payer = getDisplayPayer(tx).toLowerCase();
+      const recipient = getDisplayRecipient(tx).toLowerCase();
+      if (!payer.includes(q) && !recipient.includes(q)) return false;
     }
     if (payerFilter) {
       const q = payerFilter.toLowerCase();
-      const payer = tx.type === 'credit' ? (tx.other_party ?? '') : tx.company_name;
-      if (!payer.toLowerCase().includes(q)) return false;
+      if (!getDisplayPayer(tx).toLowerCase().includes(q)) return false;
     }
     if (recipientFilter) {
       const q = recipientFilter.toLowerCase();
-      const recipient = tx.type === 'debit' ? (tx.other_party ?? '') : tx.company_name;
-      if (!recipient.toLowerCase().includes(q) && !(tx.reference ?? '').toLowerCase().includes(q)) return false;
+      if (!getDisplayRecipient(tx).toLowerCase().includes(q)) return false;
     }
     if (dateFrom && tx.transaction_date < dateFrom) return false;
     if (dateTo   && tx.transaction_date > dateTo)   return false;
