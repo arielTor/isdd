@@ -2433,8 +2433,14 @@ async function startServer() {
             label      VARCHAR(255) NOT NULL,
             created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
         `);
+        // Align collation with wallet_transactions (utf8mb4_0900_ai_ci) so that
+        // address = other_party comparisons in the search query don't throw
+        // "Illegal mix of collations". Idempotent: a no-op if already aligned.
+        try {
+          await conn.execute(`ALTER TABLE wallet_address_labels CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+        } catch (e: any) { console.warn("[WalletLabels] collation align:", e.message); }
         console.log("[WalletLabels] table ready");
       } catch (e: any) { console.warn("[WalletLabels] table init:", e.message); }
       finally { conn.release(); }
@@ -3024,11 +3030,11 @@ async function startServer() {
         OR EXISTS (
           SELECT 1 FROM wallet_address_labels wal WHERE LOWER(wal.label) LIKE ?
           AND (
-            (wt.type = 'credit' AND wal.address = wt.other_party)
+            (wt.type = 'credit' AND wal.address COLLATE utf8mb4_0900_ai_ci = wt.other_party)
             OR (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
-                AND wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+                AND wal.address COLLATE utf8mb4_0900_ai_ci = SUBSTRING_INDEX(wt.reference, ' - ', 1))
             OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
-                AND wal.address = wt.other_party)
+                AND wal.address COLLATE utf8mb4_0900_ai_ci = wt.other_party)
           )
         )
       )`);
@@ -3041,7 +3047,7 @@ async function startServer() {
         (wt.type = 'credit' AND LOWER(wt.other_party) LIKE ?)
         OR (wt.type = 'debit' AND wt.company_id IN (SELECT id FROM companies WHERE LOWER(name) LIKE ?))
         OR EXISTS (SELECT 1 FROM wallet_address_labels wal
-                   WHERE LOWER(wal.label) LIKE ? AND wt.type = 'credit' AND wal.address = wt.other_party)
+                   WHERE LOWER(wal.label) LIKE ? AND wt.type = 'credit' AND wal.address COLLATE utf8mb4_0900_ai_ci = wt.other_party)
       )`);
       const p = `%${payer_filter.toLowerCase()}%`;
       baseParams.push(p, p, p);
@@ -3062,9 +3068,9 @@ async function startServer() {
           SELECT 1 FROM wallet_address_labels wal WHERE LOWER(wal.label) LIKE ?
           AND (
             (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
-             AND wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+             AND wal.address COLLATE utf8mb4_0900_ai_ci = SUBSTRING_INDEX(wt.reference, ' - ', 1))
             OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
-                AND wal.address = wt.other_party)
+                AND wal.address COLLATE utf8mb4_0900_ai_ci = wt.other_party)
           )
         )
       )`);
