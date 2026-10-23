@@ -3001,9 +3001,40 @@ async function startServer() {
     if (wallet_id)                       { conditions.push('wt.wallet_id = ?');                           baseParams.push(wallet_id); }
     if (currency && currency !== 'ALL')  { conditions.push('wt.currency = ?');                            baseParams.push(currency); }
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
-    if (search)           { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ? OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?) OR wt.other_party IN (SELECT address FROM wallet_address_labels WHERE label LIKE ?))'); baseParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`); }
-    if (payer_filter)     { conditions.push('(wt.other_party LIKE ? OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))'); baseParams.push(`%${payer_filter}%`, `%${payer_filter}%`); }
-    if (recipient_filter) { conditions.push('(wt.other_party LIKE ? OR wt.reference LIKE ? OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))'); baseParams.push(`%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`); }
+    if (search) {
+      // Covers: raw other_party, raw reference, company name, wallet label on other_party,
+      // wallet label on first reference segment (IFX debit pattern: "Name - REF - ...")
+      conditions.push(`(
+        wt.other_party LIKE ? OR wt.reference LIKE ?
+        OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
+        OR EXISTS (
+          SELECT 1 FROM wallet_address_labels wal
+          WHERE wal.label LIKE ?
+            AND (wal.address = wt.other_party OR wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+        )
+      )`);
+      baseParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    if (payer_filter) {
+      conditions.push(`(
+        wt.other_party LIKE ?
+        OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
+        OR wt.other_party IN (SELECT address FROM wallet_address_labels WHERE label LIKE ?)
+      )`);
+      baseParams.push(`%${payer_filter}%`, `%${payer_filter}%`, `%${payer_filter}%`);
+    }
+    if (recipient_filter) {
+      conditions.push(`(
+        wt.other_party LIKE ? OR wt.reference LIKE ?
+        OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
+        OR EXISTS (
+          SELECT 1 FROM wallet_address_labels wal
+          WHERE wal.label LIKE ?
+            AND (wal.address = wt.other_party OR wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+        )
+      )`);
+      baseParams.push(`%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`, `%${recipient_filter}%`);
+    }
     const categoryFilter = (Array.isArray(categoryFilterRaw) ? categoryFilterRaw : String(categoryFilterRaw || '').split(',').filter(Boolean));
     if (categoryFilter.length === 1) { conditions.push('wt.category = ?'); baseParams.push(categoryFilter[0]); }
     else if (categoryFilter.length > 1) { conditions.push(`wt.category IN (${categoryFilter.map(() => '?').join(',')})`); baseParams.push(...categoryFilter); }
