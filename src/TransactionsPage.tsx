@@ -147,9 +147,10 @@ const MOCK_TRANSACTIONS: Transaction[] = [
 
 function buildMockResponse(
   rows: Transaction[],
-  { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit, sortBy, sortDir }:
-  { currency: string; filterCategories: string[] | null; txType: string; search: string; payerFilter?: string; recipientFilter?: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc' }
+  { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit, sortBy, sortDir, labels }:
+  { currency: string; filterCategories: string[] | null; txType: string; search: string; payerFilter?: string; recipientFilter?: string; dateFrom: string; dateTo: string; page: number; limit: number; sortBy: SortKey; sortDir: 'asc' | 'desc'; labels?: Record<string, string> }
 ): ApiResponse {
+  const lbl = labels ?? {};
   // 1. Filter
   const filtered = rows.filter(tx => {
     if (currency && currency !== 'ALL' && tx.currency !== currency) return false;
@@ -161,17 +162,17 @@ function buildMockResponse(
     if (txType && txType !== 'all' && tx.type !== txType) return false;
     if (search) {
       const q = search.toLowerCase();
-      const payer = getDisplayPayer(tx).toLowerCase();
-      const recipient = getDisplayRecipient(tx).toLowerCase();
+      const payer = getDisplayPayer(tx, lbl).toLowerCase();
+      const recipient = getDisplayRecipient(tx, lbl).toLowerCase();
       if (!payer.includes(q) && !recipient.includes(q)) return false;
     }
     if (payerFilter) {
       const q = payerFilter.toLowerCase();
-      if (!getDisplayPayer(tx).toLowerCase().includes(q)) return false;
+      if (!getDisplayPayer(tx, lbl).toLowerCase().includes(q)) return false;
     }
     if (recipientFilter) {
       const q = recipientFilter.toLowerCase();
-      if (!getDisplayRecipient(tx).toLowerCase().includes(q)) return false;
+      if (!getDisplayRecipient(tx, lbl).toLowerCase().includes(q)) return false;
     }
     if (dateFrom && tx.transaction_date < dateFrom) return false;
     if (dateTo   && tx.transaction_date > dateTo)   return false;
@@ -539,7 +540,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
       }
     } catch {
       setIsMock(true);
-      setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit: 20, sortBy, sortDir }));
+      setData(buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page, limit: 20, sortBy, sortDir, labels: walletLabels }));
     } finally {
       setLoading(false);
     }
@@ -581,7 +582,7 @@ export default function TransactionsPage({ companies }: { companies: Company[] }
     let rows: Transaction[];
 
     if (isMock) {
-      rows = buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir }).transactions;
+      rows = buildMockResponse(MOCK_TRANSACTIONS, { currency, filterCategories, txType, search, payerFilter, recipientFilter, dateFrom, dateTo, page: 1, limit: 9999, sortBy, sortDir, labels: walletLabels }).transactions;
     } else {
       setExportLoading(true);
       try {

@@ -3003,25 +3003,30 @@ async function startServer() {
     if (txType && txType !== 'all')      { conditions.push('wt.type = ?');                                baseParams.push(txType); }
     if (search) {
       // Mirror getDisplayPayer / getDisplayRecipient exactly.
-      // COALESCE(wt.source, 'ifx'): NULL source must not silently drop rows —
-      //   MySQL NULL != 'ifx' evaluates to NULL (not TRUE), so rows with no source
-      //   would match neither the ifx nor the non-ifx arm without the COALESCE.
-      // COALESCE(wt.reference, wt.other_party, ''): for IFX debit, JS falls back
-      //   to other_party when reference is NULL/empty; SQL must do the same.
+      // Frontend: `source === 'ifx'` is a strict equality check — NULL is NOT 'ifx'.
+      // So NULL-source debits fall to the else-branch (other_party), same as non-IFX.
+      // Using COALESCE(source,'ifx') would incorrectly route NULL-source rows into the
+      // IFX arm and search reference instead of other_party, breaking search for those
+      // transactions (e.g. MoneyGate rows whose source column was not populated).
+      // IFX debit arm only fires when source IS literally 'ifx' AND reference exists.
+      // Every other debit (NULL source, non-IFX source, or IFX without reference)
+      // falls to the else-arm and searches other_party — matching the JS else-branch.
       conditions.push(`(
         (wt.type = 'credit' AND wt.other_party LIKE ?)
         OR wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?)
         OR (wt.type = 'credit' AND COALESCE(wt.source,'ifx') = 'xbo' AND wt.reference LIKE ?)
-        OR (wt.type = 'debit' AND COALESCE(wt.source,'ifx') = 'ifx'
-            AND SUBSTRING_INDEX(COALESCE(wt.reference, wt.other_party, ''), ' - ', 1) LIKE ?)
-        OR (wt.type = 'debit' AND COALESCE(wt.source,'ifx') != 'ifx' AND wt.other_party LIKE ?)
+        OR (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
+            AND SUBSTRING_INDEX(wt.reference, ' - ', 1) LIKE ?)
+        OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
+            AND wt.other_party LIKE ?)
         OR EXISTS (
           SELECT 1 FROM wallet_address_labels wal WHERE wal.label LIKE ?
           AND (
             (wt.type = 'credit' AND wal.address = wt.other_party)
-            OR (wt.type = 'debit' AND COALESCE(wt.source,'ifx') = 'ifx'
-                AND wal.address = SUBSTRING_INDEX(COALESCE(wt.reference, wt.other_party, ''), ' - ', 1))
-            OR (wt.type = 'debit' AND COALESCE(wt.source,'ifx') != 'ifx' AND wal.address = wt.other_party)
+            OR (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
+                AND wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+            OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
+                AND wal.address = wt.other_party)
           )
         )
       )`);
@@ -3041,20 +3046,23 @@ async function startServer() {
     }
     if (recipient_filter) {
       // Recipient: credit XBO→reference, credit non-XBO→company_name,
-      //            debit IFX→ref[0] (fallback other_party), debit non-IFX→other_party
+      //            debit IFX (with reference)→ref[0], debit everything else→other_party.
+      // Same NULL-source fix as the search block above.
       conditions.push(`(
         (wt.type = 'credit' AND COALESCE(wt.source,'ifx') = 'xbo' AND wt.reference LIKE ?)
         OR (wt.type = 'credit' AND COALESCE(wt.source,'ifx') != 'xbo'
             AND wt.company_id IN (SELECT id FROM companies WHERE name LIKE ?))
-        OR (wt.type = 'debit' AND COALESCE(wt.source,'ifx') = 'ifx'
-            AND SUBSTRING_INDEX(COALESCE(wt.reference, wt.other_party, ''), ' - ', 1) LIKE ?)
-        OR (wt.type = 'debit' AND COALESCE(wt.source,'ifx') != 'ifx' AND wt.other_party LIKE ?)
+        OR (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
+            AND SUBSTRING_INDEX(wt.reference, ' - ', 1) LIKE ?)
+        OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
+            AND wt.other_party LIKE ?)
         OR EXISTS (
           SELECT 1 FROM wallet_address_labels wal WHERE wal.label LIKE ?
           AND (
-            (wt.type = 'debit' AND COALESCE(wt.source,'ifx') = 'ifx'
-             AND wal.address = SUBSTRING_INDEX(COALESCE(wt.reference, wt.other_party, ''), ' - ', 1))
-            OR (wt.type = 'debit' AND COALESCE(wt.source,'ifx') != 'ifx' AND wal.address = wt.other_party)
+            (wt.type = 'debit' AND wt.source = 'ifx' AND wt.reference IS NOT NULL AND wt.reference != ''
+             AND wal.address = SUBSTRING_INDEX(wt.reference, ' - ', 1))
+            OR (wt.type = 'debit' AND (wt.source IS NULL OR wt.source != 'ifx' OR wt.reference IS NULL OR wt.reference = '')
+                AND wal.address = wt.other_party)
           )
         )
       )`);
