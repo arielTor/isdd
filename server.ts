@@ -3481,7 +3481,13 @@ async function startServer() {
           ? (t.other_party || '')
           : (t.source === 'xbo' && t.reference ? t.reference : (t.company_name || t.company_id || ''));
         const account   = t.reference || null;
-        const { category, ambiguous: isAmbiguous } = await classifyTransaction(payer, recipient, account);
+        // IFX FX transactions are deterministically "Exchange" — takes priority
+        // over vendor_classification_rules. Manual classifications are still
+        // preserved by the "category IS NULL OR category = ''" guard below.
+        const isFxExchange = (t.source || 'ifx') === 'ifx' && t.payment_scheme === 'FX';
+        const { category, ambiguous: isAmbiguous } = isFxExchange
+          ? { category: 'Exchange', ambiguous: false }
+          : await classifyTransaction(payer, recipient, account);
         if (category) {
           // Only update category if not yet set (avoid overwriting manual classifications)
           const updConn = await pool.getConnection();
