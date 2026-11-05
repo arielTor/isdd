@@ -195,8 +195,10 @@ function buildMockResponse(
   const sorted = [...withUsd].sort((a, b) => {
     if (sortBy === 'amount')     return (a.amount - b.amount) * dir;
     if (sortBy === 'amount_usd') return ((a.amount_usd ?? 0) - (b.amount_usd ?? 0)) * dir;
-    // default: date
-    return a.transaction_date < b.transaction_date ? -dir : a.transaction_date > b.transaction_date ? dir : 0;
+    // default: date, then received time (synced_at) newest-first within the same date
+    if (a.transaction_date !== b.transaction_date)
+      return a.transaction_date < b.transaction_date ? -dir : dir;
+    return a.synced_at < b.synced_at ? 1 : a.synced_at > b.synced_at ? -1 : 0;
   });
 
   // 5. Paginate
