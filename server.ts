@@ -2186,33 +2186,70 @@ async function startServer() {
     return VENDOR_ALIASES[base] ?? base;
   };
 
+  // Helper: load the wallet-label map (raw party/address -> friendly label).
+  // Same source the Transactions grid uses for display (GET /api/settings/wallet-labels),
+  // so a rule typed from the displayed name can be matched back to the raw value.
+  const loadLabelMap = async (conn: any): Promise<Record<string, string>> => {
+    try {
+      const [rows] = (await conn.execute('SELECT address, label FROM wallet_address_labels')) as any;
+      const m: Record<string, string> = {};
+      for (const r of rows as any[]) { if (r.address) m[String(r.address)] = String(r.label ?? ''); }
+      return m;
+    } catch { return {}; }
+  };
+
   // Helper: find category for a transaction.
   // Returns { category, ambiguous } where ambiguous=true means multiple candidates.
+  // A rule may be stored from the RAW party name (inline "+ Category" flow) or from the
+  // DISPLAYED label name (Settings "Add Rule" form). To make both work, each raw value is
+  // expanded to a candidate set { raw, wallet-label(raw) } and matched with IN (...).
   const classifyTransaction = async (
-    payer: string, recipient: string, accountWallet: string | null
+    payer: string, recipient: string, accountWallet: string | null,
+    labelMap?: Record<string, string>
   ): Promise<{ category: string | null; ambiguous: boolean }> => {
     const conn = await pool.getConnection();
     try {
-      const np = normalizeName(payer);
-      const nr = normalizeName(recipient);
+      const lm = labelMap ?? await loadLabelMap(conn);
+
+      // Candidate match forms for a raw value: the normalized raw name and, when the value
+      // has a wallet label, the normalized label too (so a label-typed rule still matches).
+      const forms = (s: string | null | undefined): string[] => {
+        const out = new Set<string>();
+        const base = normalizeName(s);
+        if (base) out.add(base);
+        const lbl = lm[(s ?? '')] ?? lm[(s ?? '').trim()];
+        if (lbl) { const nl = normalizeName(lbl); if (nl) out.add(nl); }
+        return [...out];
+      };
+
+      const pForms = forms(payer);
+      const rForms = forms(recipient);
+      if (!pForms.length || !rForms.length) return { category: null, ambiguous: false };
+
+      const pIn = pForms.map(() => '?').join(',');
+      const rIn = rForms.map(() => '?').join(',');
 
       // 1. Try exact payer + recipient + account/wallet
       if (accountWallet) {
-        const [rows] = (await conn.execute(
-          `SELECT DISTINCT category FROM vendor_classification_rules
-           WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?
-             AND LOWER(TRIM(account_wallet)) = ?`,
-          [np, nr, normalizeName(accountWallet)]
-        )) as any;
-        if ((rows as any[]).length === 1) return { category: rows[0].category, ambiguous: false };
-        if ((rows as any[]).length > 1)  return { category: null, ambiguous: true };
+        const aForms = forms(accountWallet);
+        if (aForms.length) {
+          const aIn = aForms.map(() => '?').join(',');
+          const [rows] = (await conn.execute(
+            `SELECT DISTINCT category FROM vendor_classification_rules
+             WHERE LOWER(TRIM(payer)) IN (${pIn}) AND LOWER(TRIM(recipient)) IN (${rIn})
+               AND LOWER(TRIM(account_wallet)) IN (${aIn})`,
+            [...pForms, ...rForms, ...aForms]
+          )) as any;
+          if ((rows as any[]).length === 1) return { category: rows[0].category, ambiguous: false };
+          if ((rows as any[]).length > 1)  return { category: null, ambiguous: true };
+        }
       }
 
       // 2. Fallback: payer + recipient only
       const [rows2] = (await conn.execute(
         `SELECT DISTINCT category FROM vendor_classification_rules
-         WHERE LOWER(TRIM(payer)) = ? AND LOWER(TRIM(recipient)) = ?`,
-        [np, nr]
+         WHERE LOWER(TRIM(payer)) IN (${pIn}) AND LOWER(TRIM(recipient)) IN (${rIn})`,
+        [...pForms, ...rForms]
       )) as any;
       if ((rows2 as any[]).length === 1) return { category: rows2[0].category, ambiguous: false };
       if ((rows2 as any[]).length > 1)  return { category: null, ambiguous: true };
@@ -3475,6 +3512,13 @@ async function startServer() {
 
       // ── Auto-classify: assign category from vendor_classification_rules ──
       let classified = 0, unclassified = 0, ambiguous = 0;
+      // Load the wallet-label map once for the whole batch (matches rules typed from
+      // either the raw party name or its displayed label).
+      let labelMap: Record<string, string> = {};
+      try {
+        const lmConn = await pool.getConnection();
+        try { labelMap = await loadLabelMap(lmConn); } finally { lmConn.release(); }
+      } catch { /* non-fatal: fall back to raw-only matching */ }
       for (const t of transactions) {
         const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || t.company_id || '');
         const recipient = t.type === 'debit'
@@ -3487,7 +3531,7 @@ async function startServer() {
         const isFxExchange = (t.source || 'ifx') === 'ifx' && t.payment_scheme === 'FX';
         const { category, ambiguous: isAmbiguous } = isFxExchange
           ? { category: 'Exchange', ambiguous: false }
-          : await classifyTransaction(payer, recipient, account);
+          : await classifyTransaction(payer, recipient, account, labelMap);
         if (category) {
           // Only update category if not yet set (avoid overwriting manual classifications)
           const updConn = await pool.getConnection();
