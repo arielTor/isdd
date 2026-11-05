@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, Download, Trash2, Tags, AlertTriangle, CheckCircle2, RefreshCcw, Plus, X, FileText, Pencil, Check, Search } from 'lucide-react';
+import { Upload, Download, Trash2, Tags, AlertTriangle, CheckCircle2, RefreshCcw, Plus, X, FileText, Pencil, Check, Search, Wand2 } from 'lucide-react';
 
 interface Rule {
   id: number;
@@ -29,6 +29,7 @@ export default function ClassificationRulesPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -115,6 +116,21 @@ export default function ClassificationRulesPage() {
       showToast('error', 'Failed to delete rules');
     } finally {
       setClearing(false);
+    }
+  };
+
+  const handleApplyToExisting = async () => {
+    if (!confirm('Apply the current rules to all transactions that have no category yet?\n\nThis only fills in empty categories — it never changes a transaction that already has one.')) return;
+    setApplying(true);
+    try {
+      const res = await fetch('/api/settings/classification-rules/apply', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Apply failed');
+      showToast('success', `Classified ${data.classified} of ${data.scanned} uncategorized transactions`);
+    } catch (err: unknown) {
+      showToast('error', err instanceof Error ? err.message : 'Apply failed');
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -271,6 +287,14 @@ export default function ClassificationRulesPage() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors">
             <Plus className="w-4 h-4" /> Add Rule
           </button>
+          {rules.length > 0 && (
+            <button onClick={handleApplyToExisting} disabled={applying}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-sm font-medium border border-emerald-500/30 transition-colors disabled:opacity-50"
+              title="Fill in categories for transactions that don't have one yet (never overwrites existing categories)">
+              <Wand2 className="w-4 h-4" />
+              {applying ? 'Applying…' : 'Apply to Existing'}
+            </button>
+          )}
           {rules.length > 0 && (
             <button onClick={handleExport}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors">

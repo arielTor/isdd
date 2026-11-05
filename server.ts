@@ -2439,6 +2439,51 @@ async function startServer() {
     }
   });
 
+  // POST /api/settings/classification-rules/apply — backfill: apply existing rules to
+  // transactions that have NO category yet (Admin only). Never overwrites a set category:
+  // every write is guarded by (category IS NULL OR category = ''). Returns counts.
+  app.post('/api/settings/classification-rules/apply', corsMiddleware, requireAuth, requireAdmin, async (_req, res) => {
+    let conn: any;
+    try {
+      conn = await pool.getConnection();
+      const labelMap = await loadLabelMap(conn);
+      const [rows] = (await conn.execute(
+        `SELECT wt.id, wt.type, wt.other_party, wt.reference, wt.source, wt.payment_scheme,
+                c.name AS company_name
+         FROM wallet_transactions wt
+         LEFT JOIN companies c ON c.id = wt.company_id
+         WHERE wt.category IS NULL OR wt.category = ''`
+      )) as any[];
+
+      let classified = 0;
+      for (const t of rows as any[]) {
+        const payer     = t.type === 'credit' ? (t.other_party || '') : (t.company_name || '');
+        const recipient = t.type === 'debit'
+          ? (t.other_party || '')
+          : (t.source === 'xbo' && t.reference ? t.reference : (t.company_name || ''));
+        const account   = t.reference || null;
+        const isFxExchange = (t.source || 'ifx') === 'ifx' && t.payment_scheme === 'FX';
+        const { category } = isFxExchange
+          ? { category: 'Exchange' as string | null }
+          : await classifyTransaction(payer, recipient, account, labelMap);
+        if (category) {
+          const [upd] = (await conn.execute(
+            'UPDATE wallet_transactions SET category = ? WHERE id = ? AND (category IS NULL OR category = "")',
+            [category, t.id]
+          )) as any;
+          if (upd.affectedRows) classified++;
+        }
+      }
+      console.log(`[classify] backfill: scanned ${rows.length} uncategorized, classified ${classified}`);
+      res.json({ scanned: rows.length, classified });
+    } catch (err: any) {
+      console.error('[classify] backfill error:', err.message);
+      res.status(500).json({ error: err.message ?? 'DB error' });
+    } finally {
+      if (conn) conn.release();
+    }
+  });
+
   // GET /api/settings/classification-rules ── end ────────────────────────────
 
   // GET /api/settings/categories — all distinct categories (rules + transactions)
@@ -3260,6 +3305,40 @@ async function startServer() {
                 [payer || '', recipient || '', null, categoryVal, tx.company_id || null]
               );
               console.log(`[classify] auto-created rule: "${payer}" → "${recipient}" = "${categoryVal}"`);
+            }
+
+            // Cascade: apply the SAME category to other transactions that resolve to
+            // the same payer+recipient pair AND are still uncategorized. The WHERE guard
+            // (category IS NULL OR category = '') means a transaction that already has a
+            // category is never touched. Scoped to the same company (one side of the pair
+            // is always this company) to keep the candidate set small. Non-fatal.
+            if (np || nr) {
+              const [cands] = (await conn.execute(
+                `SELECT wt.id, wt.type, wt.other_party, wt.reference, wt.source,
+                        c.name AS company_name
+                 FROM wallet_transactions wt
+                 LEFT JOIN companies c ON c.id = wt.company_id
+                 WHERE (wt.category IS NULL OR wt.category = '')
+                   AND wt.company_id <=> ?`,
+                [tx.company_id ?? null]
+              )) as any[];
+              const matchIds: string[] = [];
+              for (const r of cands as any[]) {
+                const rp = normalizeName(r.type === 'credit' ? (r.other_party || '') : (r.company_name || ''));
+                const rr = normalizeName(r.type === 'debit'
+                  ? (r.other_party || '')
+                  : (r.source === 'xbo' && r.reference ? r.reference : (r.company_name || '')));
+                if (rp === np && rr === nr) matchIds.push(r.id);
+              }
+              if (matchIds.length) {
+                const ph = matchIds.map(() => '?').join(',');
+                const [upd] = (await conn.execute(
+                  `UPDATE wallet_transactions SET category = ?
+                   WHERE id IN (${ph}) AND (category IS NULL OR category = '')`,
+                  [categoryVal, ...matchIds]
+                )) as any;
+                console.log(`[classify] cascade: set "${categoryVal}" on ${upd.affectedRows} uncategorized tx (same pair)`);
+              }
             }
           }
         } catch (ruleErr: any) {
