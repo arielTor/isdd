@@ -309,6 +309,7 @@ async function startServer() {
     BNB:  "binancecoin",
     XRP:  "ripple",
     LTC:  "litecoin",
+    TRX:  "tron",
   };
 
   // usdRates[ticker] = how many USD 1 unit of ticker is worth

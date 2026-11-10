@@ -21,7 +21,7 @@ import { walletBalance, walletRate, buildCurrencyRateMap, settlementUsd, pending
 
 const CRYPTO_CURRENCIES = new Set([
   'BTC', 'ETH', 'USDT', 'USDtb', 'USDC', 'TUSD', 'BUSD', 'DAI', 'PEPE', 'HEX',
-  'SOL', 'BNB', 'XRP', 'LTC', 'MATIC', 'ADA', 'AVAX', 'DOT',
+  'SOL', 'BNB', 'XRP', 'LTC', 'MATIC', 'ADA', 'AVAX', 'DOT', 'TRX',
 ]);
 
 const fmtUsd = (n: number) => {

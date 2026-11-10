@@ -80,7 +80,7 @@ const convertCurrencyWith = (rates: Record<string, number>, amount: number, from
 };
 
 // Currencies that carry meaningful decimal places — show 2dp in balance columns.
-const CRYPTO_CURRENCIES = new Set(['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT']);
+const CRYPTO_CURRENCIES = new Set(['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT','TRX']);
 const fmtBal = (amount: number, currency: string) =>
   (CURRENCY_SYMBOLS[currency] || '') + (CURRENCY_SYMBOLS[currency] ? '' : ' ') +
   amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: CRYPTO_CURRENCIES.has(currency) ? 2 : 0 });
@@ -3250,7 +3250,7 @@ export default function App() {
 
                   {/* ── Asset Breakdown header card ──────────────────── */}
                   {(() => {
-                    const CRYPTO_CURRENCIES = new Set(['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT']);
+                    const CRYPTO_CURRENCIES = new Set(['BTC','ETH','USDT','USDtb','USDC','TUSD','BUSD','DAI','PEPE','HEX','SOL','BNB','XRP','LTC','MATIC','ADA','AVAX','DOT','TRX']);
                     let cryptoTotal = 0;
                     let fiatTotal = 0;
                     filteredCompanies.forEach(company => {
